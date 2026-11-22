@@ -9,6 +9,7 @@ import {
 import { Page } from "@/ui/page"
 import { Panel } from "@/ui/panel"
 import { TextLink } from "@/ui/text-link"
+import { RecentRunsWidget } from "./RecentRunsWidget"
 import { RunningJobsWidget } from "./RunningJobsWidget"
 
 type Start = Readonly<{ label: string; to: LinkProps["to"]; icon: LucideIcon }>
@@ -17,51 +18,46 @@ type Start = Readonly<{ label: string; to: LinkProps["to"]; icon: LucideIcon }>
 const STARTS: readonly Start[] = [
   { label: "Build a strategy", to: "/strategies", icon: Workflow },
   { label: "Open the feature lab", to: "/lab", icon: FlaskConical },
-  { label: "Run a backtest", to: "/runs", icon: ChartLine },
+  { label: "Run a backtest", to: "/strategies", icon: ChartLine },
   { label: "Import data", to: "/data/import", icon: Database },
 ]
 
-/** The page the app opens on (the design brief's home): a card for each kind of work, each
- * leading to its page, a placeholder until the steps that fill them (`BACKLOG.md`); the running
- * jobs are live since step 4.4. */
+/** The page the app opens on (the design brief's home), two column stacks, so that the running
+ * jobs grow in theirs alone: the latest backtests with their verdicts and the feature library, a
+ * placeholder until its step, beside the running jobs, live since step 4.4, and the starts. */
 export function HomePage() {
   return (
     <Page title="Home">
-      <div className="grid grid-cols-3 gap-6">
-        <Panel
-          title="Recent runs"
-          className="col-span-2"
-          action={<TextLink to="/runs">All runs</TextLink>}
-        >
-          <PanelSlot>
-            Your latest backtests will appear here with their robustness verdict
-          </PanelSlot>
-        </Panel>
-        <RunningJobsWidget />
-        <Panel
-          title="Feature library"
-          className="col-span-2"
-          action={<TextLink to="/lab">All features</TextLink>}
-        >
-          <PanelSlot>
-            Saved features will appear here with their versions
-          </PanelSlot>
-        </Panel>
-        <Panel title="Start">
-          <ul className="-mx-2 flex flex-col gap-1">
-            {STARTS.map(({ label, to, icon: Icon }) => (
-              <li key={label}>
-                <Link
-                  to={to}
-                  className="group flex items-center gap-3 rounded-xl border border-transparent p-2 font-medium hover:border-border hover:bg-muted"
-                >
-                  <Icon className="size-4 shrink-0 text-foreground-secondary" />
-                  <span className="group-hover:text-brand">{label}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Panel>
+      <div className="grid grid-cols-3 items-start gap-6">
+        <div className="col-span-2 flex flex-col gap-6">
+          <RecentRunsWidget />
+          <Panel
+            title="Feature library"
+            action={<TextLink to="/lab">All features</TextLink>}
+          >
+            <PanelSlot>
+              Saved features will appear here with their versions
+            </PanelSlot>
+          </Panel>
+        </div>
+        <div className="flex flex-col gap-6">
+          <RunningJobsWidget />
+          <Panel title="Start">
+            <ul className="-mx-2 flex flex-col gap-1">
+              {STARTS.map(({ label, to, icon: Icon }) => (
+                <li key={label}>
+                  <Link
+                    to={to}
+                    className="group flex items-center gap-3 rounded-xl border border-transparent p-2 font-medium hover:border-border hover:bg-muted"
+                  >
+                    <Icon className="size-4 shrink-0 text-foreground-secondary" />
+                    <span className="group-hover:text-brand">{label}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        </div>
       </div>
     </Page>
   )

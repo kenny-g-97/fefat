@@ -30,8 +30,6 @@ import polars as pl
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from fefat.market.calendar import SessionTable, utc_text
-from fefat.market.continuous import RollCalendar
-from fefat.market.coverage import dataset_coverage
 from fefat.market.dataset_choice import building_datasets
 from fefat.market.engine_units import price_in_units
 from fefat.market.layout import DatasetOrigin, SeriesKind
@@ -172,7 +170,7 @@ def bars_span(store: Store, cache_folder: Path, request: SeriesRequest) -> BarsS
     `cache_folder`; refused as `bars_page` refuses."""
     with _refusals():
         source = _source(store, cache_folder, request)
-        held = _decided(_held_dates(source, Timeframe.parse(request.timeframe)), source.calendar)
+        held = source.decided_dates(Timeframe.parse(request.timeframe))
     return BarsSpan(
         instrument=request.instrument,
         timeframe=request.timeframe,
@@ -248,7 +246,7 @@ def _page(source: SeriesSource, timeframe: Timeframe, request: BarsRequest) -> _
         raise ValueError(
             f"Expected the start {first} on or before the end, got the end {request.end}."
         )
-    held = _held_dates(source, timeframe)
+    held = source.held_dates(timeframe)
     if held is None or held[1] < first or request.end < held[0]:
         return _Page(pl.DataFrame(schema=SIGNAL_BAR_COLUMNS), None, ())
     first, last = max(first, held[0]), min(request.end, held[1])
@@ -280,39 +278,6 @@ def _start(text: str, sessions: SessionTable) -> tuple[date, int | None]:
     at = pl.DataFrame({"instant": [instant]}, schema={"instant": pl.Int64})
     trade_date: date = sessions.assign_trade_dates_or_previous(at, "instant").item(0, "trade_date")
     return trade_date, instant
-
-
-def _held_dates(source: SeriesSource, timeframe: Timeframe) -> tuple[date, date] | None:
-    """The first and the last trade date the source's datasets that build `timeframe` hold, the
-    contract's own where the source names one, since `load` gives a contract no bars before its
-    first and only empty ones after its last (step 5.4); none while they hold no partition of
-    it."""
-    building = building_datasets(source.datasets, timeframe)
-    named = [
-        found
-        for each in building
-        if (found := dataset_coverage(source.store, each, source.contract)) is not None
-    ]
-    if not named:
-        return None
-    return min(each.first_trade_date for each in named), max(each.last_trade_date for each in named)
-
-
-def _decided(
-    held: tuple[date, date] | None, calendar: RollCalendar | None
-) -> tuple[date, date] | None:
-    """`held` cut to the sessions `calendar` decides a front for, where the series splices
-    contracts: `load` gives no bars before its first front and refuses those after its last
-    (`fefat.market.signal_grid.require_fronts_through`); none where they do not meet (step 5.4's
-    engine review)."""
-    if held is None or calendar is None:
-        return held
-    fronts = calendar.rows
-    if fronts.is_empty():
-        return None
-    first: date = max(held[0], fronts.item(0, "trade_date"))
-    last: date = min(held[1], fronts.item(-1, "trade_date"))
-    return None if last < first else (first, last)
 
 
 def _fine_dates(source: SeriesSource, timeframe: Timeframe) -> set[date]:

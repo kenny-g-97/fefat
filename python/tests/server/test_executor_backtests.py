@@ -31,6 +31,10 @@ from strategy_code import ES_BREAKOUT, HYPOTHESIS
 ROOMY = ExecutionLimits(timeout_seconds=120, memory_bytes=8 * 1024**3)
 WINDOW = (date(2026, 3, 5), date(2026, 3, 9))
 DEFAULTS = {"lookback": 12, "stop_atr": 1.5}
+ROOT_AS_A_PARAMETER = ES_BREAKOUT.replace(
+    "stop_atr: float = 1.5)", 'stop_atr: float = 1.5, root: str = "ES")'
+).replace('instrument="ES"', "instrument=root")
+"""The breakout, whose parameter `root` sets the instrument its code names."""
 
 
 def output_of(result: ExecutionResult) -> object:
@@ -98,7 +102,7 @@ def test_a_lookup_and_a_backtest_answer_the_run_and_its_stages(
     ("settings", "parameters", "said"),
     [
         (None, {"lookback": "24"}, "Expected the strategy's parameters as its schema gives them"),
-        (RunConfig(contract="NQH2026"), {}, "Expected a contract of ES, the strategy's root"),
+        (RunConfig(contract="NQH2026"), {}, "Expected a contract of ES, the root the run trades"),
     ],
 )
 def test_a_lookup_refuses_what_the_sdk_refuses_in_its_words(
@@ -115,6 +119,40 @@ def test_a_lookup_refuses_what_the_sdk_refuses_in_its_words(
     assert isinstance(answer, RefusedCode)
     assert answer.line is None
     assert said in answer.message
+
+
+@pytest.mark.parametrize(
+    ("parameters", "instrument", "refused"),
+    [
+        ({"root": "BTCUSDT-PERP"}, "ES", True),
+        ({"root": "BTCUSDT-PERP"}, "BTCUSDT-PERP", False),
+        ({}, "BTCUSDT-PERP", False),
+    ],
+)
+def test_a_parameter_that_moves_the_root_must_agree_with_the_instrument_named(
+    executor: SubprocessExecutor,
+    parameters: dict[str, JsonValue],
+    instrument: str,
+    refused: bool,
+) -> None:
+    # D-114: the dialog names the instrument it shows, so that a root typed as a parameter beside
+    # another would otherwise be dropped, and a run recorded with a parameter it did not trade.
+    store_with("ohlcv-1m", "funding")
+    version = ff.strategy.save("by_root", ROOT_AS_A_PARAMETER, hypothesis=HYPOTHESIS)
+
+    answer = lookup_answer(
+        executor, requested(version, RunConfig(instrument=instrument), **parameters)
+    )
+
+    if refused:
+        assert isinstance(answer, RefusedCode)
+        assert (
+            "Expected the instrument BTCUSDT-PERP, which these parameters of by_root trade, "
+            "got ES" in answer.message
+        )
+    else:
+        assert isinstance(answer, RunToMake)
+        assert answer.settings.instrument == instrument
 
 
 def test_a_version_whose_file_is_not_as_indexed_is_refused(executor: SubprocessExecutor) -> None:

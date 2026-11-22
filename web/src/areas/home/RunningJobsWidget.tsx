@@ -6,15 +6,20 @@ import {
   jobsQuery,
   KIND_LABELS,
 } from "@/api/jobs"
+import { counted } from "@/ui/figures"
 import { Panel } from "@/ui/panel"
 import { PercentBar } from "@/ui/percent-bar"
 import { SectionFailure } from "@/ui/section-failure"
 
+/** How many jobs the card shows, so that a full pool never pushes the page down; the drawer
+ * lists them all. */
+const JOBS_SHOWN = 3
 const EMPTY =
   "No jobs running. Imports, backtests, and studies show their progress here while they run."
 
-/** Home's running jobs (web/DESIGN.md, Patterns): each queued or running job, its kind over its
- * bar with the percent, then its last message, live from the top bar's streams. A list it
+/** Home's running jobs (web/DESIGN.md, Patterns): the first three queued or running jobs, each
+ * its kind over its bar with the percent, then its last message, live from the top bar's
+ * streams, then a line counting the rest, which the jobs drawer lists. A list it
  * cannot load fails here alone, with Try again, and the rest of the page keeps working. */
 export function RunningJobsWidget() {
   return (
@@ -46,9 +51,10 @@ function RunningJobs() {
       </p>
     )
   }
+  const more = running.length - JOBS_SHOWN
   return (
     <ul className="flex min-h-24 flex-col gap-4">
-      {running.map((job) => (
+      {running.slice(0, JOBS_SHOWN).map((job) => (
         <li
           key={job.id}
           data-testid="running-job"
@@ -64,6 +70,14 @@ function RunningJobs() {
           <JobNote job={job} />
         </li>
       ))}
+      {more > 0 && (
+        <li
+          data-testid="running-jobs-more"
+          className="text-foreground-secondary"
+        >
+          {`${counted(more, "more job")} in the jobs drawer`}
+        </li>
+      )}
     </ul>
   )
 }

@@ -60,7 +60,7 @@ type PickerProps = Readonly<{
   className?: string
 }>
 
-/** The data area's select (web/DESIGN.md, Patterns, Select): one choice among many, its list a
+/** The app's select (web/DESIGN.md, Patterns, Select): one choice among many, its list a
  * popper under its trigger, 144 px wide where its values need no more; with no value chosen,
  * `""`, it shows `placeholder` in subtle text. A select over a table's column is `sm`, 32 px, and
  * named by `label`, since no label element names it. */

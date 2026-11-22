@@ -179,6 +179,16 @@ class SignalStrategy(FrozenModel):
             update = {**update, "saved_version": None}
         return super().model_copy(update=update, deep=deep)
 
+    def trading(self, instrument: str | None) -> Self:
+        """The strategy as a run on `instrument` builds it, as if its code named that root
+        (D-114): itself for None or the root it names; the copy stays the saved version it was
+        built from, whose parameters and name a run's record keeps."""
+        if instrument is None or instrument == self.instrument:
+            return self
+        return self.model_copy(
+            update={"instrument": instrument, "saved_version": self.saved_version}
+        )
+
     @property
     def declared_parameters(self) -> int | None:
         """How many parameters the saved version the strategy was built from declares, which

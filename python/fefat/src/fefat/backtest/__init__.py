@@ -10,13 +10,15 @@ run of the same key instead of running it again:
     run.metrics.fidelity_check; run.report()
 
 From step 5.3 `run` tells a callable each stage it reaches (`RunStage`): `progress=print`; and
-`saved_runs_in(runs_dir)` lists the runs saved there (`fefat.backtest.saved_runs`).
+`saved_runs_in(runs_dir)` lists the runs saved there (`fefat.backtest.saved_runs`), and
+`estimated` tells what a run of a window would read before anything runs (step 5.6).
 `RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
 `fefat.backtest.schemas`, and the record is `fefat.backtest.record`. `fidelity_check` works a
 saved run's fidelity check out again (`fefat.backtest.fidelity`, step 2.12), and `reconcile`
 waits for fill exports.
 """
 
+from fefat.backtest.estimates import WindowEstimate, estimated, held_instruments
 from fefat.backtest.fidelity import fidelity_check
 from fefat.backtest.metrics import (
     FidelityCheck,
@@ -67,7 +69,10 @@ __all__ = [
     "RunConfig",
     "RunRecord",
     "RunStage",
+    "WindowEstimate",
+    "estimated",
     "fidelity_check",
+    "held_instruments",
     "reconcile",
     "run",
     "running_drawdown",

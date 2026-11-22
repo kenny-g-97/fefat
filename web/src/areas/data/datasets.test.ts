@@ -11,7 +11,6 @@ import {
   type CatalogProduct,
   catalogLine,
   chartTimeframe,
-  fidelityLabel,
   importedDatasets,
   monthHeld,
   monthLabel,
@@ -209,24 +208,6 @@ describe("the groups", () => {
       ["ninjatrader", 1],
     ])
     expect(byRoot(datasets).map((each) => each.name)).toEqual(["MNQ", "MES"])
-  })
-})
-
-describe("fidelityLabel", () => {
-  it("says what a dataset holds in words, and refuses a fidelity the API never sends", () => {
-    expect(
-      ["trades", "tbbo", "1m", "1s", "5m", "1d"].map(fidelityLabel)
-    ).toEqual([
-      "Trades",
-      "TBBO",
-      "1-minute bars",
-      "1-second bars",
-      "5-minute bars",
-      "1-day bars",
-    ])
-    expect(() => fidelityLabel("weekly")).toThrow(
-      'Expected a fidelity such as trades or 1m, got "weekly".'
-    )
   })
 })
 

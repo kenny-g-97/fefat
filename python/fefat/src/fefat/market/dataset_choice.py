@@ -28,6 +28,11 @@ from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
 
 
+class UnbuildableSeriesError(ValueError):
+    """A provider's datasets cannot make a series: they hold no bars to splice its contracts
+    with, or none that build the timeframe asked for."""
+
+
 def provider_datasets(
     store: Store,
     root: str,
@@ -50,6 +55,25 @@ def provider_datasets(
         raise ValueError(f"Expected a provider of {root} in the store ({held}), got {provider!r}.")
     chosen = _one_provider(root, providers, catalog, guide) if provider is None else provider
     return {str(dataset.schema_name): dataset for dataset in found if dataset.provider == chosen}
+
+
+def held_providers(store: Store, root: str) -> tuple[str, ...]:
+    """The providers whose trades, TBBO, or bars of `root` the store holds, by name."""
+    return tuple(
+        sorted({dataset.provider for dataset in session_datasets(store) if dataset.root == root})
+    )
+
+
+def default_provider(
+    root: str,
+    providers: tuple[str, ...],
+    catalog: Catalog = CATALOG,
+    guide: SourceGuide = SOURCE_GUIDE,
+) -> str:
+    """The provider a form offers first of those that hold `root`: the catalog's recommended one
+    (`_recommended`), or else the first by name, which the form shows and sends."""
+    recommended = _recommended(root, list(providers), catalog, guide)
+    return providers[0] if recommended is None else recommended
 
 
 def _one_provider(root: str, providers: list[str], catalog: Catalog, guide: SourceGuide) -> str:
@@ -151,7 +175,7 @@ def roll_dataset(datasets: dict[str, Dataset], root: str) -> Dataset:
         dataset for fidelity, dataset in _finest_first(datasets) if isinstance(fidelity, Timeframe)
     ]
     if not bars:
-        raise ValueError(f"Expected bars of {root} to splice its contracts, got none.")
+        raise UnbuildableSeriesError(f"Expected bars of {root} to splice its contracts, got none.")
     return bars[0]
 
 
@@ -187,7 +211,7 @@ def signal_bar_levels(
     the feature cache splits into partitions as the store does (`fefat.features.cache`)."""
     finest: dict[date, TickFidelity | Timeframe] = {}
     for level, dataset in reversed(_building(datasets, timeframe)):
-        held = _held(store, dataset, dates)
+        held = held_records(store, dataset, dates).drop("records")
         if contracts is not None:
             held = held.join(contracts, on=["trade_date", "contract"], how="semi")
         finest |= dict.fromkeys(held.get_column("trade_date").to_list(), level)
@@ -207,13 +231,15 @@ def _building(
     held = _finest_first(datasets)
     if not held:
         named = ", ".join(sorted(datasets)) or "none"
-        raise ValueError(f"Expected trades or bars to build signal bars from, got {named}.")
+        raise UnbuildableSeriesError(
+            f"Expected trades or bars to build signal bars from, got {named}."
+        )
     root = held[0][1].root
     _no_coarser_than(held[0], timeframe, root)
     building = [(level, dataset) for level, dataset in held if _builds(level, timeframe)]
     if not building:
         named = ", ".join(str(level) for level, _ in held)
-        raise ValueError(
+        raise UnbuildableSeriesError(
             f"Expected trades, or bars whose length divides {timeframe}, of {root} to build its "
             f"{timeframe} bars from, got {named}."
         )
@@ -234,19 +260,20 @@ def _builds(level: TickFidelity | Timeframe, timeframe: Timeframe) -> bool:
     return timeframe.nominal_seconds() % level.nominal_seconds() == 0
 
 
-_HELD = pl.Schema({"trade_date": pl.Date, "contract": pl.String})
+_HELD = pl.Schema({"trade_date": pl.Date, "contract": pl.String, "records": pl.Int64})
 
 
-def _held(store: Store, dataset: Dataset, dates: tuple[date, date]) -> pl.DataFrame:
+def held_records(store: Store, dataset: Dataset, dates: tuple[date, date]) -> pl.DataFrame:
     """The trade dates of the window from `dates`' first to its last that the dataset holds, each
     with each contract that holds it (`_HELD`): the keys of its partitions where it keeps a file
-    per trade date, else the trade dates of its bars in the window, so that a stretch without
-    records between two holds none."""
+    per trade date, whose `records` are null, its footer saying how many (`Store.record_count`),
+    else the trade dates of its bars in the window with how many it holds of each, so that a
+    stretch without records between two holds none."""
     first, last = dates
     partitions = [file.partition for file in store.list_partitions(dataset)]
     if any(isinstance(partition.key, date) for partition in partitions):
         keyed = [
-            (partition.key, partition.contract)
+            (partition.key, partition.contract, None)
             for partition in partitions
             if isinstance(partition.key, date) and first <= partition.key <= last
         ]
@@ -259,7 +286,7 @@ def _held(store: Store, dataset: Dataset, dates: tuple[date, date]) -> pl.DataFr
     if not in_window:
         return pl.DataFrame(schema=_HELD)
     held = pl.concat(in_window).filter(pl.col("trade_date").is_between(first, last))
-    return held.unique().collect()
+    return held.group_by("trade_date", "contract").agg(records=pl.len().cast(pl.Int64)).collect()
 
 
 def _finest_first(
@@ -288,7 +315,7 @@ def _no_coarser_than(
     """The dataset of `pair`, refused where its bars are coarser than `timeframe`."""
     fidelity, source = pair
     if isinstance(fidelity, Timeframe) and timeframe.nominal_seconds() < fidelity.nominal_seconds():
-        raise ValueError(
+        raise UnbuildableSeriesError(
             f"Expected a timeframe of {fidelity} or coarser from {_records(fidelity)} of {root}, "
             f"got {timeframe}."
         )

@@ -25,7 +25,8 @@ from pathlib import Path
 from sqlalchemy import Engine, bindparam, delete, select, text
 from sqlalchemy.orm import Session
 
-from fefat.backtest import saved_runs_in
+from fefat.backtest import Run, saved_runs_in
+from fefat.backtest.saved_runs import saved_run, saved_run_folders
 from fefat.config import FefatPaths
 from fefat.features.validation_report import ValidationReport
 from fefat.market.calendar import counted
@@ -36,13 +37,16 @@ from fefat_app.database.models import (
     FeatureValidationRow,
     FeatureVersionRow,
     ImportProfileRow,
+    JobRow,
     RunRow,
     StrategyRow,
     StrategyVersionFeatureRow,
     StrategyVersionRow,
 )
 from fefat_app.database.run_records import index_runs
+from fefat_app.database.schema import not_waiting, reading, skipped_when_busy
 from fefat_app.database.version_index import index_versions
+from fefat_app.job_models import ACTIVE
 
 INDEX_TABLES = (
     "feature_validations",
@@ -119,6 +123,65 @@ def index_workspace(engine: Engine, paths: FefatPaths, *, rebuild: bool = False)
         runs=indexed_runs,
         rebuilt=rebuild,
     )
+
+
+def index_saved_runs(engine: Engine, paths: FefatPaths, passed_over: set[str]) -> None:
+    """Index the run folders under `paths` that no row holds, with the versions they name in the
+    same write, so that a run finds its version, as the lists ask before they read (step 5.6).
+
+    A backtest's job writes its folder and then indexes it into its own row, so nothing is
+    indexed while any backtest is queued or running, its status read again under the write
+    lock: a job asked to stop still indexes the run it saved. A folder the SDK refuses, or
+    another engine's, is passed over and kept in `passed_over`, so that a list does not read it
+    again, and one that cannot be opened for now is read by the next list; the write is given up
+    where another writer holds the database, and the next list makes it."""
+    with Session(reading(engine)) as session:
+        if _a_backtest_is_under_way(session):
+            return
+        held = set(session.scalars(select(RunRow.run_key).where(RunRow.run_key.is_not(None))))
+    unseen = [
+        folder.name
+        for folder in saved_run_folders(paths.runs_dir)
+        if folder.name not in held and folder.name not in passed_over
+    ]
+    if not unseen:
+        return
+    # shortcut: every new folder in one read and one write, fine for the hundreds a notebook
+    # saves; write them in batches once a sweep saves thousands outside the app (BACKLOG.md).
+    runs = _readable_runs(paths, unseen, passed_over)
+    if not runs:
+        return
+    with skipped_when_busy(), Session(not_waiting(engine)) as session, session.begin():
+        if not _a_backtest_is_under_way(session):
+            index_versions(session, paths)
+            index_runs(session, runs)
+
+
+def _a_backtest_is_under_way(session: Session) -> bool:
+    """Whether an unsaved run's job is queued or running, asked to stop or not."""
+    found = session.scalars(
+        select(RunRow.id)
+        .join(JobRow, RunRow.job_id == JobRow.id)
+        .where(RunRow.run_key.is_(None), JobRow.status.in_(ACTIVE))
+        .limit(1)
+    ).first()
+    return found is not None
+
+
+def _readable_runs(paths: FefatPaths, keys: list[str], passed_over: set[str]) -> list[Run]:
+    """The saved runs of `keys` the SDK reads, each key it refuses added to `passed_over`; a file
+    another program holds, or a folder removed since it was listed, is left for the next list."""
+    runs: list[Run] = []
+    for key in keys:
+        try:
+            runs.append(saved_run(paths.runs_dir, key))
+        except ValueError:
+            # shortcut: a folder repaired by hand shows after a restart; compare its file's time
+            # if that proves common.
+            passed_over.add(key)
+        except OSError:
+            continue
+    return runs
 
 
 def _emptied_index(session: Session) -> None:

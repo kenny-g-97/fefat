@@ -22,6 +22,7 @@ and drops a column in place instead, `recreate="never"` (step 5.5, migration `00
 rebuilt table loses its triggers, a migration that rebuilds one of the tables that index a file
 makes its triggers again (the first migration, `v0001_app_state`)."""
 
+import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -31,6 +32,7 @@ from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import URL, Connection, Engine, create_engine, event
 from sqlalchemy.engine.interfaces import DBAPIConnection
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.pool import ConnectionPoolEntry
 
 MIGRATIONS = Path(__file__).with_name("migrations")
@@ -40,6 +42,8 @@ NOT_WAITING = "fefat_not_waiting"
 """The execution option of `not_waiting`'s engine."""
 BUSY_TIMEOUT_MS = 5000
 """How long a transaction waits for another writer, Python's `sqlite3`'s own five seconds."""
+PRIMARY_CODE = 0xFF
+"""The bits of an SQLite error code that name its primary error."""
 
 
 @contextmanager
@@ -102,6 +106,21 @@ def not_waiting(engine: Engine) -> Engine:
     """`engine` for writes that may be given up, refused at once while another writer holds the
     database (module docstring)."""
     return engine.execution_options(**{NOT_WAITING: True})
+
+
+@contextmanager
+def skipped_when_busy() -> Generator[None]:
+    """A write that the next request makes again, given up rather than failing the request
+    when another writer holds the database, which `not_waiting` refuses at once; SQLite's busy
+    error is its primary code, under the extended ones such as `SQLITE_BUSY_SNAPSHOT`."""
+    try:
+        yield
+    except OperationalError as refused:
+        locked = refused.orig
+        if not isinstance(locked, sqlite3.OperationalError):
+            raise
+        if locked.sqlite_errorcode & PRIMARY_CODE != sqlite3.SQLITE_BUSY:
+            raise
 
 
 def _on_begin(connection: Connection) -> None:

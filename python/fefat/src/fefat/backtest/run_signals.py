@@ -89,8 +89,8 @@ def signal_frame(
 
 
 def contract_of(root: str, contract: str) -> str:
-    """`contract`, refused unless it is a contract of `root`, the strategy's."""
+    """`contract`, refused unless it is a contract of `root`, the one the run trades."""
     contract_root, _ = parse_contract_name(contract)
     if contract_root != root:
-        raise ValueError(f"Expected a contract of {root}, the strategy's root, got {contract}.")
+        raise ValueError(f"Expected a contract of {root}, the root the run trades, got {contract}.")
     return contract

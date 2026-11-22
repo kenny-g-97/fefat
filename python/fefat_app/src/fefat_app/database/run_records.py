@@ -2,17 +2,21 @@
 the `runs` table, a row for each backtest asked for through the API, with its queued `backtest`
 job until its folder is saved, then the index of the folder, `runs/<run key>/run.json`, which
 stays the record; and, through `index_runs`, a row for each saved folder no row holds, which
-`fefat db import-workspace` finds. Each call is a transaction of its own
+`fefat db import-workspace` and the lists find (step 5.6). Each call is a transaction of its own
 (`fefat_app.database.schema`); a folder's record is read through the SDK before the write lock is
 taken, so that no writer waits on a file read. A row's columns, once its run key is set, are
 those of its folder's record, whatever its submission asked, so that the index holds the folders
-as `--rebuild` would."""
+as `--rebuild` would. A page of the list is one joined select, which takes four paths of each
+run's metrics rather than their whole document."""
 
-from collections.abc import Sequence
+import re
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import Engine, select
+from sqlalchemy import ColumnElement, Engine, Row, Select, and_, func, or_, select
 from sqlalchemy.orm import Session, undefer
 
 from fefat.backtest import Run
@@ -28,12 +32,29 @@ from fefat_app.database.schema import reading
 from fefat_app.job_models import ACTIVE, JobKind, JobStatus
 from fefat_app.runs import (
     IndexedRun,
+    KeyMetrics,
     NewRun,
+    RunCursorError,
     RunOrigin,
+    RunPage,
     RunStrategy,
-    RunWithMetrics,
+    SavedRun,
+    SavedRunWithMetrics,
     Submitted,
+    SubmittedRun,
 )
+
+type _PageSelect = Select[RunRow, JobRow, StrategyVersionRow, StrategyRow, Any, Any, Any, Any]
+"""A page's select: a run with its job, its version, its strategy, each None for a run without
+one (outer joins), and four paths of its metrics."""
+type _PageRow = Row[RunRow, JobRow, StrategyVersionRow, StrategyRow, Any, Any, Any, Any]
+
+_RUN_KEY = re.compile(r"[0-9a-f]{64}")
+_CURSOR_PARTS = "|"
+_PNL = func.json_extract(RunRow.metrics_json, "$.pnl")
+_TRADES = func.json_extract(RunRow.metrics_json, "$.trades.trades")
+_MAX_DRAWDOWN = func.json_extract(RunRow.metrics_json, "$.drawdown.max_drawdown")
+_VERDICT = func.json_extract(RunRow.metrics_json, "$.robustness.verdict")
 
 
 @dataclass(frozen=True)
@@ -47,7 +68,7 @@ class RunTables:
         with Session(self.engine) as session, session.begin():
             waiting = None if new.request_key is None else _waiting_on(session, new.request_key)
             if waiting is not None:
-                return Submitted(run=_indexed(session, waiting), queued_job_id=None)
+                return Submitted(run=_submitted_row(session, waiting), queued_job_id=None)
             job = queued_job(session, JobKind.BACKTEST, new.payload, max_attempts, now)
             row = RunRow(
                 origin=RunOrigin.MANUAL,
@@ -62,11 +83,11 @@ class RunTables:
             )
             session.add(row)
             session.flush()
-            return Submitted(run=_indexed(session, row), queued_job_id=job.id)
+            return Submitted(run=_submitted_row(session, row), queued_job_id=job.id)
 
     def saved(
         self, run_key: str, *, job_id: str | None = None, request_key: str | None = None
-    ) -> IndexedRun:
+    ) -> SavedRun:
         run = saved_run(self.paths.runs_dir, run_key)
         with Session(self.engine) as session, session.begin():
             held = session.scalars(select(RunRow).where(RunRow.run_key == run_key)).one_or_none()
@@ -74,7 +95,7 @@ class RunTables:
             if held is not None:
                 if own is not None:
                     session.delete(own)
-                return _indexed(session, held)
+                return _saved_row(session, held)
             taker = own
             if taker is None and request_key is not None:
                 taker = _waiting_on(session, request_key)
@@ -88,29 +109,47 @@ class RunTables:
             _hold_the_record(session, taker, run)
             session.add(taker)
             session.flush()
-            return _indexed(session, taker)
+            return _saved_row(session, taker)
 
-    def by_id(self, run_id: str) -> RunWithMetrics | None:
+    def by_id(self, run: str) -> SubmittedRun | SavedRunWithMetrics | None:
+        named = RunRow.run_key == run if _RUN_KEY.fullmatch(run) else RunRow.id == run
         with Session(reading(self.engine)) as session:
-            row = session.get(RunRow, run_id, options=[undefer(RunRow.metrics_json)])
+            row = session.scalars(
+                select(RunRow).where(named).options(undefer(RunRow.metrics_json))
+            ).one_or_none()
             if row is None:
                 return None
+            if row.run_key is None:
+                return _submitted_row(session, row)
+            saved = _saved_row(session, row)
             eras = () if row.fidelity_eras_json is None else row.fidelity_eras_json
-            return RunWithMetrics(
-                **dict(_indexed(session, row)),
-                metrics=None
-                if row.metrics_json is None
-                else Metrics.model_validate(row.metrics_json),
+            return SavedRunWithMetrics(
+                **dict(saved),
+                metrics=Metrics.model_validate(row.metrics_json),
                 fidelity_eras=tuple(FidelityEra.model_validate(era) for era in eras),
                 warnings=() if row.warnings_json is None else tuple(row.warnings_json),
             )
 
-    def newest(self, limit: int) -> tuple[IndexedRun, ...]:
+    def page(
+        self,
+        *,
+        strategy: str | None,
+        versioned: bool | None,
+        status: JobStatus | None,
+        cursor: str | None,
+        limit: int,
+    ) -> RunPage:
+        after = None if cursor is None else _parsed_cursor(cursor)
+        query = _page_query(strategy, versioned, status, after).limit(limit + 1)
         with Session(reading(self.engine)) as session:
-            rows = session.scalars(
-                select(RunRow).order_by(RunRow.created_at.desc(), RunRow.id.desc()).limit(limit)
-            ).all()
-            return tuple(_indexed(session, row) for row in rows)
+            rows = session.execute(query).all()
+            shown = rows[:limit]
+            more = len(rows) > limit
+            last: RunRow | None = shown[-1][0] if more else None
+            return RunPage(
+                runs=tuple(_listed(row) for row in shown),
+                next_cursor=None if last is None else _cursor_of(last),
+            )
 
 
 def index_runs(session: Session, runs: Sequence[Run]) -> int:
@@ -127,6 +166,82 @@ def index_runs(session: Session, runs: Sequence[Run]) -> int:
         added += 1
     session.flush()
     return added
+
+
+def _page_query(
+    strategy: str | None,
+    versioned: bool | None,
+    status: JobStatus | None,
+    after: tuple[datetime, str] | None,
+) -> _PageSelect:
+    """The runs that the filters keep, newest first, after `after`'s instant and id, each with
+    its job, its version, its strategy, and four paths of its metrics. The cursor compares
+    column by column, so that its instant binds through `UtcInstant` as the column's text; a
+    comparison of row values binds it in SQLite's own form and skips the rest of its day."""
+    query = (
+        select(
+            RunRow, JobRow, StrategyVersionRow, StrategyRow, _PNL, _TRADES, _MAX_DRAWDOWN, _VERDICT
+        )
+        .outerjoin(JobRow, RunRow.job_id == JobRow.id)
+        .outerjoin(StrategyVersionRow, RunRow.strategy_version_id == StrategyVersionRow.id)
+        .outerjoin(StrategyRow, StrategyVersionRow.strategy_id == StrategyRow.id)
+        .order_by(RunRow.created_at.desc(), RunRow.id.desc())
+    )
+    kept: list[ColumnElement[bool]] = []
+    if strategy is not None:
+        kept.append(StrategyRow.name == strategy)
+    if versioned is not None:
+        names = RunRow.strategy_version_id
+        kept.append(names.is_not(None) if versioned else names.is_(None))
+    if status is JobStatus.SUCCEEDED:
+        kept.append(RunRow.run_key.is_not(None))
+    elif status is not None:
+        kept.extend((RunRow.run_key.is_(None), JobRow.status == status))
+    if after is not None:
+        instant, run_id = after
+        kept.append(
+            or_(
+                RunRow.created_at < instant,
+                and_(RunRow.created_at == instant, RunRow.id < run_id),
+            )
+        )
+    return query.where(*kept)
+
+
+def _cursor_of(row: RunRow) -> str:
+    """The cursor of the page after `row`: its instant and its id, opaque to a client."""
+    instant = row.created_at.astimezone(UTC).isoformat(timespec="microseconds")
+    return urlsafe_b64encode(f"{instant}{_CURSOR_PARTS}{row.id}".encode()).decode()
+
+
+def _parsed_cursor(cursor: str) -> tuple[datetime, str]:
+    """The instant in UTC and the id `cursor` holds, refused where the list did not give it, as
+    an instant with no offset, or one UTC cannot write."""
+    try:
+        text = urlsafe_b64decode(cursor.encode()).decode()
+        instant, run_id = text.split(_CURSOR_PARTS)
+        created_at = datetime.fromisoformat(instant)
+        in_utc = None if created_at.tzinfo is None else created_at.astimezone(UTC)
+    except (ValueError, OverflowError) as unreadable:
+        raise RunCursorError(cursor) from unreadable
+    if in_utc is None:
+        raise RunCursorError(cursor)
+    return in_utc, run_id
+
+
+def _listed(row: _PageRow) -> IndexedRun:
+    """A run of a page, from the page query's joined columns."""
+    run = row[0]
+    named = _named(row[2], row[3])
+    if run.run_key is None:
+        return _submitted(run, row[1], named)
+    metrics = KeyMetrics(pnl=row[4], trades=row[5], max_drawdown=row[6], verdict=row[7])
+    return _saved(run, named, metrics)
+
+
+def _named(version: StrategyVersionRow | None, strategy: StrategyRow | None) -> RunStrategy | None:
+    """What a page's outer joins give of a run's version, None for a run that names none."""
+    return None if version is None or strategy is None else _strategy_of(version, strategy)
 
 
 def _waiting_on(session: Session, request_key: str) -> RunRow | None:
@@ -164,7 +279,8 @@ def _hold_the_record(session: Session, row: RunRow, run: Run) -> None:
     row.strategy_version_id = version_id
     row.parameters_json = {} if pin is None else pin.model_dump(mode="json")["parameters"]
     row.window_start, row.window_end = record.window.start, record.window.end
-    row.settings_json = record.config.model_dump(mode="json")
+    traded = record.config.model_copy(update={"instrument": record.instrument.root})
+    row.settings_json = traded.model_dump(mode="json")
     row.metrics_json = record.metrics.model_dump(mode="json")
     row.fidelity_eras_json = [era.model_dump(mode="json") for era in record.fidelity_eras]
     row.warnings_json = list(record.warnings)
@@ -186,45 +302,88 @@ def _version_id(session: Session, pin: StrategyPin | None) -> str | None:
     ).one_or_none()
 
 
-def _indexed(session: Session, row: RunRow) -> IndexedRun:
+def _submitted_row(session: Session, row: RunRow) -> SubmittedRun:
     job = None if row.job_id is None else session.get(JobRow, row.job_id)
-    status, progress, message, error = _state(row, job)
-    return IndexedRun(
-        id=row.id,
-        created_at=row.created_at,
-        origin=row.origin,
-        strategy=_run_strategy(session, row.strategy_version_id),
-        parameters=row.parameters_json,
-        start=row.window_start,
-        end=row.window_end,
-        settings=AppliedRunConfig.model_validate(row.settings_json),
-        status=status,
-        progress=progress,
-        message=message,
-        error=error,
-        job_id=row.job_id,
-        run_key=row.run_key,
+    return _submitted(row, job, _run_strategy(session, row.strategy_version_id))
+
+
+def _saved_row(session: Session, row: RunRow) -> SavedRun:
+    return _saved(row, _run_strategy(session, row.strategy_version_id), _key_metrics(row))
+
+
+def _head(row: RunRow, strategy: RunStrategy | None) -> dict[str, Any]:
+    """What a run's row holds in either state, its settings naming the instrument it trades: its
+    own, or its version's for a row written before D-114."""
+    settings = AppliedRunConfig.model_validate(row.settings_json)
+    if strategy is not None and settings.instrument is None:
+        settings = settings.model_copy(update={"instrument": strategy.instrument})
+    return {
+        "id": row.id,
+        "created_at": row.created_at,
+        "origin": row.origin,
+        "parameters": row.parameters_json,
+        "start": row.window_start,
+        "end": row.window_end,
+        "settings": settings,
+        "strategy": strategy,
+    }
+
+
+def _submitted(row: RunRow, job: JobRow | None, strategy: RunStrategy | None) -> SubmittedRun:
+    """The unsaved run `row`, its status its job's (`fefat_app.runs`)."""
+    if job is None:
+        raise ValueError(f"Expected the job of the unsaved run {row.id}, got none.")
+    if strategy is None:
+        raise ValueError(f"Expected the strategy version of the unsaved run {row.id}, got none.")
+    return SubmittedRun(
+        **_head(row, strategy),
+        status=job.status,
+        progress=job.progress,
+        message=job.message,
+        error=job.error,
+        job_id=job.id,
+        cancel_requested_at=job.cancel_requested_at,
     )
 
 
-def _state(row: RunRow, job: JobRow | None) -> tuple[JobStatus, float, str | None, str | None]:
-    """A run's status, progress, message, and error: `succeeded` once its folder is indexed,
-    else its job's (`fefat_app.runs`)."""
-    if row.run_key is not None:
-        return JobStatus.SUCCEEDED, 100.0, None, None
-    if job is None:
-        raise ValueError(f"Expected the job of the unsaved run {row.id}, got none.")
-    return job.status, job.progress, job.message, job.error
+def _saved(row: RunRow, strategy: RunStrategy | None, metrics: KeyMetrics) -> SavedRun:
+    """The saved run `row`, with what a list shows of how it went."""
+    if row.run_key is None:
+        raise ValueError(f"Expected the run key of the saved run {row.id}, got none.")
+    return SavedRun(
+        **_head(row, strategy),
+        job_id=row.job_id,
+        run_key=row.run_key,
+        key_metrics=metrics,
+    )
+
+
+def _key_metrics(row: RunRow) -> KeyMetrics:
+    """The four figures a list shows of the saved run `row`, from its metrics' document."""
+    document: Mapping[str, Any] | None = row.metrics_json
+    if document is None:
+        raise ValueError(f"Expected the metrics of the saved run {row.id}, got none.")
+    return KeyMetrics(
+        pnl=document["pnl"],
+        trades=document["trades"]["trades"],
+        max_drawdown=document["drawdown"]["max_drawdown"],
+        verdict=document["robustness"]["verdict"],
+    )
 
 
 def _run_strategy(session: Session, version_id: str | None) -> RunStrategy | None:
     if version_id is None:
         return None
     version = session.get_one(StrategyVersionRow, version_id)
-    strategy = session.get_one(StrategyRow, version.strategy_id)
+    return _strategy_of(version, session.get_one(StrategyRow, version.strategy_id))
+
+
+def _strategy_of(version: StrategyVersionRow, strategy: StrategyRow) -> RunStrategy:
     return RunStrategy(
         strategy_id=strategy.id,
         name=strategy.name,
         version_id=version.id,
         version=version.version_no,
+        instrument=version.instrument,
+        timeframe=version.timeframe,
     )

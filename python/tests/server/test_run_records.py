@@ -19,7 +19,13 @@ from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
 from fefat_app.database.run_records import RunTables
 from fefat_app.job_models import JobKind, JobStatus
-from fefat_app.runs import NewRun, RunOrigin
+from fefat_app.runs import (
+    IndexedRun,
+    NewRun,
+    RunOrigin,
+    RunState,
+    SavedRunWithMetrics,
+)
 from local_server import STARTED_AT
 
 WINDOW = (date(2026, 3, 5), date(2026, 3, 9))
@@ -34,6 +40,11 @@ def records(breakout_workspace: Path, engine: Engine) -> RunTables:
     shutil.copytree(breakout_workspace, paths.workspace_dir)
     LibraryTables(engine, paths).refresh()
     return RunTables(engine, paths)
+
+
+def listed(records: RunTables) -> tuple[IndexedRun, ...]:
+    """The first page of the runs, whichever they are."""
+    return records.page(strategy=None, versioned=None, status=None, cursor=None, limit=10).runs
 
 
 def the_run() -> Run:
@@ -72,20 +83,19 @@ def test_a_submission_makes_a_run_and_its_queued_job(records: RunTables, engine:
         {"spec": "the backtest's"},
         3,
     )
-    assert (run.job_id, run.status, run.progress, run.run_key) == (
+    assert (run.job_id, run.status, run.progress, run.state) == (
         job.id,
         JobStatus.QUEUED,
         0,
-        None,
+        RunState.SUBMITTED,
     )
     assert (run.origin, run.created_at, run.start, run.end) == (
         RunOrigin.MANUAL,
         STARTED_AT,
         *WINDOW,
     )
-    assert run.strategy is not None
     assert (run.strategy.name, run.strategy.version) == ("breakout", 1)
-    assert records.newest(10) == (run,)
+    assert listed(records) == (run,)
 
 
 def test_a_second_submission_of_one_request_is_the_first_while_its_job_is_active(
@@ -134,7 +144,7 @@ def test_a_saved_run_takes_its_key_and_the_columns_of_its_record(
     assert (saved.start, saved.end) == (run.record.window.start, run.record.window.end)
     assert saved.settings == run.config
     assert saved.parameters == {"lookback": 12, "stop_atr": 1.5}
-    assert read is not None
+    assert isinstance(read, SavedRunWithMetrics)
     assert read.metrics == run.metrics
     assert read.fidelity_eras == run.record.fidelity_eras
     assert read.warnings == run.record.warnings
@@ -153,7 +163,7 @@ def test_a_run_found_saved_before_its_job_indexed_it_is_that_jobs_row(
     by_the_job = records.saved(run.hash, job_id=submitted.queued_job_id)
 
     assert found.id == by_the_job.id == submitted.run.id
-    assert len(records.newest(10)) == 1
+    assert len(listed(records)) == 1
 
 
 def test_two_jobs_whose_runs_share_a_key_leave_one_row(records: RunTables, engine: Engine) -> None:
@@ -168,7 +178,7 @@ def test_two_jobs_whose_runs_share_a_key_leave_one_row(records: RunTables, engin
 
     assert again.id == kept.id == first.run.id
     assert records.by_id(second.run.id) is None
-    assert [each.id for each in records.newest(10)] == [kept.id]
+    assert [each.id for each in listed(records)] == [kept.id]
 
 
 def test_a_saved_run_no_submission_made_gets_a_row_of_its_own(

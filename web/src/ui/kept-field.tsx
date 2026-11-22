@@ -13,7 +13,7 @@ type KeptFieldProps = Readonly<{
 
 /** A text field whose text is kept once the field is left or on Enter, as the chart's contract
  * field keeps its own (web/DESIGN.md, Patterns, Live draft), so that nothing half typed is
- * acted on; a value changed from outside replaces the typed text. */
+ * acted on; a value changed from outside replaces the text, unless the trader is typing it. */
 export function KeptField({
   id,
   value,
@@ -25,11 +25,15 @@ export function KeptField({
 }: KeptFieldProps) {
   const [typed, setTyped] = useState(value)
   const [given, setGiven] = useState(value)
+  const [typing, setTyping] = useState(false)
   if (given !== value) {
     setGiven(value)
-    setTyped(value)
+    if (!typing) {
+      setTyped(value)
+    }
   }
   const keep = () => {
+    setTyping(false)
     if (typed !== value) {
       onKeep(typed)
     }
@@ -44,7 +48,10 @@ export function KeptField({
       aria-invalid={invalid}
       aria-describedby={describedBy}
       className={className}
-      onChange={(event) => setTyped(event.target.value)}
+      onChange={(event) => {
+        setTyping(true)
+        setTyped(event.target.value)
+      }}
       onBlur={keep}
       onKeyDown={(event) => {
         if (event.key === "Enter") {

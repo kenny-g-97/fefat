@@ -163,7 +163,7 @@
       },
       "AppliedRunConfig": {
         "additionalProperties": false,
-        "description": "A run's settings with every default applied (D-51), as its record keeps them: those of\n`RunConfig`, each given.",
+        "description": "A run's settings with every default applied (D-51), as its record keeps them: those of\n`RunConfig`, each given, its `instrument` none only in a record written before D-114.",
         "properties": {
           "capital": {
             "title": "Capital",
@@ -187,6 +187,18 @@
           "fidelity": {
             "title": "Fidelity",
             "type": "string"
+          },
+          "instrument": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument"
           },
           "latency_ms": {
             "minimum": 0.0,
@@ -247,19 +259,19 @@
                 "divide": "#/components/schemas/BinaryOperation",
                 "feature": "#/components/schemas/FeatureOutput",
                 "greater_than": "#/components/schemas/BinaryOperation",
-                "lag": "#/components/schemas/Window",
+                "lag": "#/components/schemas/fefat__features__combinations__Window",
                 "multiply": "#/components/schemas/BinaryOperation",
                 "not": "#/components/schemas/Negation",
                 "or": "#/components/schemas/BinaryOperation",
-                "percent_rank": "#/components/schemas/Window",
+                "percent_rank": "#/components/schemas/fefat__features__combinations__Window",
                 "ratio_to": "#/components/schemas/BinaryOperation",
-                "rolling_max": "#/components/schemas/Window",
-                "rolling_mean": "#/components/schemas/Window",
-                "rolling_min": "#/components/schemas/Window",
-                "rolling_rank": "#/components/schemas/Window",
-                "rolling_std": "#/components/schemas/Window",
+                "rolling_max": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_mean": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_min": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_rank": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_std": "#/components/schemas/fefat__features__combinations__Window",
                 "subtract": "#/components/schemas/BinaryOperation",
-                "z_score": "#/components/schemas/Window"
+                "z_score": "#/components/schemas/fefat__features__combinations__Window"
               },
               "propertyName": "kind"
             },
@@ -280,7 +292,7 @@
                 "$ref": "#/components/schemas/Negation"
               },
               {
-                "$ref": "#/components/schemas/Window"
+                "$ref": "#/components/schemas/fefat__features__combinations__Window"
               },
               {
                 "$ref": "#/components/schemas/AtTimeframe"
@@ -733,19 +745,19 @@
                 "divide": "#/components/schemas/BinaryOperation",
                 "feature": "#/components/schemas/FeatureOutput",
                 "greater_than": "#/components/schemas/BinaryOperation",
-                "lag": "#/components/schemas/Window",
+                "lag": "#/components/schemas/fefat__features__combinations__Window",
                 "multiply": "#/components/schemas/BinaryOperation",
                 "not": "#/components/schemas/Negation",
                 "or": "#/components/schemas/BinaryOperation",
-                "percent_rank": "#/components/schemas/Window",
+                "percent_rank": "#/components/schemas/fefat__features__combinations__Window",
                 "ratio_to": "#/components/schemas/BinaryOperation",
-                "rolling_max": "#/components/schemas/Window",
-                "rolling_mean": "#/components/schemas/Window",
-                "rolling_min": "#/components/schemas/Window",
-                "rolling_rank": "#/components/schemas/Window",
-                "rolling_std": "#/components/schemas/Window",
+                "rolling_max": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_mean": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_min": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_rank": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_std": "#/components/schemas/fefat__features__combinations__Window",
                 "subtract": "#/components/schemas/BinaryOperation",
-                "z_score": "#/components/schemas/Window"
+                "z_score": "#/components/schemas/fefat__features__combinations__Window"
               },
               "propertyName": "kind"
             },
@@ -766,7 +778,7 @@
                 "$ref": "#/components/schemas/Negation"
               },
               {
-                "$ref": "#/components/schemas/Window"
+                "$ref": "#/components/schemas/fefat__features__combinations__Window"
               },
               {
                 "$ref": "#/components/schemas/AtTimeframe"
@@ -787,19 +799,19 @@
                 "divide": "#/components/schemas/BinaryOperation",
                 "feature": "#/components/schemas/FeatureOutput",
                 "greater_than": "#/components/schemas/BinaryOperation",
-                "lag": "#/components/schemas/Window",
+                "lag": "#/components/schemas/fefat__features__combinations__Window",
                 "multiply": "#/components/schemas/BinaryOperation",
                 "not": "#/components/schemas/Negation",
                 "or": "#/components/schemas/BinaryOperation",
-                "percent_rank": "#/components/schemas/Window",
+                "percent_rank": "#/components/schemas/fefat__features__combinations__Window",
                 "ratio_to": "#/components/schemas/BinaryOperation",
-                "rolling_max": "#/components/schemas/Window",
-                "rolling_mean": "#/components/schemas/Window",
-                "rolling_min": "#/components/schemas/Window",
-                "rolling_rank": "#/components/schemas/Window",
-                "rolling_std": "#/components/schemas/Window",
+                "rolling_max": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_mean": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_min": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_rank": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_std": "#/components/schemas/fefat__features__combinations__Window",
                 "subtract": "#/components/schemas/BinaryOperation",
-                "z_score": "#/components/schemas/Window"
+                "z_score": "#/components/schemas/fefat__features__combinations__Window"
               },
               "propertyName": "kind"
             },
@@ -820,7 +832,7 @@
                 "$ref": "#/components/schemas/Negation"
               },
               {
-                "$ref": "#/components/schemas/Window"
+                "$ref": "#/components/schemas/fefat__features__combinations__Window"
               },
               {
                 "$ref": "#/components/schemas/AtTimeframe"
@@ -1867,6 +1879,59 @@
           "longest_drawdown_days"
         ],
         "title": "DrawdownStatistics",
+        "type": "object"
+      },
+      "EstimateSettings": {
+        "additionalProperties": false,
+        "description": "The settings that change what a run reads, each left out taking the run's default: the\nfinest data it fills on, the provider whose data it reads, the one contract it reads in\nplace of the roll calendar's fronts, and the instrument it trades in place of the one its\nstrategy names (D-114).",
+        "properties": {
+          "contract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract"
+          },
+          "fidelity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fidelity"
+          },
+          "instrument": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "title": "EstimateSettings",
         "type": "object"
       },
       "FeatureCode": {
@@ -2943,123 +3008,6 @@
         "title": "IndexedFeature",
         "type": "object"
       },
-      "IndexedRun": {
-        "description": "A run as the index holds it: its row's id; when it was asked for, or saved where the index\nfound it saved; its origin; the strategy version it names, None for one written in a notebook;\nits parameters as bound; the trade dates its window spans, its signal bars' once saved; its\nsettings, every default applied; its status, `succeeded` once its folder is indexed, else its\njob's, with the job's progress, message, and error; its job's id, None where the index found\nit saved; and its run key once saved, the name of its folder.",
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "end": {
-            "format": "date",
-            "title": "End",
-            "type": "string"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "job_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Job Id"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "origin": {
-            "$ref": "#/components/schemas/RunOrigin"
-          },
-          "parameters": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Parameters",
-            "type": "object"
-          },
-          "progress": {
-            "title": "Progress",
-            "type": "number"
-          },
-          "run_key": {
-            "anyOf": [
-              {
-                "pattern": "^[0-9a-f]{64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Key"
-          },
-          "settings": {
-            "$ref": "#/components/schemas/AppliedRunConfig"
-          },
-          "start": {
-            "format": "date",
-            "title": "Start",
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/JobStatus"
-          },
-          "strategy": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunStrategy"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "created_at",
-          "origin",
-          "strategy",
-          "parameters",
-          "start",
-          "end",
-          "settings",
-          "status",
-          "progress",
-          "message",
-          "error",
-          "job_id",
-          "run_key"
-        ],
-        "title": "IndexedRun",
-        "type": "object"
-      },
       "IndexedStrategy": {
         "description": "A saved strategy as the index holds it: its row's id, its name, its kind, its versions in\norder, its abandoned mark where it holds one (step 5.5), and when its newest saved run was\nmade, None before its first.",
         "properties": {
@@ -3498,6 +3446,34 @@
         "type": "string"
       },
       "JsonValue": {},
+      "KeyMetrics": {
+        "description": "What a list shows of how a saved run went: its net P&L, its trades, its maximum drawdown,\nand its robustness verdict, as its record holds them.",
+        "properties": {
+          "max_drawdown": {
+            "title": "Max Drawdown",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "string"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          }
+        },
+        "required": [
+          "pnl",
+          "trades",
+          "max_drawdown",
+          "verdict"
+        ],
+        "title": "KeyMetrics",
+        "type": "object"
+      },
       "LimitFill": {
         "description": "When a limit fills: once the market trades through its price (F-LMT-01, the default)\nor once it touches it (F-LMT-02).",
         "enum": [
@@ -3800,19 +3776,19 @@
                 "divide": "#/components/schemas/BinaryOperation",
                 "feature": "#/components/schemas/FeatureOutput",
                 "greater_than": "#/components/schemas/BinaryOperation",
-                "lag": "#/components/schemas/Window",
+                "lag": "#/components/schemas/fefat__features__combinations__Window",
                 "multiply": "#/components/schemas/BinaryOperation",
                 "not": "#/components/schemas/Negation",
                 "or": "#/components/schemas/BinaryOperation",
-                "percent_rank": "#/components/schemas/Window",
+                "percent_rank": "#/components/schemas/fefat__features__combinations__Window",
                 "ratio_to": "#/components/schemas/BinaryOperation",
-                "rolling_max": "#/components/schemas/Window",
-                "rolling_mean": "#/components/schemas/Window",
-                "rolling_min": "#/components/schemas/Window",
-                "rolling_rank": "#/components/schemas/Window",
-                "rolling_std": "#/components/schemas/Window",
+                "rolling_max": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_mean": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_min": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_rank": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_std": "#/components/schemas/fefat__features__combinations__Window",
                 "subtract": "#/components/schemas/BinaryOperation",
-                "z_score": "#/components/schemas/Window"
+                "z_score": "#/components/schemas/fefat__features__combinations__Window"
               },
               "propertyName": "kind"
             },
@@ -3833,7 +3809,7 @@
                 "$ref": "#/components/schemas/Negation"
               },
               {
-                "$ref": "#/components/schemas/Window"
+                "$ref": "#/components/schemas/fefat__features__combinations__Window"
               },
               {
                 "$ref": "#/components/schemas/AtTimeframe"
@@ -4119,6 +4095,39 @@
           "hypothesis"
         ],
         "title": "NewStrategyVersionRequest",
+        "type": "object"
+      },
+      "NoDataToEstimate": {
+        "description": "A run's estimate where the store holds none of the instrument it would trade, with the\nversion's timeframe and the `instruments` the store holds, which it could trade instead.",
+        "properties": {
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "instruments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Instruments",
+            "type": "array"
+          },
+          "state": {
+            "const": "no_data",
+            "default": "no_data",
+            "title": "State",
+            "type": "string"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument",
+          "timeframe",
+          "instruments"
+        ],
+        "title": "NoDataToEstimate",
         "type": "object"
       },
       "OffsetCause": {
@@ -4928,7 +4937,7 @@
       },
       "RunConfig": {
         "additionalProperties": false,
-        "description": "A backtest's settings: `fidelity`, the finest data it fills on, each trade date on its\nfinest level at or coarser than it (D-58), the finest the store holds when left out;\n`latency_ms` from a decision to its orders' activation (F-ACT-01); `slippage_ticks` of market\nand stop orders, by default none on TBBO and one on every other fidelity, the run's fidelity\nsetting deciding, whatever level a date falls back to (F-SLP-01); `limit_fill`\n(F-LMT-01, F-LMT-02); `roll_handling` (F-ROL-02, F-ROL-04); `fee_table`, a table of\n`fefat.market.fees`, by default `retail-default` for futures and `binance-default` for crypto;\n`capital`, in the instrument's currency; `replay`, skipping what no order can act on or in\nfull, which give the same fills (`02` \u00a74); `provider`, as `load` takes it; and `contract`,\none contract of the strategy's root read unspliced, as `load` reads a contract, so that the\nrun crosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll\ncalendar's fronts.",
+        "description": "A backtest's settings: `fidelity`, the finest data it fills on, each trade date on its\nfinest level at or coarser than it (D-58), the finest the store holds when left out;\n`latency_ms` from a decision to its orders' activation (F-ACT-01); `slippage_ticks` of market\nand stop orders, by default none on TBBO and one on every other fidelity, the run's fidelity\nsetting deciding, whatever level a date falls back to (F-SLP-01); `limit_fill`\n(F-LMT-01, F-LMT-02); `roll_handling` (F-ROL-02, F-ROL-04); `fee_table`, a table of\n`fefat.market.fees`, by default `retail-default` for futures and `binance-default` for crypto;\n`capital`, in the instrument's currency; `replay`, skipping what no order can act on or in\nfull, which give the same fills (`02` \u00a74); `provider`, as `load` takes it; `contract`, one\ncontract of the root it trades read unspliced, as `load` reads a contract, so that the run\ncrosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll calendar's\nfronts; and `instrument`, the root it trades, as if the strategy's code named it, while a\nfeature keeps reading the instrument it declares (D-114), by default the one the code names.",
         "properties": {
           "capital": {
             "anyOf": [
@@ -4976,6 +4985,18 @@
             ],
             "title": "Fidelity"
           },
+          "instrument": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument"
+          },
           "latency_ms": {
             "default": 100,
             "minimum": 0.0,
@@ -5019,6 +5040,158 @@
         "title": "RunConfig",
         "type": "object"
       },
+      "RunEstimateRequest": {
+        "additionalProperties": false,
+        "description": "What to estimate of a run of a saved strategy version: the id of the version's row; the\ntrade dates, each left out meaning where the data starts or ends; and what the run reads.",
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/EstimateSettings"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "strategy_version_id": {
+            "title": "Strategy Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "strategy_version_id"
+        ],
+        "title": "RunEstimateRequest",
+        "type": "object"
+      },
+      "RunEstimated": {
+        "additionalProperties": false,
+        "description": "What a run of the version would read, before anything runs (`WindowEstimate`), with the\ninstrument it would trade, the version's timeframe, and the `instruments` the store holds.",
+        "properties": {
+          "bars": {
+            "minimum": 0.0,
+            "title": "Bars",
+            "type": "integer"
+          },
+          "contracts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Contracts",
+            "type": "array"
+          },
+          "fee_tables": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fee Tables",
+            "type": "array"
+          },
+          "held": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/fefat__backtest__record__Window"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "instruments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Instruments",
+            "type": "array"
+          },
+          "levels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Levels",
+            "type": "array"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "sessions": {
+            "minimum": 0.0,
+            "title": "Sessions",
+            "type": "integer"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AppliedRunConfig"
+          },
+          "state": {
+            "const": "estimated",
+            "default": "estimated",
+            "title": "State",
+            "type": "string"
+          },
+          "ticks": {
+            "minimum": 0.0,
+            "title": "Ticks",
+            "type": "integer"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/fefat__backtest__record__Window"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "settings",
+          "providers",
+          "contracts",
+          "levels",
+          "fee_tables",
+          "held",
+          "window",
+          "sessions",
+          "bars",
+          "ticks",
+          "instrument",
+          "timeframe",
+          "instruments"
+        ],
+        "title": "RunEstimated",
+        "type": "object"
+      },
       "RunOrigin": {
         "description": "Where a run's row comes from: asked for through the API, or found saved by the index; the\nbatches of later phases add theirs.",
         "enum": [
@@ -5027,15 +5200,66 @@
         "title": "RunOrigin",
         "type": "string"
       },
-      "RunStrategy": {
-        "description": "The saved strategy version a run names, as the index holds it: the strategy's row's id and\nname, and the version's row's id and number.",
+      "RunPage": {
+        "description": "A page of the runs, newest first (step 5.6), with the cursor of the next, None on the\nlast.",
         "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "runs": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "saved": "#/components/schemas/SavedRun",
+                  "submitted": "#/components/schemas/SubmittedRun"
+                },
+                "propertyName": "state"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SubmittedRun"
+                },
+                {
+                  "$ref": "#/components/schemas/SavedRun"
+                }
+              ]
+            },
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs",
+          "next_cursor"
+        ],
+        "title": "RunPage",
+        "type": "object"
+      },
+      "RunStrategy": {
+        "description": "The saved strategy version a run names, as the index holds it: the strategy's row's id and\nname, the version's row's id and number, and the instrument its code names and the timeframe;\nthe run's settings name the instrument it trades, which may be another (D-114).",
+        "properties": {
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
           },
           "strategy_id": {
             "title": "Strategy Id",
+            "type": "string"
+          },
+          "timeframe": {
+            "title": "Timeframe",
             "type": "string"
           },
           "version": {
@@ -5051,7 +5275,9 @@
           "strategy_id",
           "name",
           "version_id",
-          "version"
+          "version",
+          "instrument",
+          "timeframe"
         ],
         "title": "RunStrategy",
         "type": "object"
@@ -5093,150 +5319,6 @@
         "title": "RunSubmission",
         "type": "object"
       },
-      "RunWithMetrics": {
-        "description": "A run with what its record says of how it went, once saved: its metrics, the fidelity era\nof each trade date it filled on, and its warnings; none of them before.",
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "end": {
-            "format": "date",
-            "title": "End",
-            "type": "string"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "fidelity_eras": {
-            "items": {
-              "$ref": "#/components/schemas/FidelityEra"
-            },
-            "title": "Fidelity Eras",
-            "type": "array"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "job_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Job Id"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "metrics": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Metrics"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "origin": {
-            "$ref": "#/components/schemas/RunOrigin"
-          },
-          "parameters": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Parameters",
-            "type": "object"
-          },
-          "progress": {
-            "title": "Progress",
-            "type": "number"
-          },
-          "run_key": {
-            "anyOf": [
-              {
-                "pattern": "^[0-9a-f]{64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Key"
-          },
-          "settings": {
-            "$ref": "#/components/schemas/AppliedRunConfig"
-          },
-          "start": {
-            "format": "date",
-            "title": "Start",
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/JobStatus"
-          },
-          "strategy": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunStrategy"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "warnings": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Warnings",
-            "type": "array"
-          }
-        },
-        "required": [
-          "id",
-          "created_at",
-          "origin",
-          "strategy",
-          "parameters",
-          "start",
-          "end",
-          "settings",
-          "status",
-          "progress",
-          "message",
-          "error",
-          "job_id",
-          "run_key",
-          "metrics",
-          "fidelity_eras",
-          "warnings"
-        ],
-        "title": "RunWithMetrics",
-        "type": "object"
-      },
       "SampleSize": {
         "description": "Which of the skill's trade counts a run reaches: an absolute minimum of 30, 100\npreferred, and 200 for high confidence.",
         "enum": [
@@ -5271,19 +5353,19 @@
                     "divide": "#/components/schemas/BinaryOperation",
                     "feature": "#/components/schemas/FeatureOutput",
                     "greater_than": "#/components/schemas/BinaryOperation",
-                    "lag": "#/components/schemas/Window",
+                    "lag": "#/components/schemas/fefat__features__combinations__Window",
                     "multiply": "#/components/schemas/BinaryOperation",
                     "not": "#/components/schemas/Negation",
                     "or": "#/components/schemas/BinaryOperation",
-                    "percent_rank": "#/components/schemas/Window",
+                    "percent_rank": "#/components/schemas/fefat__features__combinations__Window",
                     "ratio_to": "#/components/schemas/BinaryOperation",
-                    "rolling_max": "#/components/schemas/Window",
-                    "rolling_mean": "#/components/schemas/Window",
-                    "rolling_min": "#/components/schemas/Window",
-                    "rolling_rank": "#/components/schemas/Window",
-                    "rolling_std": "#/components/schemas/Window",
+                    "rolling_max": "#/components/schemas/fefat__features__combinations__Window",
+                    "rolling_mean": "#/components/schemas/fefat__features__combinations__Window",
+                    "rolling_min": "#/components/schemas/fefat__features__combinations__Window",
+                    "rolling_rank": "#/components/schemas/fefat__features__combinations__Window",
+                    "rolling_std": "#/components/schemas/fefat__features__combinations__Window",
                     "subtract": "#/components/schemas/BinaryOperation",
-                    "z_score": "#/components/schemas/Window"
+                    "z_score": "#/components/schemas/fefat__features__combinations__Window"
                   },
                   "propertyName": "kind"
                 },
@@ -5304,7 +5386,7 @@
                     "$ref": "#/components/schemas/Negation"
                   },
                   {
-                    "$ref": "#/components/schemas/Window"
+                    "$ref": "#/components/schemas/fefat__features__combinations__Window"
                   },
                   {
                     "$ref": "#/components/schemas/AtTimeframe"
@@ -5427,6 +5509,224 @@
           "feature_id"
         ],
         "title": "SavedFeatureVersion",
+        "type": "object"
+      },
+      "SavedRun": {
+        "description": "A run whose folder is saved and indexed: `succeeded`, at 100; the version it names, None\nfor a strategy built in a notebook; the job that made it, None where the index found it\nsaved; its run key, the name of its folder; and what a list shows of how it went.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "key_metrics": {
+            "$ref": "#/components/schemas/KeyMetrics"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/RunOrigin"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Parameters",
+            "type": "object"
+          },
+          "progress": {
+            "const": 100,
+            "default": 100,
+            "title": "Progress",
+            "type": "integer"
+          },
+          "run_key": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Run Key",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AppliedRunConfig"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "state": {
+            "const": "saved",
+            "default": "saved",
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "const": "succeeded",
+            "default": "succeeded",
+            "title": "Status",
+            "type": "string"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunStrategy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "origin",
+          "parameters",
+          "start",
+          "end",
+          "settings",
+          "strategy",
+          "job_id",
+          "run_key",
+          "key_metrics"
+        ],
+        "title": "SavedRun",
+        "type": "object"
+      },
+      "SavedRunWithMetrics": {
+        "description": "A saved run with what its record says of how it went: its metrics, the fidelity era of\neach trade date it filled on, and its warnings.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "fidelity_eras": {
+            "items": {
+              "$ref": "#/components/schemas/FidelityEra"
+            },
+            "title": "Fidelity Eras",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "key_metrics": {
+            "$ref": "#/components/schemas/KeyMetrics"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/Metrics"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/RunOrigin"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Parameters",
+            "type": "object"
+          },
+          "progress": {
+            "const": 100,
+            "default": 100,
+            "title": "Progress",
+            "type": "integer"
+          },
+          "run_key": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Run Key",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AppliedRunConfig"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "state": {
+            "const": "saved",
+            "default": "saved",
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "const": "succeeded",
+            "default": "succeeded",
+            "title": "Status",
+            "type": "string"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunStrategy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "origin",
+          "parameters",
+          "start",
+          "end",
+          "settings",
+          "strategy",
+          "job_id",
+          "run_key",
+          "key_metrics",
+          "metrics",
+          "fidelity_eras",
+          "warnings"
+        ],
+        "title": "SavedRunWithMetrics",
         "type": "object"
       },
       "SavedStrategyVersion": {
@@ -6207,6 +6507,184 @@
         "title": "StrategyTemplate",
         "type": "object"
       },
+      "StressedRuns": {
+        "description": "The runs of a stress (step 5.6, D-29): the base run, then the same at one and at two more\nticks of slippage on market and stop orders, each a run of its own.",
+        "properties": {
+          "runs": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "saved": "#/components/schemas/SavedRun",
+                    "submitted": "#/components/schemas/SubmittedRun"
+                  },
+                  "propertyName": "state"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmittedRun"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SavedRun"
+                  }
+                ]
+              },
+              {
+                "discriminator": {
+                  "mapping": {
+                    "saved": "#/components/schemas/SavedRun",
+                    "submitted": "#/components/schemas/SubmittedRun"
+                  },
+                  "propertyName": "state"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmittedRun"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SavedRun"
+                  }
+                ]
+              },
+              {
+                "discriminator": {
+                  "mapping": {
+                    "saved": "#/components/schemas/SavedRun",
+                    "submitted": "#/components/schemas/SubmittedRun"
+                  },
+                  "propertyName": "state"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmittedRun"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SavedRun"
+                  }
+                ]
+              }
+            ],
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs"
+        ],
+        "title": "StressedRuns",
+        "type": "object"
+      },
+      "SubmittedRun": {
+        "description": "A run asked for whose job has yet to save it: the version it runs, its job's id, and the\njob's status, progress, message, and error, and when it was asked to stop.",
+        "properties": {
+          "cancel_requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Requested At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/RunOrigin"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Parameters",
+            "type": "object"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AppliedRunConfig"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "state": {
+            "const": "submitted",
+            "default": "submitted",
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/RunStrategy"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "origin",
+          "parameters",
+          "start",
+          "end",
+          "settings",
+          "strategy",
+          "status",
+          "progress",
+          "message",
+          "error",
+          "job_id",
+          "cancel_requested_at"
+        ],
+        "title": "SubmittedRun",
+        "type": "object"
+      },
       "TableAsked": {
         "additionalProperties": false,
         "description": "A file's table as `layout` reads it, or as its first lines suggest where it is None.",
@@ -6974,7 +7452,29 @@
         "title": "Weekday",
         "type": "integer"
       },
-      "Window": {
+      "fefat__backtest__record__Window": {
+        "additionalProperties": false,
+        "description": "The trade dates a run's signal bars span, from `start` to `end`.",
+        "properties": {
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "Window",
+        "type": "object"
+      },
+      "fefat__features__combinations__Window": {
         "additionalProperties": false,
         "description": "A window over the last `n` bars of a term, `lag` the term `n` bars before.",
         "properties": {
@@ -7010,19 +7510,19 @@
                 "divide": "#/components/schemas/BinaryOperation",
                 "feature": "#/components/schemas/FeatureOutput",
                 "greater_than": "#/components/schemas/BinaryOperation",
-                "lag": "#/components/schemas/Window",
+                "lag": "#/components/schemas/fefat__features__combinations__Window",
                 "multiply": "#/components/schemas/BinaryOperation",
                 "not": "#/components/schemas/Negation",
                 "or": "#/components/schemas/BinaryOperation",
-                "percent_rank": "#/components/schemas/Window",
+                "percent_rank": "#/components/schemas/fefat__features__combinations__Window",
                 "ratio_to": "#/components/schemas/BinaryOperation",
-                "rolling_max": "#/components/schemas/Window",
-                "rolling_mean": "#/components/schemas/Window",
-                "rolling_min": "#/components/schemas/Window",
-                "rolling_rank": "#/components/schemas/Window",
-                "rolling_std": "#/components/schemas/Window",
+                "rolling_max": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_mean": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_min": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_rank": "#/components/schemas/fefat__features__combinations__Window",
+                "rolling_std": "#/components/schemas/fefat__features__combinations__Window",
                 "subtract": "#/components/schemas/BinaryOperation",
-                "z_score": "#/components/schemas/Window"
+                "z_score": "#/components/schemas/fefat__features__combinations__Window"
               },
               "propertyName": "kind"
             },
@@ -7043,7 +7543,7 @@
                 "$ref": "#/components/schemas/Negation"
               },
               {
-                "$ref": "#/components/schemas/Window"
+                "$ref": "#/components/schemas/fefat__features__combinations__Window"
               },
               {
                 "$ref": "#/components/schemas/AtTimeframe"
@@ -9358,22 +9858,114 @@
     },
     "/v1/runs": {
       "get": {
-        "description": "The hundred newest runs, newest first, without their metrics.",
-        "operationId": "newest_runs_v1_runs_get",
+        "description": "A page of the runs, newest first, the run folders no row holds indexed first, unless a\nbacktest is queued or running; refused with 400 for a cursor the list did not give and 409\nwhere the library holds files the index cannot follow.",
+        "operationId": "listed_runs_v1_runs_get",
+        "parameters": [
+          {
+            "description": "A strategy's name.",
+            "in": "query",
+            "name": "strategy",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A strategy's name.",
+              "title": "Strategy"
+            }
+          },
+          {
+            "description": "False for the runs that name no saved version.",
+            "in": "query",
+            "name": "versioned",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "False for the runs that name no saved version.",
+              "title": "Versioned"
+            }
+          },
+          {
+            "description": "A run's status.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A run's status.",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "The `next_cursor` of the page before.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `next_cursor` of the page before.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/IndexedRun"
-                  },
-                  "title": "Response Newest Runs V1 Runs Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/RunPage"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
           },
           "401": {
             "content": {
@@ -9384,6 +9976,26 @@
               }
             },
             "description": "Unauthorized"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           }
         },
         "security": [
@@ -9397,7 +10009,7 @@
             "CsrfToken": []
           }
         ],
-        "summary": "Newest Runs",
+        "summary": "Listed Runs",
         "tags": [
           "runs"
         ]
@@ -9420,7 +10032,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IndexedRun"
+                  "$ref": "#/components/schemas/SavedRun"
                 }
               }
             },
@@ -9430,7 +10042,22 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IndexedRun"
+                  "discriminator": {
+                    "mapping": {
+                      "saved": "#/components/schemas/SavedRun",
+                      "submitted": "#/components/schemas/SubmittedRun"
+                    },
+                    "propertyName": "state"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SubmittedRun"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SavedRun"
+                    }
+                  ],
+                  "title": "Response Submit Run V1 Runs Post"
                 }
               }
             },
@@ -9514,19 +10141,240 @@
         ]
       }
     },
-    "/v1/runs/{run_id}": {
+    "/v1/runs/estimate": {
+      "post": {
+        "description": "What a run of the version would read, before anything runs and without its code: what it\ncan choose among, the settings it would apply, the trade dates held, and the sessions, bars,\nand ticks of the window; refused with 400 in the SDK's words, 404 where no version has the\nid, and 409 where the library holds files the index cannot follow.",
+        "operationId": "estimate_run_v1_runs_estimate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunEstimateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "estimated": "#/components/schemas/RunEstimated",
+                      "no_data": "#/components/schemas/NoDataToEstimate"
+                    },
+                    "propertyName": "state"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/NoDataToEstimate"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunEstimated"
+                    }
+                  ],
+                  "title": "Response Estimate Run V1 Runs Estimate Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Estimate Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/stress": {
+      "post": {
+        "description": "The run, then the same at one and at two more ticks of slippage on market and stop orders,\neach a run of its own, answered as `POST /v1/runs` answers it, and refused as it is.",
+        "operationId": "stress_run_v1_runs_stress_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSubmission"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressedRuns"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefusedCodeProblem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Stress Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run}": {
       "get": {
-        "description": "The run, with its metrics, its fidelity eras, and its warnings once saved.",
-        "operationId": "run_by_id_v1_runs__run_id__get",
+        "description": "The run, by its id or its run key, with its metrics, its fidelity eras, and its warnings\nonce saved.",
+        "operationId": "run_by_id_v1_runs__run__get",
         "parameters": [
           {
-            "description": "A run's id in the index, a UUIDv7.",
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
             "in": "path",
-            "name": "run_id",
+            "name": "run",
             "required": true,
             "schema": {
-              "description": "A run's id in the index, a UUIDv7.",
-              "title": "Run Id",
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
               "type": "string"
             }
           }
@@ -9536,7 +10384,22 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunWithMetrics"
+                  "discriminator": {
+                    "mapping": {
+                      "saved": "#/components/schemas/SavedRunWithMetrics",
+                      "submitted": "#/components/schemas/SubmittedRun"
+                    },
+                    "propertyName": "state"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SubmittedRun"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SavedRunWithMetrics"
+                    }
+                  ],
+                  "title": "Response Run By Id V1 Runs  Run  Get"
                 }
               }
             },
@@ -9590,19 +10453,19 @@
         ]
       }
     },
-    "/v1/runs/{run_id}/cancel": {
+    "/v1/runs/{run}/cancel": {
       "post": {
         "description": "Cancel the run's job, at once while it is queued, asked while it runs; a saved run, or\none whose job has ended, is answered as it is.",
-        "operationId": "cancel_run_v1_runs__run_id__cancel_post",
+        "operationId": "cancel_run_v1_runs__run__cancel_post",
         "parameters": [
           {
-            "description": "A run's id in the index, a UUIDv7.",
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
             "in": "path",
-            "name": "run_id",
+            "name": "run",
             "required": true,
             "schema": {
-              "description": "A run's id in the index, a UUIDv7.",
-              "title": "Run Id",
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
               "type": "string"
             }
           }
@@ -9612,7 +10475,22 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunWithMetrics"
+                  "discriminator": {
+                    "mapping": {
+                      "saved": "#/components/schemas/SavedRunWithMetrics",
+                      "submitted": "#/components/schemas/SubmittedRun"
+                    },
+                    "propertyName": "state"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SubmittedRun"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SavedRunWithMetrics"
+                    }
+                  ],
+                  "title": "Response Cancel Run V1 Runs  Run  Cancel Post"
                 }
               }
             },

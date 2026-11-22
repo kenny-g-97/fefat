@@ -9,7 +9,7 @@ import { Segmented } from "@/ui/segmented"
 import { SheetTrigger } from "@/ui/sheet"
 import { contractChoice } from "./chart-panes"
 import type { ChartSearch } from "./chart-search"
-import { Choice, type Option, Picker } from "./Picker"
+import { Choice, type Option, Picker } from "@/ui/picker"
 
 type ChartToolbarProps = Readonly<{
   roots: readonly string[]

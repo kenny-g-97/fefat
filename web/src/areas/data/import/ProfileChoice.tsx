@@ -1,7 +1,7 @@
 import type { Dispatch } from "react"
 import type { ListedProfile } from "@/api/imports"
 import { Button } from "@/ui/button"
-import { Choice, Picker } from "../Picker"
+import { Choice, Picker } from "@/ui/picker"
 import type { DraftChange, ProfileDraft } from "./import-draft"
 import { listedProfile } from "./import-request"
 

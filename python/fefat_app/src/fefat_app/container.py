@@ -105,7 +105,7 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
         ),
         strategies=SavedStrategies(library, executor, paths.strategies_dir),
         features=SavedFeatures(library, executor, paths.features_dir),
-        runs=Runs(RunTables(engine, paths), library, executor, jobs, paths.strategies_dir, clock),
+        runs=Runs(RunTables(engine, paths), library, executor, jobs, paths, clock),
         imports=Imports(executor, jobs, UploadFolders(paths.uploads_dir, clock), paths, settings),
     )
 

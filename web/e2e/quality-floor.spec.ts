@@ -1,3 +1,5 @@
+import type { Page } from "@playwright/test"
+import { z } from "zod"
 import { lowContrastInEachTheme } from "./support/contrast.ts"
 import { expect, test } from "./support/fixtures.ts"
 
@@ -6,6 +8,10 @@ import { expect, test } from "./support/fixtures.ts"
 // console stays free of errors (a refused style or font among them), keyboard focus shows,
 // reduced motion stops the transitions, and text, fields, and focus rings keep WCAG's
 // contrast in both themes. A page a later step adds joins PATHS.
+
+const seededRuns = z.object({
+  runs: z.array(z.object({ run_key: z.string() })),
+})
 
 const PATHS = [
   "/",
@@ -28,6 +34,19 @@ const PATHS = [
   "/no-such-page",
 ]
 
+/** `PATHS` and the page of the seeded run, whose address the server's list gives (step 5.6). */
+async function everyPath(page: Page): Promise<readonly string[]> {
+  const answer = await page.request.get("/v1/runs", {
+    params: { status: "succeeded" },
+  })
+  const { runs } = seededRuns.parse(await answer.json())
+  const seeded = runs.at(-1)
+  if (seeded === undefined) {
+    throw new Error("Expected the seed's saved run, got none.")
+  }
+  return [...PATHS, `/runs/run?key=${seeded.run_key}`]
+}
+
 test("no page scrolls sideways at 1280 px or logs an error", async ({
   loggedIn: page,
 }) => {
@@ -39,7 +58,7 @@ test("no page scrolls sideways at 1280 px or logs an error", async ({
   })
   page.on("pageerror", (error) => errors.push(error.message))
 
-  for (const path of PATHS) {
+  for (const path of await everyPath(page)) {
     await page.goto(path)
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
     // Once its requests are answered, so that a page is measured with what it loads drawn.
@@ -146,7 +165,7 @@ test("reduced motion stops every transition, on every page", async ({
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" })
   const moving: string[] = []
-  for (const path of PATHS) {
+  for (const path of await everyPath(page)) {
     await page.goto(path)
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
     await page.waitForLoadState("networkidle")
@@ -218,7 +237,7 @@ test("text, placeholders, and field borders keep their contrast on every page, i
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" })
   const problems: string[] = []
-  for (const path of PATHS) {
+  for (const path of await everyPath(page)) {
     await page.goto(path)
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
     await page.waitForLoadState("networkidle")

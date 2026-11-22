@@ -19,20 +19,21 @@ const desktop = {
 /** The specs that write the seeded store, which run after every other, since the others hold
  * the seed exact (step 5.12, plan call 12): the wizard's first import, then the next ones, which
  * read what the first kept, each in a project of its own, since a project's dependencies alone
- * order two spec files, and a clip is set per file; and last the delete of step 5.18, which
- * removes data the others read. */
+ * order two spec files, and a clip is set per file; then the delete of step 5.18, which removes
+ * data the others read; and last the launches of step 5.6, whose saved runs the delete counts. */
 const STORE_WRITERS = [
   "import.spec.ts",
   "import-next.spec.ts",
   "import-breaks.spec.ts",
   "data-delete.spec.ts",
+  "run-launch.spec.ts",
 ]
 
 /** The UI harness of step 4.3 (`just e2e`): every spec against the built app that `fefat up`
  * serves on a seeded temporary home, and the login and the jobs' streams (step 4.4) once more
  * through the Vite dev server's proxy, at desktop size alone (D-54); then the specs that write
- * the store, the import wizard's (step 5.12) and the delete's (step 5.18), once both have run,
- * one after the other. */
+ * the store, the import wizard's (step 5.12), the delete's (step 5.18), and the launches'
+ * (step 5.6), once both have run, one after the other. */
 export default defineConfig({
   testDir: "./e2e",
   workers: 1,
@@ -72,6 +73,12 @@ export default defineConfig({
       name: "desktop-delete",
       testMatch: ["data-delete.spec.ts"],
       dependencies: ["desktop-import-breaks"],
+      use: { ...desktop, baseURL: `http://127.0.0.1:${SERVER_PORT}` },
+    },
+    {
+      name: "desktop-runs",
+      testMatch: ["run-launch.spec.ts"],
+      dependencies: ["desktop-delete"],
       use: { ...desktop, baseURL: `http://127.0.0.1:${SERVER_PORT}` },
     },
   ],

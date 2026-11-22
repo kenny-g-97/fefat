@@ -1,40 +1,51 @@
 """The runs over the API (step 5.3, D-93, ADR-0020): a backtest of a saved strategy version asked
-for, answered with the run its request finds saved, or queued as a `backtest` job; the newest
-runs; a run with its metrics; and a run's job cancelled. A submission indexes the library first,
-so that a version a notebook saved is found and a library the index cannot follow refuses it
-before anything runs, checks the version's file as indexed, and looks the run up in the executor
-(`fefat_app.services.code_runs`), which builds the strategy from the version's code there, never
-in the server; the run's row and its queued job are made in one transaction by the runs'
-records, which the dispatcher then runs."""
+for, answered with the run its request finds saved, or queued as a `backtest` job; a page of the
+runs (step 5.6); a run with its metrics; a run's job cancelled; what a run would read before
+anything runs; and a stress, the same run at more ticks of slippage. A submission indexes the
+library first, so that a version a notebook saved is found and a library the index cannot follow
+refuses it before anything runs, checks the version's file as indexed, and looks the run up in
+the executor (`fefat_app.services.code_runs`), which builds the strategy from the version's code
+there, never in the server; the run's row and its queued job are made in one transaction by the
+runs' records, which the dispatcher then runs."""
 
 from dataclasses import dataclass
 from datetime import date
-from pathlib import Path
 
 from pydantic import JsonValue
 
 from fefat.backtest import RunConfig
+from fefat.backtest.estimates import estimated, held_instruments
+from fefat.config import FefatPaths
+from fefat.market.schema import Timeframe
+from fefat.reference.settings import SlippageTicks
 from fefat_app.execution import BacktestSpec
+from fefat_app.job_models import JobStatus
 from fefat_app.library import (
     IndexedStrategy,
     IndexedStrategyVersion,
 )
 from fefat_app.ports import Clock, Executor, LibraryIndex, RunRecords
 from fefat_app.runs import (
+    EstimateRefusedError,
     IndexedRun,
     NewRun,
+    NoDataToEstimate,
     NoSuchRunError,
     RequestedRun,
+    RunEstimate,
+    RunEstimated,
+    RunPage,
     RunWithMetrics,
     SavedRunFound,
+    StressedRuns,
+    SubmittedRun,
 )
 from fefat_app.services.code_runs import BACKTEST_LIMITS, looked_up_run
 from fefat_app.services.jobs import MAX_ATTEMPTS, Jobs
 from fefat_app.services.strategies import NoSuchStrategyError, read_as_indexed
 
-NEWEST_RUNS = 100
-"""How many of the newest runs the list holds; filters and paging come with the runs' page
-(step 5.6)."""
+RUNS_PER_PAGE = 50
+"""How many runs a page of the list holds unless it asks for fewer."""
 
 
 @dataclass(frozen=True)
@@ -50,16 +61,28 @@ class RunAsked:
 
 
 @dataclass(frozen=True)
+class RunsAsked:
+    """A page of the runs: a strategy's name, whether a run names a saved version at all, a
+    status, where the page starts, and how many runs it holds."""
+
+    strategy: str | None = None
+    versioned: bool | None = None
+    status: JobStatus | None = None
+    cursor: str | None = None
+    limit: int = RUNS_PER_PAGE
+
+
+@dataclass(frozen=True)
 class Runs:
-    """The runs in `records`, the versions of the library in `index` with their files in
-    `strategies_dir`, the trader's code run by `executor`, and the backtests' jobs given to the
-    dispatcher through `jobs` (module docstring)."""
+    """The runs in `records`, the versions of the library in `index` with their files under
+    `paths`, the trader's code run by `executor`, and the backtests' jobs given to the dispatcher
+    through `jobs` (module docstring)."""
 
     records: RunRecords
     index: LibraryIndex
     executor: Executor
     jobs: Jobs
-    strategies_dir: Path
+    paths: FefatPaths
     clock: Clock
 
     def submit(self, asked: RunAsked) -> IndexedRun:
@@ -68,7 +91,7 @@ class Runs:
         refused with `NoSuchStrategyError`, `LibraryRefusedError`, or `CodeRefusedError`."""
         self.index.refresh()
         strategy, version = self._version(asked.strategy_version_id)
-        read_as_indexed(self.strategies_dir, strategy.name, version)
+        read_as_indexed(self.paths.strategies_dir, strategy.name, version)
         requested = RequestedRun(
             strategy=strategy.name,
             version=version.version,
@@ -97,24 +120,74 @@ class Runs:
             self.jobs.submit(submitted.queued_job_id)
         return submitted.run
 
-    def newest(self) -> tuple[IndexedRun, ...]:
-        """The newest runs, newest first, without their metrics."""
-        return self.records.newest(NEWEST_RUNS)
+    def stressed(self, asked: RunAsked) -> StressedRuns:
+        """The run `asked` names, then the same at one and at two more ticks of slippage on
+        market and stop orders, each a run of its own (D-29), each answered as `submit` answers;
+        the base's applied slippage is what they add to. Refused as `submit` is."""
+        base = self.submit(asked)
+        once = base.settings.at_one_more_tick()
+        twice = once.at_one_more_tick()
+        return StressedRuns(
+            runs=(
+                base,
+                self.submit(_at_slippage(asked, once.slippage_ticks)),
+                self.submit(_at_slippage(asked, twice.slippage_ticks)),
+            )
+        )
 
-    def by_id(self, run_id: str) -> RunWithMetrics:
-        """The run `run_id` with its metrics once saved; `NoSuchRunError` where there is none."""
-        run = self.records.by_id(run_id)
-        if run is None:
-            raise NoSuchRunError(run_id)
-        return run
+    def page(self, asked: RunsAsked) -> RunPage:
+        """A page of the runs, newest first, a list's first page finding the saved folders no
+        row holds (step 5.6)."""
+        if asked.cursor is None:
+            self.index.index_saved_runs()
+        return self.records.page(
+            strategy=asked.strategy,
+            versioned=asked.versioned,
+            status=asked.status,
+            cursor=asked.cursor,
+            limit=asked.limit,
+        )
 
-    def cancel(self, run_id: str) -> RunWithMetrics:
-        """Cancel the job of the run `run_id`, at once while queued, asked while it runs
+    def by_id(self, run: str) -> RunWithMetrics:
+        """The run of the id or the run key `run` with its metrics once saved;
+        `NoSuchRunError` where there is none."""
+        found = self.records.by_id(run)
+        if found is None:
+            raise NoSuchRunError(run)
+        return found
+
+    def cancel(self, run: str) -> RunWithMetrics:
+        """Cancel the job of the run `run`, at once while queued, asked while it runs
         (`Jobs.cancel`); a saved run, or one whose job has ended, is given as it is."""
-        run = self.by_id(run_id)
-        if run.run_key is None and run.job_id is not None:
-            self.jobs.cancel(run.job_id)
-        return self.by_id(run_id)
+        found = self.by_id(run)
+        if isinstance(found, SubmittedRun):
+            self.jobs.cancel(found.job_id)
+        return self.by_id(run)
+
+    def estimate(
+        self, version_id: str, start: date | None, end: date | None, settings: RunConfig
+    ) -> RunEstimate:
+        """What a run of the version `version_id`, on the instrument `settings` names or else its
+        own (D-114), would read from `start` to `end` under `settings`, before anything runs and
+        without its code (`fefat.backtest.estimates`), with the instruments the store holds;
+        refused with `NoSuchStrategyError`, `LibraryRefusedError`, or `EstimateRefusedError`."""
+        self.index.refresh()
+        _, version = self._version(version_id)
+        traded = version.instrument if settings.instrument is None else settings.instrument
+        try:
+            instruments = held_instruments(self.paths)
+            found = estimated(
+                traded, Timeframe.parse(version.timeframe), start, end, settings, self.paths
+            )
+        except ValueError as refused:
+            raise EstimateRefusedError(str(refused)) from refused
+        if found is None:
+            return NoDataToEstimate(
+                instrument=traded, timeframe=version.timeframe, instruments=instruments
+            )
+        return RunEstimated(
+            **dict(found), instrument=traded, timeframe=version.timeframe, instruments=instruments
+        )
 
     def _version(self, version_id: str) -> tuple[IndexedStrategy, IndexedStrategyVersion]:
         for strategy in self.index.strategies():
@@ -124,3 +197,14 @@ class Runs:
         raise NoSuchStrategyError(
             f"Expected the id of a saved strategy version, got {version_id!r}, which names none."
         )
+
+
+def _at_slippage(asked: RunAsked, ticks: SlippageTicks) -> RunAsked:
+    settings = asked.settings.model_copy(update={"slippage_ticks": ticks})
+    return RunAsked(
+        strategy_version_id=asked.strategy_version_id,
+        parameters=asked.parameters,
+        start=asked.start,
+        end=asked.end,
+        settings=settings,
+    )

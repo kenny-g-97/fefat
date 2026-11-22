@@ -1,6 +1,16 @@
 /** The decimals a figure may need: an instrument's lot step goes to 0.00001. */
 const DECIMALS: readonly number[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
+const MONEY = /^(-?)(\d+)(?:\.(\d+))?$/
+const THOUSANDS = /\B(?=(\d{3})+$)/g
+
+const UNITS: Readonly<Record<string, string>> = {
+  s: "second",
+  m: "minute",
+  h: "hour",
+  d: "day",
+}
+
 /** The decimals a decimal of the API is written with, without a float's noise: a tick of 0.25
  * gives 2, a lot step of 0.00001 gives 5, a point value of 50 gives 0. */
 export function decimalsOf(value: number): number {
@@ -35,6 +45,46 @@ export function formatAligned(value: number, places: number): string {
 /** A price with its instrument's decimals, as the chart's axis writes it: 5012.25. */
 export function formatPrice(price: number, decimals: number): string {
   return price.toFixed(decimals)
+}
+
+/** Money as the API sends it, decimal text such as `-2721.560000`, with its thousands apart and
+ * the zeros past its second decimal dropped, read as text so that no float rounds a digit:
+ * `-2,721.56`. */
+export function formatMoney(text: string): string {
+  const found = MONEY.exec(text)
+  if (found === null) {
+    throw new Error(
+      `Expected money as decimal text, got ${JSON.stringify(text)}.`
+    )
+  }
+  const [, sign, whole, fraction = ""] = found
+  const decimals = fraction.replace(/0+$/, "").padEnd(2, "0")
+  return `${sign}${whole.replace(THOUSANDS, ",")}.${decimals}`
+}
+
+/** The sign of money as the API sends it, read from its text. */
+export function moneySign(text: string): "positive" | "negative" | "zero" {
+  if (/^-?0*(\.0*)?$/.test(text)) {
+    return "zero"
+  }
+  return text.startsWith("-") ? "negative" : "positive"
+}
+
+/** What a dataset's fidelity holds, in words: Trades, TBBO, or 1-minute bars. */
+export function fidelityLabel(fidelity: string): string {
+  if (fidelity === "trades") {
+    return "Trades"
+  }
+  if (fidelity === "tbbo") {
+    return "TBBO"
+  }
+  const parts = /^(\d+)([smhd])$/.exec(fidelity)
+  if (parts === null) {
+    throw new Error(
+      `Expected a fidelity such as trades or 1m, got ${JSON.stringify(fidelity)}.`
+    )
+  }
+  return `${parts[1]}-${UNITS[parts[2]]} bars`
 }
 
 /** A count with its thousands apart: 12,345. */

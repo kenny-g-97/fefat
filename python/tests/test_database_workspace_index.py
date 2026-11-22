@@ -51,6 +51,7 @@ from fefat_app.database.run_records import RunTables
 from fefat_app.database.schema import not_waiting, opened_database, upgrade_schema
 from fefat_app.database.version_index import index_library
 from fefat_app.database.workspace_index import IndexSummary, index_workspace
+from fefat_app.runs import SavedRun
 from notebook_runs import breakout, features_of_cell, store_with
 from strategy_code import BREAKOUT, ES_BREAKOUT, HYPOTHESIS, WITH_A_SLOT
 
@@ -626,5 +627,10 @@ def test_a_run_a_notebook_made_is_indexed_without_a_strategy_version(engine: Eng
     run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
 
     assert index_workspace(engine, paths()).runs == 1
-    (indexed,) = RunTables(engine, paths()).newest(10)
+    (indexed,) = (
+        RunTables(engine, paths())
+        .page(strategy=None, versioned=None, status=None, cursor=None, limit=10)
+        .runs
+    )
+    assert isinstance(indexed, SavedRun)
     assert (indexed.run_key, indexed.strategy, indexed.parameters) == (run.hash, None, {})

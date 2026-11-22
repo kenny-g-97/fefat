@@ -13,7 +13,7 @@ const HOME_LINKS: readonly (readonly [string, string])[] = [
   ["All features", "/lab"],
   ["Build a strategy", "/strategies"],
   ["Open the feature lab", "/lab"],
-  ["Run a backtest", "/runs"],
+  ["Run a backtest", "/strategies"],
   ["Import data", "/data/import"],
 ]
 

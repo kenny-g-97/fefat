@@ -162,8 +162,8 @@ const STORE_WRITERS: ReadonlySet<Job["kind"]> = new Set([
 ])
 
 /** What a job that writes the store makes stale, and a delete: the catalog, the datasets'
- * quality, the instruments, the chart's spans and bars, the import profiles, and what a delete
- * would remove. */
+ * quality, the instruments, the chart's spans and bars, the import profiles, what a delete
+ * would remove, and what a run would read. */
 const STORE_READS = [
   catalogQuery.queryKey,
   ["datasets"],
@@ -171,6 +171,7 @@ const STORE_READS = [
   ["market"],
   ["import-profiles"],
   ["stored-data"],
+  ["runs", "estimate"],
 ]
 
 /** Ask again, on every page, each read of the store (`STORE_READS`). */
@@ -181,12 +182,22 @@ function readTheStoreAgain(): void {
 }
 
 /** Read again, on every page, what a catalog sync or an import among `jobs` wrote, once it
- * ends: a job another read of the jobs lists as ended for the first time, so that one which
- * ended before any read saw it running counts too. The shell's top bar calls it once. */
+ * ends. The shell's top bar calls it once. */
 export function useStoreReadAfterWrites(
   jobs: readonly Job[] | undefined
 ): void {
-  const ended = jobs === undefined ? undefined : endedStoreWrites(jobs)
+  useReadOnceEnded(
+    jobs === undefined ? undefined : endedStoreWrites(jobs),
+    readTheStoreAgain
+  )
+}
+
+/** Call `readAgain` once `ended`, the ids of the jobs of a kind that ended, as one text, lists
+ * one for the first time, so that a job which ended before any read saw it running counts too. */
+export function useReadOnceEnded(
+  ended: string | undefined,
+  readAgain: () => void
+): void {
   const before = useRef(ended)
   useEffect(() => {
     if (ended === undefined) {
@@ -195,9 +206,9 @@ export function useStoreReadAfterWrites(
     const earlier = before.current
     before.current = ended
     if (earlier !== undefined && writeEndedSince(earlier, ended)) {
-      readTheStoreAgain()
+      readAgain()
     }
-  }, [ended])
+  }, [ended, readAgain])
 }
 
 /** The ids of the catalog syncs and the imports among `jobs` that ended, as one text a hook's

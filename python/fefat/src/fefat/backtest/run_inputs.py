@@ -35,6 +35,7 @@ from fefat.backtest.snapshots import (
     snapshots_of,
 )
 from fefat.config import FefatPaths
+from fefat.features.inputs import InstrumentInput
 from fefat.market.api import parse_trade_date, roll_calendar
 from fefat.market.calendar import counted
 from fefat.market.dataset_choice import signal_bar_eras
@@ -146,10 +147,12 @@ def run_inputs(
     paths: FefatPaths,
     progress: RunProgress = tell_no_one,
 ) -> RunInputs:
-    """Everything a run of `strategy` on the trade dates from `start` to `end` reads, telling
-    `progress` its data loaded and its features computed."""
+    """Everything a run of `strategy`, on the instrument `config` names where it names one
+    (D-114), on the trade dates from `start` to `end` reads, telling `progress` its data loaded
+    and its features computed."""
+    strategy = strategy.trading(config.instrument)
     market = market_of(strategy.instrument, config.provider, paths)
-    applied = config.applied(finest_level(market.datasets), market.instrument.kind, market.provider)
+    applied = config.applied(finest_level(market.datasets), market.instrument, market.provider)
     dates = (parse_trade_date(start, "start"), parse_trade_date(end, "end"))
     produced = signal_frame(
         strategy, market.sessions, market.provider, dates, applied.contract, progress
@@ -185,7 +188,11 @@ def run_inputs(
         fee_table=_fee_table_record(applied.fee_table, market.instrument.root),
         rolls=tuple(_roll_record(roll) for roll in rolls),
         window=window,
-        warnings=(*produced.warnings, *_features_below_a_tick(spec, signals, parameters.tick)),
+        warnings=(
+            *produced.warnings,
+            *_features_below_a_tick(spec, signals, parameters.tick),
+            *_features_reading_the_root_traded(strategy),
+        ),
         time_zone=market.sessions.time_zone(),
         signal_bar_eras=_signal_bar_eras(market, strategy, window, signals),
         declared_parameters=declared,
@@ -323,3 +330,21 @@ def _features_below_a_tick(spec: StrategySpec, signals: pl.DataFrame, tick: int)
                 "feature as a distance in 1e-9 units of price (F-RND-01)"
             )
     return tuple(found)
+
+
+def _features_reading_the_root_traded(strategy: SignalStrategy) -> tuple[str, ...]:
+    """A warning for each feature declaring, as another instrument, the one the run trades (D-114):
+    it reads its own bars, so that a spread against that instrument is zero, with nothing else to
+    tell the trader why. It depends on what the run reads alone, as the run's key does, so that
+    two strategies making one run say the same."""
+    root = strategy.instrument
+    reading = {
+        node.spec.definition.name
+        for node in strategy.feature_graph().order
+        if InstrumentInput(root=root) in node.spec.definition.inputs
+    }
+    return tuple(
+        f"the feature {name} declares {root}, the instrument this run trades, so it reads its own "
+        "bars rather than another instrument's"
+        for name in sorted(reading)
+    )

@@ -5,7 +5,7 @@ the lists read the tables, each in a transaction of its own that only reads; a s
 its abandoned mark and the time of its newest saved run (step 5.5)."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import groupby
 
@@ -23,6 +23,7 @@ from fefat_app.database.models import (
 )
 from fefat_app.database.schema import reading
 from fefat_app.database.version_index import index_library
+from fefat_app.database.workspace_index import index_saved_runs
 from fefat_app.library import (
     IndexedFeature,
     IndexedStrategy,
@@ -38,10 +39,17 @@ class LibraryTables:
 
     engine: Engine
     paths: FefatPaths
+    _passed_over: set[str] = field(default_factory=set[str], init=False, repr=False, compare=False)
 
     def refresh(self) -> None:
         try:
             index_library(self.engine, self.paths)
+        except ValueError as refused:
+            raise LibraryRefusedError(str(refused)) from refused
+
+    def index_saved_runs(self) -> None:
+        try:
+            index_saved_runs(self.engine, self.paths, self._passed_over)
         except ValueError as refused:
             raise LibraryRefusedError(str(refused)) from refused
 
@@ -87,9 +95,6 @@ def _last_saved_runs(session: Session) -> dict[str, datetime]:
     """When each strategy's newest saved run was made, by the strategy's row: a run's row, once
     its folder is saved, keeps its submission's time, or its folder's where no submission made
     it (`fefat_app.database.run_records`)."""
-    # shortcut: the runs the index holds alone, so a run a notebook saved counts once a run's
-    # POST or `fefat db import-workspace` indexes it; index the run folders as step 5.6's runs
-    # page does, when it does.
     rows = session.execute(
         select(StrategyVersionRow.strategy_id, func.max(RunRow.created_at))
         .join(RunRow, RunRow.strategy_version_id == StrategyVersionRow.id)

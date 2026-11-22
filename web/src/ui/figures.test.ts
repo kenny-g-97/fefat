@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest"
 import {
   counted,
   decimalsOf,
+  fidelityLabel,
   formatAligned,
   formatCount,
   formatDecimal,
+  formatMoney,
   formatPrice,
+  moneySign,
 } from "./figures"
 
 describe("formatAligned", () => {
@@ -67,5 +70,46 @@ describe("the formats", () => {
       "2,760 records",
     ])
     expect(counted(3, "mismatch", "mismatches")).toBe("3 mismatches")
+  })
+})
+
+describe("formatMoney", () => {
+  it("writes the API's decimal text with its thousands apart and no float between", () => {
+    expect(formatMoney("-2721.560000")).toBe("-2,721.56")
+    expect(formatMoney("1250")).toBe("1,250.00")
+    expect(formatMoney("0.000000")).toBe("0.00")
+    expect(formatMoney("999.5")).toBe("999.50")
+    // A float would round this one; the text keeps every digit the API sends.
+    expect(formatMoney("12345678901234.125000")).toBe("12,345,678,901,234.125")
+  })
+
+  it("reads a sum's sign from its text", () => {
+    expect(
+      ["-2721.560000", "0.010000", "0.000000", "-0.000000", "0"].map(moneySign)
+    ).toEqual(["negative", "positive", "zero", "zero", "zero"])
+  })
+
+  it("refuses what is no decimal", () => {
+    expect(() => formatMoney("twelve")).toThrow(
+      'Expected money as decimal text, got "twelve".'
+    )
+  })
+})
+
+describe("fidelityLabel", () => {
+  it("says what a dataset holds in words, and refuses a fidelity the API never sends", () => {
+    expect(
+      ["trades", "tbbo", "1m", "1s", "5m", "1d"].map(fidelityLabel)
+    ).toEqual([
+      "Trades",
+      "TBBO",
+      "1-minute bars",
+      "1-second bars",
+      "5-minute bars",
+      "1-day bars",
+    ])
+    expect(() => fidelityLabel("weekly")).toThrow(
+      'Expected a fidelity such as trades or 1m, got "weekly".'
+    )
   })
 })

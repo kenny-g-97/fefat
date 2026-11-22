@@ -39,6 +39,7 @@ from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
 from fefat_app.database.run_records import RunTables
 from fefat_app.database.schema import opened_database
+from fefat_app.runs import SavedRun
 
 
 def test_the_seeded_home_is_made_afresh_with_its_port_and_the_fixtures(tmp_path: Path) -> None:
@@ -177,11 +178,16 @@ def test_the_seed_saves_the_demo_strategy_and_its_first_run_indexed(tmp_path: Pa
     paths = resolve_paths(os.environ)
     with opened_database(paths.database_file) as engine:
         strategies = LibraryTables(engine, paths).strategies()
-        runs = RunTables(engine, paths).newest(10)
+        runs = (
+            RunTables(engine, paths)
+            .page(strategy=None, versioned=None, status=None, cursor=None, limit=10)
+            .runs
+        )
         jobs = JobTables(engine).recent(10)
     (run,) = runs
     (saved,) = saved_runs_in(paths.runs_dir)
     assert [strategy.name for strategy in strategies] == ["demo"]
+    assert isinstance(run, SavedRun)
     assert run.strategy is not None
     assert (run.strategy.name, run.status, run.run_key) == ("demo", "succeeded", saved.hash)
     assert saved.record.summary.trades >= 3

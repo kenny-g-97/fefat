@@ -130,7 +130,7 @@ test("a syntax error is underlined at its line by Validate or a save, and nothin
 
   // A save builds the code in the executor too: its refusal stands at its own line, another
   // than the verdict's, and nothing is saved.
-  const entry = 'long_entry=close > pl.col("highest"),'
+  const entry = 'long_entry=(close > pl.col("highest")) & has_stop,'
   const unsaved = breakout.code.replace(entry, "long_entry=close > ,")
   const entryLine = lineHolding(unsaved, "long_entry=close > ,")
   await writeCode(page, unsaved)
@@ -231,16 +231,31 @@ test("each template's parameters show at their defaults, and a value of another 
   for (const name of ["breakout", "mean_reversion", "entry_window"]) {
     await strategyFromTemplate(page.request, `form_${name}`, name)
   }
-  const parameters = page.getByRole("region", { name: "Parameters" })
+  // Step 5.6 (D-112): the form stands in Run backtest, the page's card listing the defaults.
+  const parameters = page
+    .getByRole("dialog", { name: "Run backtest" })
+    .getByRole("region", { name: "Parameters" })
+  const openTheForm = async (name: string) => {
+    await page.goto(`/strategies/strategy?name=${name}`)
+    await page.getByTestId("run-backtest").click()
+  }
 
-  await page.goto("/strategies/strategy?name=form_mean_reversion")
+  await page.goto("/strategies/strategy?name=form_breakout")
+  await expect(page.getByTestId("parameter-row").first()).toBeAttached()
+  const listed = page.getByRole("region", { name: "Parameters" })
+  await expect(listed).toContainText("lookback")
+  await expect(listed).toContainText("Whole number")
+  await expect(listed).toContainText("1.5")
+  await expect(listed.getByRole("textbox")).toHaveCount(0)
+
+  await openTheForm("form_mean_reversion")
   await expect(parameters.getByLabel("oversold")).toHaveValue("30.0")
   await expect(parameters.getByRole("radio", { name: "True" })).toBeChecked()
-  await page.goto("/strategies/strategy?name=form_entry_window")
+  await openTheForm("form_entry_window")
   await expect(parameters.getByRole("radio", { name: "both" })).toBeChecked()
   await expect(parameters.getByRole("radio", { name: "long" })).toBeVisible()
   await expect(parameters.getByLabel("flat_by")).toHaveValue("15:05")
-  await page.goto("/strategies/strategy?name=form_breakout")
+  await openTheForm("form_breakout")
   await expect(parameters.getByLabel("lookback")).toHaveValue("12")
   await expect(parameters.getByLabel("stop_atr")).toHaveValue("1.5")
   await parameters.getByLabel("lookback").fill("12.5")
@@ -254,11 +269,13 @@ test("each template's parameters show at their defaults, and a value of another 
     "aria-invalid",
     "true"
   )
-  await expect(codeEditor(page)).toContainText("def strategy(")
   await screenshot(page, "strategy-parameters-refused")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
   await screenshot(page, "strategy-parameters-refused-light")
   await page.evaluate(() => document.documentElement.classList.add("dark"))
+  // The dialog hides the page from the accessibility tree while it is open.
+  await page.keyboard.press("Escape")
+  await expect(codeEditor(page)).toContainText("def strategy(")
 })
 
 test("a strategy marked abandoned keeps its lesson, shows on the list, and reopens", async ({

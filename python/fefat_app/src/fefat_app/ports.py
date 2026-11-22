@@ -32,7 +32,14 @@ from fefat_app.execution import (
 from fefat_app.imports import UploadedFile
 from fefat_app.job_models import Job, JobEnd, JobKind, JobStatus, StreamEvent
 from fefat_app.library import IndexedFeature, IndexedStrategy
-from fefat_app.runs import IndexedRun, NewRun, RunWithMetrics, Submitted
+from fefat_app.runs import (
+    NewRun,
+    RunPage,
+    SavedRun,
+    SavedRunWithMetrics,
+    Submitted,
+    SubmittedRun,
+)
 
 type Clock = Callable[[], datetime]
 """Now, as an aware instant in UTC: the system's clock in the server, a settable one in tests."""
@@ -332,6 +339,12 @@ class LibraryIndex(Protocol):
         """The saved features by name, each with its versions in order."""
         ...
 
+    def index_saved_runs(self) -> None:
+        """Index the run folders no row holds, a notebook's among them, with the versions they
+        name, unless a backtest is queued or running, whose folder it could be (step 5.6);
+        refused with `LibraryRefusedError` where the library's files are not as indexed."""
+        ...
+
 
 class RunRecords(Protocol):
     """The runs (step 5.3, ADR-0020): a row for each backtest asked for through the API, a
@@ -348,19 +361,29 @@ class RunRecords(Protocol):
 
     def saved(
         self, run_key: str, *, job_id: str | None = None, request_key: str | None = None
-    ) -> IndexedRun:
+    ) -> SavedRun:
         """The run saved under `run_key`, its folder's record read and indexed: the row that
         holds the key, the unsaved row of `job_id` removed where it is another; else the unsaved
         row of `job_id`, or the one whose active job waits on `request_key`, which takes the key
         and the record's columns; else a new row from the record."""
         ...
 
-    def by_id(self, run_id: str) -> RunWithMetrics | None:
-        """The run `run_id` with its metrics once saved, or None."""
+    def by_id(self, run: str) -> SubmittedRun | SavedRunWithMetrics | None:
+        """The run of the id or the run key `run`, with its metrics once saved, or None."""
         ...
 
-    def newest(self, limit: int) -> tuple[IndexedRun, ...]:
-        """The `limit` newest runs, newest first, without their metrics."""
+    def page(
+        self,
+        *,
+        strategy: str | None,
+        versioned: bool | None,
+        status: JobStatus | None,
+        cursor: str | None,
+        limit: int,
+    ) -> RunPage:
+        """A page of at most `limit` runs, newest first, after `cursor`, of the strategy named,
+        of those that name a saved version or not, and of the status; `RunCursorError` for a
+        cursor no page gave."""
         ...
 
 

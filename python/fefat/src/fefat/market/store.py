@@ -164,6 +164,17 @@ class Store:
         require_columns(expected, rows.collect_schema(), str(path))
         return rows
 
+    def record_count(self, partitions: Iterable[Partition]) -> int:
+        """How many records `partitions` hold together, which their files' footers say, so that
+        no row is read (step 5.6)."""
+        paths = [self._folder / partition.relative_path() for partition in partitions]
+        if not paths:
+            return 0
+        counted: int = (
+            pl.scan_parquet(paths, hive_partitioning=False).select(pl.len()).collect().item()
+        )
+        return counted
+
     def write_partition(self, partition: Partition, frame: pl.DataFrame) -> PartitionFile:
         """Write a partition, replacing any earlier file of it in one step. The frame's columns
         must match the schema, bars must fall on the partition's trade date or month, and the

@@ -64,8 +64,9 @@ export const jobsQuery = queryOptions({
   refetchOnWindowFocus: true,
 })
 
-/** Whether `job` is queued or running, and so has progress to follow. */
-export function isActive(job: Job): boolean {
+/** Whether `job`, or a run in its job's status, is queued or running, and so has progress to
+ * follow. */
+export function isActive(job: Readonly<Pick<Job, "status">>): boolean {
   return ACTIVE_STATUSES.has(job.status)
 }
 

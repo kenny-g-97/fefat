@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table"
-import { fidelityLabel } from "./datasets"
+import { fidelityLabel } from "@/ui/figures"
 
 type Covered = StoredDataset & Readonly<{ coverage?: "complete" | "partial" }>
 

@@ -6,7 +6,7 @@ import {
   type FilterColumn,
   type ImportedFilters,
 } from "./imported-filters"
-import { Choice, Picker } from "./Picker"
+import { Choice, Picker } from "@/ui/picker"
 
 /** The dropdowns' choice that asks nothing of its column: no folder name holds parentheses
  * (`fefat.market.layout.FolderName`), nor does a type or a quality, as for the chart's

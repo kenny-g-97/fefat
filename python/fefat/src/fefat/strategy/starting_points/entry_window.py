@@ -12,6 +12,7 @@ def strategy(
     side: Literal["long", "short", "both"] = "both", flat_by: str = "15:05"
 ) -> ff.SignalStrategy:
     close = pl.col("close")
+    has_stop = pl.col("atr") > 0
     return ff.SignalStrategy(
         instrument="MES",
         timeframe="5m",
@@ -20,8 +21,8 @@ def strategy(
             "lowest": close.rolling_min(12).shift(1),
             "atr": (pl.col("high") - pl.col("low")).rolling_mean(14),
         },
-        long_entry=close > pl.col("highest") if side != "short" else pl.lit(False),
-        short_entry=close < pl.col("lowest") if side != "long" else pl.lit(False),
+        long_entry=(close > pl.col("highest")) & has_stop if side != "short" else pl.lit(False),
+        short_entry=(close < pl.col("lowest")) & has_stop if side != "long" else pl.lit(False),
         execution=ff.Execution(
             entry=ff.Market(),
             stop=ff.Stop(atr=1.5),

@@ -1,7 +1,7 @@
 import type { Dispatch } from "react"
 import type { FileSeen } from "@/api/imports"
 import { KeptField } from "@/ui/kept-field"
-import { Choice, Picker } from "../Picker"
+import { Choice, Picker } from "@/ui/picker"
 import type { DraftChange, ProfileFields } from "./import-draft"
 import { DELIMITERS, delimiterName, described } from "./import-profile"
 import { offsetRefusal } from "./import-request"

@@ -350,5 +350,5 @@ def test_a_lookup_refuses_a_contract_of_another_root_for_every_strategy() -> Non
     store_with("ohlcv-1m")
     calling = breakout_probing(pl.col("close").map_batches(lambda closes: closes))
 
-    with pytest.raises(ValueError, match="Expected a contract of ES, the strategy's root"):
+    with pytest.raises(ValueError, match="Expected a contract of ES, the root the run trades"):
         looked_up(calling, *WINDOW, RunConfig(contract="BTCH2026"), resolve_paths(os.environ))

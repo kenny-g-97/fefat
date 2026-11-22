@@ -559,10 +559,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Newest Runs
-         * @description The hundred newest runs, newest first, without their metrics.
+         * Listed Runs
+         * @description A page of the runs, newest first, the run folders no row holds indexed first, unless a
+         *     backtest is queued or running; refused with 400 for a cursor the list did not give and 409
+         *     where the library holds files the index cannot follow.
          */
-        get: operations["newest_runs_v1_runs_get"];
+        get: operations["listed_runs_v1_runs_get"];
         put?: never;
         /**
          * Submit Run
@@ -579,7 +581,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/runs/{run_id}": {
+    "/v1/runs/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Estimate Run
+         * @description What a run of the version would read, before anything runs and without its code: what it
+         *     can choose among, the settings it would apply, the trade dates held, and the sessions, bars,
+         *     and ticks of the window; refused with 400 in the SDK's words, 404 where no version has the
+         *     id, and 409 where the library holds files the index cannot follow.
+         */
+        post: operations["estimate_run_v1_runs_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/runs/stress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stress Run
+         * @description The run, then the same at one and at two more ticks of slippage on market and stop orders,
+         *     each a run of its own, answered as `POST /v1/runs` answers it, and refused as it is.
+         */
+        post: operations["stress_run_v1_runs_stress_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/runs/{run}": {
         parameters: {
             query?: never;
             header?: never;
@@ -588,9 +634,10 @@ export interface paths {
         };
         /**
          * Run By Id
-         * @description The run, with its metrics, its fidelity eras, and its warnings once saved.
+         * @description The run, by its id or its run key, with its metrics, its fidelity eras, and its warnings
+         *     once saved.
          */
-        get: operations["run_by_id_v1_runs__run_id__get"];
+        get: operations["run_by_id_v1_runs__run__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -599,7 +646,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/runs/{run_id}/cancel": {
+    "/v1/runs/{run}/cancel": {
         parameters: {
             query?: never;
             header?: never;
@@ -613,7 +660,7 @@ export interface paths {
          * @description Cancel the run's job, at once while it is queued, asked while it runs; a saved run, or
          *     one whose job has ended, is answered as it is.
          */
-        post: operations["cancel_run_v1_runs__run_id__cancel_post"];
+        post: operations["cancel_run_v1_runs__run__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1051,7 +1098,7 @@ export interface components {
         /**
          * AppliedRunConfig
          * @description A run's settings with every default applied (D-51), as its record keeps them: those of
-         *     `RunConfig`, each given.
+         *     `RunConfig`, each given, its `instrument` none only in a record written before D-114.
          */
         AppliedRunConfig: {
             /** Capital */
@@ -1062,6 +1109,8 @@ export interface components {
             fee_table: string;
             /** Fidelity */
             fidelity: string;
+            /** Instrument */
+            instrument?: string | null;
             /** Latency Ms */
             latency_ms: number;
             limit_fill: components["schemas"]["LimitFill"];
@@ -1082,7 +1131,7 @@ export interface components {
              */
             kind: "at_timeframe";
             /** Of */
-            of: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
+            of: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["fefat__features__combinations__Window"] | components["schemas"]["AtTimeframe"];
             /** Timeframe */
             timeframe: string;
         };
@@ -1263,9 +1312,9 @@ export interface components {
              */
             kind: "add" | "and" | "crosses_above" | "crosses_below" | "divide" | "greater_than" | "multiply" | "or" | "ratio_to" | "subtract";
             /** Left */
-            left: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
+            left: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["fefat__features__combinations__Window"] | components["schemas"]["AtTimeframe"];
             /** Right */
-            right: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
+            right: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["fefat__features__combinations__Window"] | components["schemas"]["AtTimeframe"];
         };
         /**
          * Breakdowns
@@ -1701,6 +1750,23 @@ export interface components {
             peak: string | null;
             /** Trough */
             trough: string | null;
+        };
+        /**
+         * EstimateSettings
+         * @description The settings that change what a run reads, each left out taking the run's default: the
+         *     finest data it fills on, the provider whose data it reads, the one contract it reads in
+         *     place of the roll calendar's fronts, and the instrument it trades in place of the one its
+         *     strategy names (D-114).
+         */
+        EstimateSettings: {
+            /** Contract */
+            contract?: string | null;
+            /** Fidelity */
+            fidelity?: string | null;
+            /** Instrument */
+            instrument?: string | null;
+            /** Provider */
+            provider?: string | null;
         };
         /**
          * FeatureCode
@@ -2152,52 +2218,6 @@ export interface components {
             versions: components["schemas"]["IndexedVersion"][];
         };
         /**
-         * IndexedRun
-         * @description A run as the index holds it: its row's id; when it was asked for, or saved where the index
-         *     found it saved; its origin; the strategy version it names, None for one written in a notebook;
-         *     its parameters as bound; the trade dates its window spans, its signal bars' once saved; its
-         *     settings, every default applied; its status, `succeeded` once its folder is indexed, else its
-         *     job's, with the job's progress, message, and error; its job's id, None where the index found
-         *     it saved; and its run key once saved, the name of its folder.
-         */
-        IndexedRun: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * End
-             * Format: date
-             */
-            end: string;
-            /** Error */
-            error: string | null;
-            /** Id */
-            id: string;
-            /** Job Id */
-            job_id: string | null;
-            /** Message */
-            message: string | null;
-            origin: components["schemas"]["RunOrigin"];
-            /** Parameters */
-            parameters: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-            /** Progress */
-            progress: number;
-            /** Run Key */
-            run_key: string | null;
-            settings: components["schemas"]["AppliedRunConfig"];
-            /**
-             * Start
-             * Format: date
-             */
-            start: string;
-            status: components["schemas"]["JobStatus"];
-            strategy: components["schemas"]["RunStrategy"] | null;
-        };
-        /**
          * IndexedStrategy
          * @description A saved strategy as the index holds it: its row's id, its name, its kind, its versions in
          *     order, its abandoned mark where it holds one (step 5.5), and when its newest saved run was
@@ -2382,6 +2402,20 @@ export interface components {
         JobStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
         JsonValue: unknown;
         /**
+         * KeyMetrics
+         * @description What a list shows of how a saved run went: its net P&L, its trades, its maximum drawdown,
+         *     and its robustness verdict, as its record holds them.
+         */
+        KeyMetrics: {
+            /** Max Drawdown */
+            max_drawdown: string;
+            /** Pnl */
+            pnl: string;
+            /** Trades */
+            trades: number;
+            verdict: components["schemas"]["Verdict"];
+        };
+        /**
          * LimitFill
          * @description When a limit fills: once the market trades through its price (F-LMT-01, the default)
          *     or once it touches it (F-LMT-02).
@@ -2511,7 +2545,7 @@ export interface components {
              */
             kind: "not";
             /** Of */
-            of: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
+            of: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["fefat__features__combinations__Window"] | components["schemas"]["AtTimeframe"];
         };
         /**
          * NewFeature
@@ -2617,6 +2651,24 @@ export interface components {
             code: string;
             /** Hypothesis */
             hypothesis: string;
+        };
+        /**
+         * NoDataToEstimate
+         * @description A run's estimate where the store holds none of the instrument it would trade, with the
+         *     version's timeframe and the `instruments` the store holds, which it could trade instead.
+         */
+        NoDataToEstimate: {
+            /** Instrument */
+            instrument: string;
+            /** Instruments */
+            instruments: string[];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "no_data";
+            /** Timeframe */
+            timeframe: string;
         };
         /**
          * OffsetCause
@@ -3052,10 +3104,11 @@ export interface components {
          *     (F-LMT-01, F-LMT-02); `roll_handling` (F-ROL-02, F-ROL-04); `fee_table`, a table of
          *     `fefat.market.fees`, by default `retail-default` for futures and `binance-default` for crypto;
          *     `capital`, in the instrument's currency; `replay`, skipping what no order can act on or in
-         *     full, which give the same fills (`02` §4); `provider`, as `load` takes it; and `contract`,
-         *     one contract of the strategy's root read unspliced, as `load` reads a contract, so that the
-         *     run crosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll
-         *     calendar's fronts.
+         *     full, which give the same fills (`02` §4); `provider`, as `load` takes it; `contract`, one
+         *     contract of the root it trades read unspliced, as `load` reads a contract, so that the run
+         *     crosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll calendar's
+         *     fronts; and `instrument`, the root it trades, as if the strategy's code named it, while a
+         *     feature keeps reading the instrument it declares (D-114), by default the one the code names.
          */
         RunConfig: {
             /**
@@ -3069,6 +3122,8 @@ export interface components {
             fee_table?: string | null;
             /** Fidelity */
             fidelity?: string | null;
+            /** Instrument */
+            instrument?: string | null;
             /**
              * Latency Ms
              * @default 100
@@ -3085,6 +3140,55 @@ export interface components {
             slippage_ticks?: components["schemas"]["SlippageTicks"] | null;
         };
         /**
+         * RunEstimateRequest
+         * @description What to estimate of a run of a saved strategy version: the id of the version's row; the
+         *     trade dates, each left out meaning where the data starts or ends; and what the run reads.
+         */
+        RunEstimateRequest: {
+            /** End */
+            end?: string | null;
+            settings?: components["schemas"]["EstimateSettings"];
+            /** Start */
+            start?: string | null;
+            /** Strategy Version Id */
+            strategy_version_id: string;
+        };
+        /**
+         * RunEstimated
+         * @description What a run of the version would read, before anything runs (`WindowEstimate`), with the
+         *     instrument it would trade, the version's timeframe, and the `instruments` the store holds.
+         */
+        RunEstimated: {
+            /** Bars */
+            bars: number;
+            /** Contracts */
+            contracts: string[];
+            /** Fee Tables */
+            fee_tables: string[];
+            held: components["schemas"]["fefat__backtest__record__Window"] | null;
+            /** Instrument */
+            instrument: string;
+            /** Instruments */
+            instruments: string[];
+            /** Levels */
+            levels: string[];
+            /** Providers */
+            providers: string[];
+            /** Sessions */
+            sessions: number;
+            settings: components["schemas"]["AppliedRunConfig"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "estimated";
+            /** Ticks */
+            ticks: number;
+            /** Timeframe */
+            timeframe: string;
+            window: components["schemas"]["fefat__backtest__record__Window"] | null;
+        };
+        /**
          * RunOrigin
          * @description Where a run's row comes from: asked for through the API, or found saved by the index; the
          *     batches of later phases add theirs.
@@ -3092,15 +3196,31 @@ export interface components {
          */
         RunOrigin: "manual";
         /**
+         * RunPage
+         * @description A page of the runs, newest first (step 5.6), with the cursor of the next, None on the
+         *     last.
+         */
+        RunPage: {
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Runs */
+            runs: (components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRun"])[];
+        };
+        /**
          * RunStrategy
          * @description The saved strategy version a run names, as the index holds it: the strategy's row's id and
-         *     name, and the version's row's id and number.
+         *     name, the version's row's id and number, and the instrument its code names and the timeframe;
+         *     the run's settings name the instrument it trades, which may be another (D-114).
          */
         RunStrategy: {
+            /** Instrument */
+            instrument: string;
             /** Name */
             name: string;
             /** Strategy Id */
             strategy_id: string;
+            /** Timeframe */
+            timeframe: string;
             /** Version */
             version: number;
             /** Version Id */
@@ -3133,53 +3253,6 @@ export interface components {
             strategy_version_id: string;
         };
         /**
-         * RunWithMetrics
-         * @description A run with what its record says of how it went, once saved: its metrics, the fidelity era
-         *     of each trade date it filled on, and its warnings; none of them before.
-         */
-        RunWithMetrics: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * End
-             * Format: date
-             */
-            end: string;
-            /** Error */
-            error: string | null;
-            /** Fidelity Eras */
-            fidelity_eras: components["schemas"]["FidelityEra"][];
-            /** Id */
-            id: string;
-            /** Job Id */
-            job_id: string | null;
-            /** Message */
-            message: string | null;
-            metrics: components["schemas"]["Metrics"] | null;
-            origin: components["schemas"]["RunOrigin"];
-            /** Parameters */
-            parameters: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-            /** Progress */
-            progress: number;
-            /** Run Key */
-            run_key: string | null;
-            settings: components["schemas"]["AppliedRunConfig"];
-            /**
-             * Start
-             * Format: date
-             */
-            start: string;
-            status: components["schemas"]["JobStatus"];
-            strategy: components["schemas"]["RunStrategy"] | null;
-            /** Warnings */
-            warnings: string[];
-        };
-        /**
          * SampleSize
          * @description Which of the skill's trade counts a run reaches: an absolute minimum of 30, 100
          *     preferred, and 200 for high confidence.
@@ -3195,7 +3268,7 @@ export interface components {
             /** Code */
             code: string;
             /** Combination */
-            combination?: (components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"]) | null;
+            combination?: (components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["fefat__features__combinations__Window"] | components["schemas"]["AtTimeframe"]) | null;
             /**
              * Created At
              * Format: date-time
@@ -3228,6 +3301,118 @@ export interface components {
              * @default 0
              */
             warmup_sessions: number | string;
+        };
+        /**
+         * SavedRun
+         * @description A run whose folder is saved and indexed: `succeeded`, at 100; the version it names, None
+         *     for a strategy built in a notebook; the job that made it, None where the index found it
+         *     saved; its run key, the name of its folder; and what a list shows of how it went.
+         */
+        SavedRun: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id: string | null;
+            key_metrics: components["schemas"]["KeyMetrics"];
+            origin: components["schemas"]["RunOrigin"];
+            /** Parameters */
+            parameters: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Progress
+             * @default 100
+             * @constant
+             */
+            progress: 100;
+            /** Run Key */
+            run_key: string;
+            settings: components["schemas"]["AppliedRunConfig"];
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "saved";
+            /**
+             * Status
+             * @default succeeded
+             * @constant
+             */
+            status: "succeeded";
+            strategy: components["schemas"]["RunStrategy"] | null;
+        };
+        /**
+         * SavedRunWithMetrics
+         * @description A saved run with what its record says of how it went: its metrics, the fidelity era of
+         *     each trade date it filled on, and its warnings.
+         */
+        SavedRunWithMetrics: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Fidelity Eras */
+            fidelity_eras: components["schemas"]["FidelityEra"][];
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id: string | null;
+            key_metrics: components["schemas"]["KeyMetrics"];
+            metrics: components["schemas"]["Metrics"];
+            origin: components["schemas"]["RunOrigin"];
+            /** Parameters */
+            parameters: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Progress
+             * @default 100
+             * @constant
+             */
+            progress: 100;
+            /** Run Key */
+            run_key: string;
+            settings: components["schemas"]["AppliedRunConfig"];
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "saved";
+            /**
+             * Status
+             * @default succeeded
+             * @constant
+             */
+            status: "succeeded";
+            strategy: components["schemas"]["RunStrategy"] | null;
+            /** Warnings */
+            warnings: string[];
         };
         /**
          * SavedStrategyVersion
@@ -3628,6 +3813,66 @@ export interface components {
             name: string;
         };
         /**
+         * StressedRuns
+         * @description The runs of a stress (step 5.6, D-29): the base run, then the same at one and at two more
+         *     ticks of slippage on market and stop orders, each a run of its own.
+         */
+        StressedRuns: {
+            /** Runs */
+            runs: [
+                components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRun"],
+                components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRun"],
+                components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRun"]
+            ];
+        };
+        /**
+         * SubmittedRun
+         * @description A run asked for whose job has yet to save it: the version it runs, its job's id, and the
+         *     job's status, progress, message, and error, and when it was asked to stop.
+         */
+        SubmittedRun: {
+            /** Cancel Requested At */
+            cancel_requested_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Error */
+            error: string | null;
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id: string;
+            /** Message */
+            message: string | null;
+            origin: components["schemas"]["RunOrigin"];
+            /** Parameters */
+            parameters: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Progress */
+            progress: number;
+            settings: components["schemas"]["AppliedRunConfig"];
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "submitted";
+            status: components["schemas"]["JobStatus"];
+            strategy: components["schemas"]["RunStrategy"];
+        };
+        /**
          * TableAsked
          * @description A file's table as `layout` reads it, or as its first lines suggest where it is None.
          */
@@ -3963,9 +4208,25 @@ export interface components {
         "Weekday-Input": 1 | 2 | 3 | 4 | 5 | 6 | 7;
         /**
          * Window
+         * @description The trade dates a run's signal bars span, from `start` to `end`.
+         */
+        fefat__backtest__record__Window: {
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+        };
+        /**
+         * Window
          * @description A window over the last `n` bars of a term, `lag` the term `n` bars before.
          */
-        Window: {
+        fefat__features__combinations__Window: {
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -3974,7 +4235,7 @@ export interface components {
             /** N */
             n: number;
             /** Of */
-            of: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
+            of: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["fefat__features__combinations__Window"] | components["schemas"]["AtTimeframe"];
         };
         /**
          * Weekday
@@ -5418,9 +5679,19 @@ export interface operations {
             };
         };
     };
-    newest_runs_v1_runs_get: {
+    listed_runs_v1_runs_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description A strategy's name. */
+                strategy?: string | null;
+                /** @description False for the runs that name no saved version. */
+                versioned?: boolean | null;
+                /** @description A run's status. */
+                status?: components["schemas"]["JobStatus"] | null;
+                /** @description The `next_cursor` of the page before. */
+                cursor?: string | null;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5433,7 +5704,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IndexedRun"][];
+                    "application/json": components["schemas"]["RunPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Unauthorized */
@@ -5443,6 +5723,24 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
                 };
             };
         };
@@ -5466,7 +5764,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IndexedRun"];
+                    "application/json": components["schemas"]["SavedRun"];
                 };
             };
             /** @description Successful Response */
@@ -5475,7 +5773,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IndexedRun"];
+                    "application/json": components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRun"];
                 };
             };
             /** @description Bad Request */
@@ -5534,13 +5832,169 @@ export interface operations {
             };
         };
     };
-    run_by_id_v1_runs__run_id__get: {
+    estimate_run_v1_runs_estimate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunEstimateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoDataToEstimate"] | components["schemas"]["RunEstimated"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    stress_run_v1_runs_stress_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunSubmission"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StressedRuns"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["RefusedCodeProblem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    run_by_id_v1_runs__run__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A run's id in the index, a UUIDv7. */
-                run_id: string;
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
             };
             cookie?: never;
         };
@@ -5552,7 +6006,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunWithMetrics"];
+                    "application/json": components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRunWithMetrics"];
                 };
             };
             /** @description Unauthorized */
@@ -5584,13 +6038,13 @@ export interface operations {
             };
         };
     };
-    cancel_run_v1_runs__run_id__cancel_post: {
+    cancel_run_v1_runs__run__cancel_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A run's id in the index, a UUIDv7. */
-                run_id: string;
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
             };
             cookie?: never;
         };
@@ -5602,7 +6056,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunWithMetrics"];
+                    "application/json": components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRunWithMetrics"];
                 };
             };
             /** @description Unauthorized */

@@ -114,9 +114,7 @@ def container(
             ),
             strategies=SavedStrategies(library, warm_executor, paths.strategies_dir),
             features=SavedFeatures(library, warm_executor, paths.features_dir),
-            runs=Runs(
-                RunTables(engine, paths), library, warm_executor, jobs, paths.strategies_dir, clock
-            ),
+            runs=Runs(RunTables(engine, paths), library, warm_executor, jobs, paths, clock),
             imports=Imports(warm_executor, jobs, uploads, paths, settings),
         )
     finally:

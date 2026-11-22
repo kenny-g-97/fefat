@@ -6,7 +6,7 @@ import {
   type StoredDataset,
   type SyncCover,
 } from "@/api/catalog"
-import { counted, formatCount } from "@/ui/figures"
+import { counted, fidelityLabel, formatCount } from "@/ui/figures"
 
 /** Datasets grouped under a name, a root or a provider, in the API's order. */
 type Grouped = Readonly<{
@@ -87,13 +87,6 @@ export function standing(dataset: ImportedDataset, syncs: SyncCover): Standing {
 /** How a month of a quality report is held: every session with records, some, or none. */
 export type MonthHeld = "every" | "some" | "none"
 
-const UNITS: Readonly<Record<string, string>> = {
-  s: "second",
-  m: "minute",
-  h: "hour",
-  d: "day",
-}
-
 /** `datasets` grouped by their provider, each provider once, in the order the API lists them. */
 export function byProvider(
   datasets: readonly StoredDataset[]
@@ -104,23 +97,6 @@ export function byProvider(
 /** `datasets` grouped by their root, each root once, in the order the API lists them. */
 export function byRoot(datasets: readonly StoredDataset[]): readonly Grouped[] {
   return grouped(datasets, (dataset) => dataset.root)
-}
-
-/** What a dataset's fidelity holds, in words: Trades, TBBO, or 1-minute bars. */
-export function fidelityLabel(fidelity: string): string {
-  if (fidelity === "trades") {
-    return "Trades"
-  }
-  if (fidelity === "tbbo") {
-    return "TBBO"
-  }
-  const parts = /^(\d+)([smhd])$/.exec(fidelity)
-  if (parts === null) {
-    throw new Error(
-      `Expected a fidelity such as trades or 1m, got ${JSON.stringify(fidelity)}.`
-    )
-  }
-  return `${parts[1]}-${UNITS[parts[2]]} bars`
 }
 
 /** The timeframe a provider's chart opens at: five minutes, or, where its finest bars are
