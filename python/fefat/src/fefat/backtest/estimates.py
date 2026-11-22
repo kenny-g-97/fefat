@@ -27,6 +27,7 @@ from fefat.backtest.snapshots import level_rank
 from fefat.config import FefatPaths
 from fefat.market.contracts import parse_contract_name
 from fefat.market.dataset_choice import (
+    UnbuildableSeriesError,
     building_datasets,
     default_provider,
     held_providers,
@@ -115,7 +116,7 @@ def _source_and_dates(
     try:
         source = series_source_in(store, paths.cache_dir, symbol, provider=provider)
         return source, source.decided_dates(timeframe)
-    except ValueError:
+    except UnbuildableSeriesError:
         unspliced = series_source_in(
             store, paths.cache_dir, symbol, continuous=False, provider=provider
         )

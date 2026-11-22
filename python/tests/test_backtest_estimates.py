@@ -6,19 +6,21 @@ record; and a window without data, which answers zero rather than refuses."""
 import os
 import shutil
 from datetime import date
+from pathlib import Path
 
 import polars as pl
 import pytest
 
 import fefat as ff
 import gen_fixtures
-from fefat.backtest import RunConfig
+from fefat.backtest import RunConfig, estimates
 from fefat.backtest.estimates import WindowEstimate, estimated
 from fefat.backtest.record import Window
 from fefat.config import resolve_paths
 from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
 from fefat.market.layout import Dataset, Partition, PartitionRequest
 from fefat.market.schema import Timeframe, parse_schema_name
+from fefat.market.series_source import SeriesSource, series_source_in
 from fefat.market.store import Store
 from notebook_runs import breakout, store_with
 
@@ -263,6 +265,28 @@ def test_bars_that_cannot_build_the_timeframe_hold_no_dates() -> None:
     assert found is not None
     assert (found.held, found.window, counts(found)) == (None, None, (0, 0, 0))
     assert found.levels == ("1m",)
+
+
+def test_a_refusal_for_another_reason_stays_a_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Only data that cannot make the series answers with no dates: a damaged store says why.
+    store_with("ohlcv-1m")
+    real = series_source_in
+
+    def damaged(
+        store: Store,
+        cache: Path,
+        symbol: str,
+        continuous: bool | None = None,
+        provider: str | None = None,
+    ) -> SeriesSource:
+        if continuous is None:
+            raise ValueError("Expected a readable roll calendar, got a damaged file.")
+        return real(store, cache, symbol, continuous, provider)
+
+    monkeypatch.setattr(estimates, "series_source_in", damaged)
+
+    with pytest.raises(ValueError, match="damaged file"):
+        estimate_of()
 
 
 def test_a_fee_table_that_prices_the_root_in_every_schedule_is_offered() -> None:

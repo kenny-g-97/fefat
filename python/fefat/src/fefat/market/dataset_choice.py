@@ -28,6 +28,11 @@ from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
 
 
+class UnbuildableSeriesError(ValueError):
+    """A provider's datasets cannot make a series: they hold no bars to splice its contracts
+    with, or none that build the timeframe asked for."""
+
+
 def provider_datasets(
     store: Store,
     root: str,
@@ -170,7 +175,7 @@ def roll_dataset(datasets: dict[str, Dataset], root: str) -> Dataset:
         dataset for fidelity, dataset in _finest_first(datasets) if isinstance(fidelity, Timeframe)
     ]
     if not bars:
-        raise ValueError(f"Expected bars of {root} to splice its contracts, got none.")
+        raise UnbuildableSeriesError(f"Expected bars of {root} to splice its contracts, got none.")
     return bars[0]
 
 
@@ -226,13 +231,15 @@ def _building(
     held = _finest_first(datasets)
     if not held:
         named = ", ".join(sorted(datasets)) or "none"
-        raise ValueError(f"Expected trades or bars to build signal bars from, got {named}.")
+        raise UnbuildableSeriesError(
+            f"Expected trades or bars to build signal bars from, got {named}."
+        )
     root = held[0][1].root
     _no_coarser_than(held[0], timeframe, root)
     building = [(level, dataset) for level, dataset in held if _builds(level, timeframe)]
     if not building:
         named = ", ".join(str(level) for level, _ in held)
-        raise ValueError(
+        raise UnbuildableSeriesError(
             f"Expected trades, or bars whose length divides {timeframe}, of {root} to build its "
             f"{timeframe} bars from, got {named}."
         )
@@ -308,7 +315,7 @@ def _no_coarser_than(
     """The dataset of `pair`, refused where its bars are coarser than `timeframe`."""
     fidelity, source = pair
     if isinstance(fidelity, Timeframe) and timeframe.nominal_seconds() < fidelity.nominal_seconds():
-        raise ValueError(
+        raise UnbuildableSeriesError(
             f"Expected a timeframe of {fidelity} or coarser from {_records(fidelity)} of {root}, "
             f"got {timeframe}."
         )
