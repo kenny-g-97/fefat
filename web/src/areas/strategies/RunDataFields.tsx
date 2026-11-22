@@ -84,7 +84,9 @@ export function RunDataFields({
 function RunDates({ draft, estimate, onChange }: RunDataFieldsProps) {
   const { held } = estimate
   const dates = shownDates(draft, estimate)
-  const series = draft.contract === null ? estimate.instrument : draft.contract
+  // The estimate's own contract: its dates are that series', while a newer answer is read too.
+  const applied = estimate.settings.contract
+  const series = applied === null ? estimate.instrument : applied
   if (held === null || dates === null) {
     return (
       <p role="alert" data-testid="run-coverage" className="text-negative">

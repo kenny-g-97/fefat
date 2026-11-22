@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useLocation, useNavigate, useSearch } from "@tanstack/react-router"
 import { useEffect } from "react"
-import { jobsQuery } from "@/api/jobs"
+import { isActive, jobsQuery } from "@/api/jobs"
 import { isRefusal } from "@/api/problems"
 import {
   type ListedRun,
@@ -91,7 +91,9 @@ function RunOfItsJob({ job }: Readonly<{ job: string }>) {
           error={answer.error}
           onRetry={() => void answer.refetch()}
         />
-      ) : answer.status === "success" && runKey === null ? (
+      ) : answer.status === "success" &&
+        runKey === null &&
+        !isActive(answer.data) ? (
         <p role="alert" className="text-negative">
           This run is no longer held. Choose one on the Runs page.
         </p>

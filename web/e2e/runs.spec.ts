@@ -55,6 +55,16 @@ const strategies = z.array(
 
 const identity = z.object({ csrf_token: z.string() })
 
+const estimateAsked = z.looseObject({
+  settings: z.object({
+    provider: z.string().optional(),
+    contract: z.string().optional(),
+    fidelity: z.string().optional(),
+  }),
+})
+
+const estimateAnswer = z.looseObject({ settings: z.looseObject({}) })
+
 /** `GET /v1/runs`, whatever its filters and its page. */
 const THE_LIST = (url: URL) => url.pathname === "/v1/runs"
 
@@ -502,6 +512,83 @@ test("what the dialog holds outlives closing it, and a refusal of the data stand
   )
   await expect(dialog.getByTestId("run-launch")).toBeDisabled()
   await expect(dialog.getByLabel("From", { exact: true })).toBeVisible()
+})
+
+test("the dialog picks the data by provider and contract, and says when no fee table prices it", async ({
+  loggedIn: page,
+}) => {
+  // The seed holds ES from one provider: a second is answered here, its data the first's.
+  const asked: z.infer<typeof estimateAsked>[] = []
+  let priced = true
+  await page.route("**/v1/runs/estimate", async (route) => {
+    const request = estimateAsked.parse(route.request().postDataJSON())
+    asked.push(request)
+    const { provider, ...others } = request.settings
+    const real = await route.fetch({
+      postData: JSON.stringify({ ...request, settings: others }),
+    })
+    const body = estimateAnswer.parse(await real.json())
+    await route.fulfill({
+      json: {
+        ...body,
+        providers: ["synthetic", "vendor"],
+        ...(priced ? {} : { fee_tables: [] }),
+        settings: {
+          ...body.settings,
+          provider: provider === undefined ? "synthetic" : provider,
+        },
+      },
+    })
+  })
+  const dialog = await openTheDialog(page)
+
+  await dialog.getByLabel("Contract").click()
+  await page.getByRole("option", { name: "ESH2026" }).click()
+  await expect(dialog.getByTestId("run-coverage")).toContainText(
+    "synthetic holds ESH2026"
+  )
+  expect(asked.at(-1)?.settings.contract).toBe("ESH2026")
+
+  await dialog.getByLabel("Data").click()
+  await page.getByRole("option", { name: "vendor" }).click()
+  await expect(dialog.getByTestId("run-coverage")).toContainText(
+    "vendor holds ES from"
+  )
+  expect(asked.at(-1)?.settings.provider).toBe("vendor")
+  // Another provider holds other contracts, so the choice goes back to the spliced series.
+  expect(asked.at(-1)?.settings.contract).toBeUndefined()
+  await expect(dialog.getByLabel("Contract")).toHaveText("Spliced")
+
+  priced = false
+  await dialog.getByLabel("Fidelity").click()
+  await page.getByRole("option", { name: "1-minute bars" }).click()
+
+  await expect(dialog.getByTestId("run-no-fee-table")).toHaveText(
+    "No fee table prices ES, so a run could not count its costs."
+  )
+  await expect(dialog.getByTestId("run-waiting")).toHaveText(
+    "Choose a fee table that prices ES"
+  )
+  await expect(dialog.getByTestId("run-launch")).toBeDisabled()
+})
+
+test("a submission whose row gave way opens the run its job names", async ({
+  loggedIn: page,
+}) => {
+  const seeded = await theSeededRun(page)
+  await page.route("**/v1/jobs/job-gone", (route) =>
+    route.fulfill({
+      json: aJob("job-gone", "succeeded", {
+        kind: "backtest",
+        result: { run_id: seeded.id, run_key: seeded.run_key },
+      }),
+    })
+  )
+
+  await page.goto("/runs/run?id=row-gone&job=job-gone")
+
+  await expect(page).toHaveURL(`/runs/run?key=${seeded.run_key}`)
+  await expect(page.getByTestId("run-cached")).toHaveText("Cached")
 })
 
 test("Home shows the newest runs with their verdict and three jobs, then a count", async ({
