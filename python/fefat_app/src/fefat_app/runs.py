@@ -104,8 +104,8 @@ class RunToMake(BaseModel):
 
 class RunStrategy(BaseModel):
     """The saved strategy version a run names, as the index holds it: the strategy's row's id and
-    name, the version's row's id and number, the instrument the run trades, the version's own
-    unless its settings name another (D-114), and the timeframe."""
+    name, the version's row's id and number, and the instrument its code names and the timeframe;
+    the run's settings name the instrument it trades, which may be another (D-114)."""
 
     model_config = ConfigDict(frozen=True)
 

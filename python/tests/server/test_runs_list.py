@@ -18,6 +18,7 @@ from httpx2 import Response
 from sqlalchemy import Engine
 
 import fefat as ff
+from fefat.backtest.artifacts import RECORD_FILE
 from fefat.config import resolve_paths
 from fefat_app.container import Container
 from fefat_app.database import workspace_index
@@ -167,8 +168,8 @@ def test_a_listed_run_carries_its_jobs_progress_or_its_key_metrics(
 def test_a_run_names_the_instrument_it_trades_or_else_its_versions(
     records: RunTables, engine: Engine
 ) -> None:
-    # D-114: a list and a run's page name what it trades; a row written before the setting names
-    # none of its own, and shows its version's.
+    # D-114: a list and a run's page name what it trades in its settings, beside the instrument
+    # its version's code names; a row written before the setting shows its version's.
     applied = the_run().config
     moved = a_submission(engine, "d" * 64).model_copy(
         update={"settings": applied.model_copy(update={"instrument": "BTCUSDT-PERP"})}
@@ -184,9 +185,24 @@ def test_a_run_names_the_instrument_it_trades_or_else_its_versions(
     for run, traded in ((made, "BTCUSDT-PERP"), (before, "ES")):
         shown = records.by_id(run.id)
         assert isinstance(shown, SubmittedRun)
-        assert (run.strategy.instrument, run.settings.instrument) == (traded, traded)
-        assert (shown.strategy.instrument, shown.settings.instrument) == (traded, traded)
+        assert (run.strategy.instrument, run.settings.instrument) == ("ES", traded)
+        assert (shown.strategy.instrument, shown.settings.instrument) == ("ES", traded)
         assert listed[run.id] == run
+
+
+def test_a_record_written_before_the_setting_names_the_root_it_traded(records: RunTables) -> None:
+    # The record's own root, which a strategy's parameter can set apart from its version's.
+    run = the_run()
+    path = run.folder / RECORD_FILE
+    document = json.loads(path.read_bytes())
+    del document["config"]["instrument"]
+    document["instrument"]["root"] = "NQ"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    saved = records.saved(run.hash)
+
+    assert saved.strategy is not None
+    assert (saved.strategy.instrument, saved.settings.instrument) == ("ES", "NQ")
 
 
 def test_a_run_is_read_by_its_id_or_its_key(records: RunTables) -> None:

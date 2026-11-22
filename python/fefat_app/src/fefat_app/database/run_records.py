@@ -279,7 +279,8 @@ def _hold_the_record(session: Session, row: RunRow, run: Run) -> None:
     row.strategy_version_id = version_id
     row.parameters_json = {} if pin is None else pin.model_dump(mode="json")["parameters"]
     row.window_start, row.window_end = record.window.start, record.window.end
-    row.settings_json = record.config.model_dump(mode="json")
+    traded = record.config.model_copy(update={"instrument": record.instrument.root})
+    row.settings_json = traded.model_dump(mode="json")
     row.metrics_json = record.metrics.model_dump(mode="json")
     row.fidelity_eras_json = [era.model_dump(mode="json") for era in record.fidelity_eras]
     row.warnings_json = list(record.warnings)
@@ -311,14 +312,11 @@ def _saved_row(session: Session, row: RunRow) -> SavedRun:
 
 
 def _head(row: RunRow, strategy: RunStrategy | None) -> dict[str, Any]:
-    """What a run's row holds in either state, its settings and its version each naming the
-    instrument it trades: its settings' where they name one, else its version's, for a row
-    written before D-114."""
+    """What a run's row holds in either state, its settings naming the instrument it trades: its
+    own, or its version's for a row written before D-114."""
     settings = AppliedRunConfig.model_validate(row.settings_json)
-    if strategy is not None:
-        traded = strategy.instrument if settings.instrument is None else settings.instrument
-        settings = settings.model_copy(update={"instrument": traded})
-        strategy = strategy.model_copy(update={"instrument": traded})
+    if strategy is not None and settings.instrument is None:
+        settings = settings.model_copy(update={"instrument": strategy.instrument})
     return {
         "id": row.id,
         "created_at": row.created_at,

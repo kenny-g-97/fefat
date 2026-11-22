@@ -131,9 +131,9 @@ def test_a_run_trades_the_instrument_its_settings_name(
     asked = client.post("/v1/runs", json=body, headers=csrf)
     run = ended(client, asked.json()["id"])
 
-    assert (asked.status_code, asked.json()["strategy"]["instrument"]) == (202, "ES")
+    assert (asked.status_code, asked.json()["settings"]["instrument"]) == (202, "ES")
     assert (run["status"], run["strategy"]["name"]) == ("succeeded", "written_for_mes")
-    assert (run["strategy"]["instrument"], run["settings"]["instrument"]) == ("ES", "ES")
+    assert (run["strategy"]["instrument"], run["settings"]["instrument"]) == ("MES", "ES")
     record = json.loads(
         (resolve_paths(os.environ).runs_dir / run["run_key"] / "run.json").read_text()
     )

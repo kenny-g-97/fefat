@@ -86,8 +86,19 @@ def _looked_up(run: RequestedRun) -> SavedRunFound | RunToMake:
 
 def _strategy(run: RequestedRun) -> SignalStrategy:
     """The strategy the version `run` names gives with its parameters, refused where the
-    version's file is not the one the index holds."""
-    return _version(run).strategy(**run.parameters)
+    version's file is not the one the index holds, and where a parameter moves its root off the
+    version's to another than the run names (D-114): the run would trade the one named, with a
+    parameter in its record that it did not trade."""
+    version = _version(run)
+    strategy = version.strategy(**run.parameters)
+    named = run.settings.instrument
+    if named is not None and strategy.instrument not in (version.instrument, named):
+        raise ValueError(
+            f"Expected the instrument {strategy.instrument}, which these parameters of "
+            f"{run.strategy} trade, got {named}: choose {strategy.instrument} as the instrument, "
+            "or set the parameter back."
+        )
+    return strategy
 
 
 def _version(run: RequestedRun) -> StrategyVersion:

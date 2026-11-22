@@ -5244,7 +5244,7 @@
         "type": "object"
       },
       "RunStrategy": {
-        "description": "The saved strategy version a run names, as the index holds it: the strategy's row's id and\nname, the version's row's id and number, the instrument the run trades, the version's own\nunless its settings name another (D-114), and the timeframe.",
+        "description": "The saved strategy version a run names, as the index holds it: the strategy's row's id and\nname, the version's row's id and number, and the instrument its code names and the timeframe;\nthe run's settings name the instrument it trades, which may be another (D-114).",
         "properties": {
           "instrument": {
             "title": "Instrument",

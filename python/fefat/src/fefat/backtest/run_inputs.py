@@ -150,7 +150,6 @@ def run_inputs(
     """Everything a run of `strategy`, on the instrument `config` names where it names one
     (D-114), on the trade dates from `start` to `end` reads, telling `progress` its data loaded
     and its features computed."""
-    named_in_its_code = strategy.instrument
     strategy = strategy.trading(config.instrument)
     market = market_of(strategy.instrument, config.provider, paths)
     applied = config.applied(finest_level(market.datasets), market.instrument, market.provider)
@@ -192,7 +191,7 @@ def run_inputs(
         warnings=(
             *produced.warnings,
             *_features_below_a_tick(spec, signals, parameters.tick),
-            *_features_reading_the_root_traded(strategy, named_in_its_code),
+            *_features_reading_the_root_traded(strategy),
         ),
         time_zone=market.sessions.time_zone(),
         signal_bar_eras=_signal_bar_eras(market, strategy, window, signals),
@@ -333,13 +332,12 @@ def _features_below_a_tick(spec: StrategySpec, signals: pl.DataFrame, tick: int)
     return tuple(found)
 
 
-def _features_reading_the_root_traded(strategy: SignalStrategy, named: str) -> tuple[str, ...]:
-    """A warning for each feature declaring, as another instrument, the one a run trades in place
-    of the root its code `named` (D-114): it reads its own bars, so that a spread against that
-    instrument is zero, with nothing else to tell the trader why."""
+def _features_reading_the_root_traded(strategy: SignalStrategy) -> tuple[str, ...]:
+    """A warning for each feature declaring, as another instrument, the one the run trades (D-114):
+    it reads its own bars, so that a spread against that instrument is zero, with nothing else to
+    tell the trader why. It depends on what the run reads alone, as the run's key does, so that
+    two strategies making one run say the same."""
     root = strategy.instrument
-    if root == named:
-        return ()
     reading = {
         node.spec.definition.name
         for node in strategy.feature_graph().order

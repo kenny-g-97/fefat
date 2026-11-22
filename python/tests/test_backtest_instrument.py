@@ -130,15 +130,19 @@ def test_a_feature_keeps_reading_the_instrument_it_declares() -> None:
 
 
 def test_a_feature_declaring_the_instrument_traded_is_warned_of() -> None:
-    # The run stands, but the feature now compares the instrument with itself.
+    # The run stands, but the feature compares the instrument with itself. The warning follows
+    # what the run reads, so that it holds whichever code made the one run first.
     store_with("ohlcv-1m", "funding")
+    written_for_it = breakout_reading_btc().model_copy(update={"instrument": PERPETUAL})
 
+    first = ff.backtest.run(written_for_it, *WINDOW)
     moved = ff.backtest.run(breakout_reading_btc(), *WINDOW, RunConfig(instrument=PERPETUAL))
-    own = ff.backtest.run(breakout_reading_btc(), *WINDOW)
+    other = ff.backtest.run(breakout_reading_btc(), *WINDOW)
 
+    assert moved.hash == first.hash
     assert {dataset.root for dataset in moved.record.datasets} == {PERPETUAL}
     assert [warning for warning in moved.record.warnings if "its own bars" in warning] == [
         "the feature btc_close declares BTCUSDT-PERP, the instrument this run trades, so it reads "
         "its own bars rather than another instrument's"
     ]
-    assert not any("its own bars" in warning for warning in own.record.warnings)
+    assert not any("its own bars" in warning for warning in other.record.warnings)
