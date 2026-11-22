@@ -83,6 +83,36 @@ class SeriesSource:
             return rows.select("trade_date", contract=pl.lit(self.contract))
         return None
 
+    def held_dates(self, timeframe: Timeframe) -> tuple[date, date] | None:
+        """The first and the last trade date the datasets that build `timeframe` hold, the
+        contract's own where the source names one, since `load` gives a contract no bars before
+        its first and only empty ones after its last (step 5.4); none while they hold no
+        partition of it."""
+        named = [
+            found
+            for each in building_datasets(self.datasets, timeframe)
+            if (found := dataset_coverage(self.store, each, self.contract)) is not None
+        ]
+        if not named:
+            return None
+        first = min(each.first_trade_date for each in named)
+        return first, max(each.last_trade_date for each in named)
+
+    def decided_dates(self, timeframe: Timeframe) -> tuple[date, date] | None:
+        """`held_dates` cut to the sessions the roll calendar decides a front for, where the
+        series splices contracts: `load` gives no bars before its first front and refuses those
+        after its last (`fefat.market.signal_grid.require_fronts_through`); none where they do
+        not meet (step 5.4's engine review)."""
+        held = self.held_dates(timeframe)
+        if held is None or self.calendar is None:
+            return held
+        fronts = self.calendar.rows
+        if fronts.is_empty():
+            return None
+        first: date = max(held[0], fronts.item(0, "trade_date"))
+        last: date = min(held[1], fronts.item(-1, "trade_date"))
+        return None if last < first else (first, last)
+
     def dates_read(self, dates: tuple[date, date]) -> tuple[date, date]:
         """The trade dates `signal_bars` reads for the window `dates`, from the session before its
         first, which the feature cache's keys pin (`fefat.features.cache_keys`)."""

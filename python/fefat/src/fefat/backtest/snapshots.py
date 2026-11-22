@@ -59,15 +59,17 @@ def market_of(root: str, provider: str | None, paths: FefatPaths) -> Market:
     )
 
 
+def level_rank(level: TickFidelity | Timeframe) -> tuple[int, int]:
+    """Where a level stands from the finest: TBBO, then trades, then bars by their length, as
+    the engine orders them."""
+    if isinstance(level, Timeframe):
+        return (2, level.nominal_nanoseconds())
+    return (0 if level is TickFidelity.TBBO else 1, 0)
+
+
 def finest_level(datasets: Iterable[Dataset]) -> TickFidelity | Timeframe:
     """The finest level the datasets hold: TBBO, then trades, then the shortest bars."""
-
-    def rank(level: TickFidelity | Timeframe) -> tuple[int, int]:
-        if isinstance(level, Timeframe):
-            return (2, level.nominal_nanoseconds())
-        return (0 if level is TickFidelity.TBBO else 1, 0)
-
-    return min((level_of(dataset) for dataset in datasets), key=rank)
+    return min((level_of(dataset) for dataset in datasets), key=level_rank)
 
 
 def snapshots_of(market: Market, first: date, window: Window) -> tuple[Snapshot, ...]:

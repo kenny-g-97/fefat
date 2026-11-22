@@ -52,6 +52,25 @@ def provider_datasets(
     return {str(dataset.schema_name): dataset for dataset in found if dataset.provider == chosen}
 
 
+def held_providers(store: Store, root: str) -> tuple[str, ...]:
+    """The providers whose trades, TBBO, or bars of `root` the store holds, by name."""
+    return tuple(
+        sorted({dataset.provider for dataset in session_datasets(store) if dataset.root == root})
+    )
+
+
+def default_provider(
+    root: str,
+    providers: tuple[str, ...],
+    catalog: Catalog = CATALOG,
+    guide: SourceGuide = SOURCE_GUIDE,
+) -> str:
+    """The provider a form offers first of those that hold `root`: the catalog's recommended one
+    (`_recommended`), or else the first by name, which the form shows and sends."""
+    recommended = _recommended(root, list(providers), catalog, guide)
+    return providers[0] if recommended is None else recommended
+
+
 def _one_provider(root: str, providers: list[str], catalog: Catalog, guide: SourceGuide) -> str:
     if len(providers) == 1:
         return providers[0]
@@ -187,7 +206,7 @@ def signal_bar_levels(
     the feature cache splits into partitions as the store does (`fefat.features.cache`)."""
     finest: dict[date, TickFidelity | Timeframe] = {}
     for level, dataset in reversed(_building(datasets, timeframe)):
-        held = _held(store, dataset, dates)
+        held = held_records(store, dataset, dates).drop("records")
         if contracts is not None:
             held = held.join(contracts, on=["trade_date", "contract"], how="semi")
         finest |= dict.fromkeys(held.get_column("trade_date").to_list(), level)
@@ -234,19 +253,20 @@ def _builds(level: TickFidelity | Timeframe, timeframe: Timeframe) -> bool:
     return timeframe.nominal_seconds() % level.nominal_seconds() == 0
 
 
-_HELD = pl.Schema({"trade_date": pl.Date, "contract": pl.String})
+_HELD = pl.Schema({"trade_date": pl.Date, "contract": pl.String, "records": pl.Int64})
 
 
-def _held(store: Store, dataset: Dataset, dates: tuple[date, date]) -> pl.DataFrame:
+def held_records(store: Store, dataset: Dataset, dates: tuple[date, date]) -> pl.DataFrame:
     """The trade dates of the window from `dates`' first to its last that the dataset holds, each
     with each contract that holds it (`_HELD`): the keys of its partitions where it keeps a file
-    per trade date, else the trade dates of its bars in the window, so that a stretch without
-    records between two holds none."""
+    per trade date, whose `records` are null, its footer saying how many (`Store.record_count`),
+    else the trade dates of its bars in the window with how many it holds of each, so that a
+    stretch without records between two holds none."""
     first, last = dates
     partitions = [file.partition for file in store.list_partitions(dataset)]
     if any(isinstance(partition.key, date) for partition in partitions):
         keyed = [
-            (partition.key, partition.contract)
+            (partition.key, partition.contract, None)
             for partition in partitions
             if isinstance(partition.key, date) and first <= partition.key <= last
         ]
@@ -259,7 +279,7 @@ def _held(store: Store, dataset: Dataset, dates: tuple[date, date]) -> pl.DataFr
     if not in_window:
         return pl.DataFrame(schema=_HELD)
     held = pl.concat(in_window).filter(pl.col("trade_date").is_between(first, last))
-    return held.unique().collect()
+    return held.group_by("trade_date", "contract").agg(records=pl.len().cast(pl.Int64)).collect()
 
 
 def _finest_first(

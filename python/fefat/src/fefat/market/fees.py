@@ -209,6 +209,16 @@ TABLES: Mapping[str, FeeTable] = MappingProxyType(
 """The fee tables a run can name, read-only."""
 
 
+def tables_pricing(root: str) -> tuple[str, ...]:
+    """The fee tables a run of `root` can name: those with a fee of it in every schedule, as
+    `fefat.reference.costs.RunFees.of_table` asks, in the order of `TABLES`."""
+    return tuple(
+        name
+        for name, table in TABLES.items()
+        if all(root in schedule.fees for schedule in table.schedules)
+    )
+
+
 def lookup(table_name: str, root: str, on: date) -> FuturesFee | CryptoFee:
     """The fee of `root` on `on` in the table a run names: `lookup("retail-default", "ES",
     on).per_contract_side` is what one ES contract costs per side."""
