@@ -3,18 +3,20 @@ import type {
   RunEstimateRequest,
   RunSubmission,
 } from "@/api/runs"
+import { counted } from "@/ui/figures"
 import type { EnteredValues, ParameterValue } from "@/ui/schema-fields"
 
 /** What the trader chose in the Run backtest dialog (web/DESIGN.md, Patterns, Run backtest
- * dialog); a choice left at null is the run's default, which the estimate names. Dates and
- * ticks are texts as typed, read once kept; `parameters` is null while a field is refused, and
- * `entered` holds the fields' texts for a dialog opened again. */
+ * dialog); a choice left at null is the run's default, which the estimate names, each side of
+ * the slippage on its own. Dates and ticks are texts as typed, read once kept; `parameters` is
+ * null while a field is refused, and `entered` holds the fields' texts for a dialog opened
+ * again. */
 export type RunDraft = Readonly<{
   provider: string | null
   contract: string | null
   fidelity: string | null
   feeTable: string | null
-  slippage: Readonly<{ market: string; stop: string }> | null
+  slippage: Readonly<{ market: string | null; stop: string | null }>
   from: string | null
   to: string | null
   parameters: Readonly<Record<string, ParameterValue>> | null
@@ -27,17 +29,22 @@ export const UNTOUCHED: RunDraft = {
   contract: null,
   fidelity: null,
   feeTable: null,
-  slippage: null,
+  slippage: { market: null, stop: null },
   from: null,
   to: null,
   parameters: {},
   entered: new Map(),
 }
 
-/** Whether the dialog can send its run, with the request, or why it waits, in words. */
+/** Whether the dialog can send its run, with the request; is reading the estimate of the latest
+ * draft, which a press waits for; or waits on the trader, and why, in words. */
 export type RunReadiness =
   | Readonly<{ kind: "ready"; request: RunSubmission }>
+  | Readonly<{ kind: "reading" }>
   | Readonly<{ kind: "waiting"; why: string }>
+
+/** The ticks of slippage a text can hold on each side. */
+type TicksText = Readonly<{ market: string; stop: string }>
 
 /** A window of trade dates, as the API writes them. */
 type TradeDates = Readonly<{ start: string; end: string }>
@@ -144,6 +151,31 @@ export function shownDates(
   }
 }
 
+/** The ticks of slippage on each side: as typed, or else the run's default, which a change of
+ * fidelity moves. */
+export function shownTicks(draft: RunDraft, estimate: RunEstimated): TicksText {
+  const { market, stop } = draft.slippage
+  const applied = estimate.settings.slippage_ticks
+  return {
+    market: market === null ? String(applied.market) : market,
+    stop: stop === null ? String(applied.stop) : stop,
+  }
+}
+
+/** What a run would read: its sessions, then its bars and its ticks, leaving out the kind it
+ * reads none of, since "0 bars" under a strategy of bars reads as an empty window. */
+export function readWords({
+  sessions,
+  bars,
+  ticks,
+}: Pick<RunEstimated, "sessions" | "bars" | "ticks">): string {
+  return [
+    counted(sessions, "session"),
+    ...(bars > 0 ? [counted(bars, "bar")] : []),
+    ...(ticks > 0 ? [counted(ticks, "tick")] : []),
+  ].join(", ")
+}
+
 /** What the draft sends, once the estimate read for it holds a window with sessions, or why it
  * waits. */
 export function runReadiness(
@@ -153,7 +185,7 @@ export function runReadiness(
   latest: boolean
 ): RunReadiness {
   if (!latest) {
-    return { kind: "waiting", why: "Reading your latest change" }
+    return { kind: "reading" }
   }
   const window = windowOf(draft, estimate)
   if (window === null) {
@@ -169,10 +201,10 @@ export function runReadiness(
       why: `Choose a fee table that prices ${estimate.instrument}`,
     }
   }
-  const ticks = draft.slippage
+  const ticks = shownTicks(draft, estimate)
   if (
-    ticks !== null &&
-    (ticksRefusal(ticks.market) !== null || ticksRefusal(ticks.stop) !== null)
+    ticksRefusal(ticks.market) !== null ||
+    ticksRefusal(ticks.stop) !== null
   ) {
     return { kind: "waiting", why: "Type whole ticks of slippage" }
   }
@@ -186,26 +218,39 @@ export function runReadiness(
       parameters: { ...draft.parameters },
       start: window.start,
       end: window.end,
-      settings: {
-        latency_ms: estimate.settings.latency_ms,
-        limit_fill: estimate.settings.limit_fill,
-        roll_handling: estimate.settings.roll_handling,
-        capital: estimate.settings.capital,
-        replay: estimate.settings.replay,
-        provider: estimate.settings.provider,
-        fee_table: feeTable,
-        ...(draft.contract === null ? {} : { contract: draft.contract }),
-        ...(draft.fidelity === null ? {} : { fidelity: draft.fidelity }),
-        ...(ticks === null
-          ? {}
-          : {
-              slippage_ticks: {
-                market: Number(ticks.market),
-                stop: Number(ticks.stop),
-              },
-            }),
-      },
+      settings: settingsAsked(draft, estimate, feeTable, ticks),
     },
+  }
+}
+
+/** The settings a run is sent with: those the dialog does not offer as the estimate applied
+ * them, and the choices the trader made; slippage only once a side of it is typed, so that the
+ * run's own default for its fidelity stands until then. */
+function settingsAsked(
+  draft: RunDraft,
+  estimate: RunEstimated,
+  feeTable: string,
+  ticks: TicksText
+): NonNullable<RunSubmission["settings"]> {
+  const typed = draft.slippage.market !== null || draft.slippage.stop !== null
+  return {
+    latency_ms: estimate.settings.latency_ms,
+    limit_fill: estimate.settings.limit_fill,
+    roll_handling: estimate.settings.roll_handling,
+    capital: estimate.settings.capital,
+    replay: estimate.settings.replay,
+    provider: estimate.settings.provider,
+    fee_table: feeTable,
+    ...(draft.contract === null ? {} : { contract: draft.contract }),
+    ...(draft.fidelity === null ? {} : { fidelity: draft.fidelity }),
+    ...(typed
+      ? {
+          slippage_ticks: {
+            market: Number(ticks.market),
+            stop: Number(ticks.stop),
+          },
+        }
+      : {}),
   }
 }
 

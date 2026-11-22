@@ -1,3 +1,4 @@
+import { cn } from "cn"
 import type { ReactNode } from "react"
 import type { ListedRun } from "@/api/runs"
 import { counted, fidelityLabel, formatMoney } from "@/ui/figures"
@@ -5,16 +6,27 @@ import { IdentityChip } from "@/ui/identity-chip"
 import { Panel } from "@/ui/panel"
 
 /** A list of labels and values (web/DESIGN.md, Patterns, Run page), each label in body text and
- * its value in heading text. */
+ * its value in heading text, aligned right where the values are `figures`. */
 function Facts({
   facts,
-}: Readonly<{ facts: readonly (readonly [string, ReactNode])[] }>) {
+  figures = false,
+}: Readonly<{
+  facts: readonly (readonly [string, ReactNode])[]
+  figures?: boolean
+}>) {
   return (
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2">
       {facts.map(([label, value]) => (
         <div key={label} className="contents">
           <dt className="text-foreground-secondary">{label}</dt>
-          <dd className="text-right wrap-anywhere text-foreground">{value}</dd>
+          <dd
+            className={cn(
+              "wrap-anywhere text-foreground",
+              figures && "text-right"
+            )}
+          >
+            {value}
+          </dd>
         </div>
       ))}
     </dl>
@@ -34,6 +46,7 @@ export function RunParametersCard({ run }: Readonly<{ run: ListedRun }>) {
         </p>
       ) : (
         <Facts
+          figures
           facts={parameters.map(([name, value]) => [name, String(value)])}
         />
       )}

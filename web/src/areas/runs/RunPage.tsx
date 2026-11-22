@@ -17,7 +17,19 @@ import { RunParametersCard, RunSettingsCard } from "./RunSettingsCards"
 import { RunStatusCard } from "./RunStatusCard"
 import { runLine } from "./run-words"
 
-const BACK = <BackLink to="/runs">Back to Runs</BackLink>
+/** Back to the list, as the row that opened this run had it filtered. */
+function BackToRuns() {
+  const filters = useLocation({
+    select: (location) => location.state.runsFilters,
+  })
+  return (
+    <BackLink to="/runs" search={filters === undefined ? {} : filters}>
+      Back to Runs
+    </BackLink>
+  )
+}
+
+const BACK = <BackToRuns />
 
 /** A run's page (web/DESIGN.md, Patterns, Run page), addressed by its run key once saved, or by
  * its row's id with its job while it runs: its status and its progress, then the settings it
@@ -79,7 +91,7 @@ function RunOfItsJob({ job }: Readonly<{ job: string }>) {
       void navigate({
         to: "/runs/run",
         search: { key: runKey },
-        state: { cachedRun: runKey },
+        state: (kept) => ({ ...kept, cachedRun: runKey }),
         replace: true,
       })
     }
@@ -121,6 +133,7 @@ function ShownRun({ run }: Readonly<{ run: ListedRun }>) {
       void navigate({
         to: "/runs/run",
         search: { key: savedKey },
+        state: true,
         replace: true,
       })
     }

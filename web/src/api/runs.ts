@@ -1,12 +1,10 @@
 import {
   infiniteQueryOptions,
-  keepPreviousData,
   queryOptions,
   useMutation,
 } from "@tanstack/react-query"
-import { useEffect, useRef } from "react"
 import { z } from "zod"
-import { writeEndedSince } from "./catalog"
+import { useReadOnceEnded } from "./catalog"
 import { api, queryClient } from "./client"
 import { isActive, type Job, jobsQuery } from "./jobs"
 import { answer } from "./problems"
@@ -21,10 +19,6 @@ export type SavedRun = components["schemas"]["SavedRun"]
 export type ListedRun = SubmittedRun | SavedRun
 /** What a run would read, before anything runs. */
 export type RunEstimated = components["schemas"]["RunEstimated"]
-/** The answer of an estimate: what a run would read, or that the store holds none of it. */
-export type RunEstimate =
-  | RunEstimated
-  | components["schemas"]["NoDataToEstimate"]
 /** What `POST /v1/runs` takes. */
 export type RunSubmission = components["schemas"]["RunSubmission"]
 /** What `POST /v1/runs/estimate` takes. */
@@ -121,15 +115,20 @@ export function runJobQuery(jobId: string) {
   })
 }
 
-/** What a run of a version would read under `asked`, the last answer staying in view while a
- * newer one is read. */
+/** What a run of a version would read under `asked`; a read no form waits for any longer is
+ * given up, so that it holds none of the browser's few connections beside the jobs' streams. */
 export function runEstimateQuery(asked: RunEstimateRequest) {
   return queryOptions({
     queryKey: ["runs", "estimate", asked],
-    queryFn: async () =>
-      answer(await api.POST("/v1/runs/estimate", { body: asked })),
-    placeholderData: keepPreviousData,
+    queryFn: async ({ signal }) =>
+      answer(await api.POST("/v1/runs/estimate", { body: asked, signal })),
   })
+}
+
+/** The estimate of `asked`, from the read under way where there is one; null where it fails or
+ * is given up, which the form reading the same query says. */
+export function readRunEstimate(asked: RunEstimateRequest) {
+  return queryClient.fetchQuery(runEstimateQuery(asked)).catch(() => null)
 }
 
 /** Read again what a new or a cancelled run changes: the lists, the run, and the jobs. */
@@ -207,19 +206,13 @@ export function endedBacktests(jobs: readonly Job[]): string {
 export function useRunsReadAfterBacktests(
   jobs: readonly Job[] | undefined
 ): void {
-  const ended = jobs === undefined ? undefined : endedBacktests(jobs)
-  const before = useRef(ended)
-  useEffect(() => {
-    if (ended === undefined) {
-      return
-    }
-    const earlier = before.current
-    before.current = ended
-    if (earlier !== undefined && writeEndedSince(earlier, ended)) {
-      void queryClient.invalidateQueries({ queryKey: ["runs"] })
-      void queryClient.invalidateQueries({
-        queryKey: strategiesQuery.queryKey,
-      })
-    }
-  }, [ended])
+  useReadOnceEnded(
+    jobs === undefined ? undefined : endedBacktests(jobs),
+    readRunsAndStrategiesAgain
+  )
+}
+
+function readRunsAndStrategiesAgain(): void {
+  void queryClient.invalidateQueries({ queryKey: ["runs"] })
+  void queryClient.invalidateQueries({ queryKey: strategiesQuery.queryKey })
 }

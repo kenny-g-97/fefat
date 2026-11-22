@@ -1,5 +1,6 @@
 import { createRouter } from "@tanstack/react-router"
 import { queryClient } from "@/api/client"
+import type { RunFilters } from "@/api/runs"
 import { ErrorPage } from "./ErrorPage"
 import { NotFoundPage } from "./NotFoundPage"
 import { routeTree } from "./routeTree.gen"
@@ -23,11 +24,13 @@ declare module "@tanstack/react-router" {
    * "MES from synthetic", which the Data page says it deleted (step 5.18); the strategy version
    * a save opened, which its page says it saved (step 5.5); and, from the Run backtest dialog
    * (step 5.6), the run key of a run found saved, which its page marks Cached, and the strategy
-   * a stress ran, which the Runs page says. */
+   * a stress ran, which the Runs page says; and the filters of the list a run was opened from,
+   * which its Back to Runs returns to. */
   interface HistoryState {
     deleted?: string
     saved?: Readonly<{ strategy: string; version: number }>
     cachedRun?: string
     stressed?: string
+    runsFilters?: RunFilters
   }
 }

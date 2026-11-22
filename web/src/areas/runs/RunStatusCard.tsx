@@ -18,8 +18,8 @@ type RunStatusCardProps = Readonly<{ run: ListedRun; cached: boolean }>
 
 /** Where a run stands (web/DESIGN.md, Patterns, Run page): its badge, then while its job is under
  * way its bar, its last message, and Cancel; once it ended without a run, why, with the way back
- * to its version; once saved, when, its run key, and Cached where the run opened from a request
- * FEAT had already run. */
+ * to its version; once saved, when it was asked for, its run key, and Cached where the run opened
+ * from a request FEAT had already run. */
 export function RunStatusCard({ run, cached }: RunStatusCardProps) {
   const cancelling =
     run.state === "submitted" &&
@@ -46,11 +46,11 @@ export function RunStatusCard({ run, cached }: RunStatusCardProps) {
         <div className="flex flex-col gap-2">
           {cached && (
             <p className="text-foreground-secondary">
-              FEAT found this run saved and ran nothing.
+              FEAT found this run saved and opened it.
             </p>
           )}
           <p className="text-foreground-secondary">
-            {`Saved ${formatInstant(run.created_at)}`}
+            {`Created ${formatInstant(run.created_at)}`}
           </p>
           <p className="flex items-center gap-2 text-foreground-secondary">
             Run key

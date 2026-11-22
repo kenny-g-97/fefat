@@ -368,6 +368,12 @@ main[tabindex="-1"]:focus-visible {
   background-color: color-mix(in srgb, var(--background) 72%, transparent);
 }
 
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  [data-slot="dialog-overlay"] {
+    background-color: var(--background);
+  }
+}
+
 [data-slot="dialog-content"] {
   max-width: min(40rem, calc(100% - 2rem));
   max-height: calc(100dvh - 2rem);

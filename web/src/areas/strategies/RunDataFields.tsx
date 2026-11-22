@@ -37,10 +37,12 @@ export function RunDataFields({
             <Picker
               id="run-provider"
               className="w-full"
-              value={settings.provider}
+              value={
+                draft.provider === null ? settings.provider : draft.provider
+              }
               options={providers.map((each) => ({ value: each, label: each }))}
               onChange={(provider) =>
-                onChange({ ...draft, provider, contract: null })
+                onChange({ ...draft, provider, contract: null, fidelity: null })
               }
             />
           </Choice>
@@ -96,7 +98,8 @@ function RunDates({ draft, estimate, onChange }: RunDataFieldsProps) {
   }
   const fromRefusal = tradeDateRefusal(dates.from, held)
   const toRefusal =
-    tradeDateRefusal(dates.to, held) ?? windowRefusal(dates.from, dates.to)
+    tradeDateRefusal(dates.to, held) ??
+    (fromRefusal === null ? windowRefusal(dates.from, dates.to) : null)
   return (
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-[1fr_1fr_auto] items-start gap-4">

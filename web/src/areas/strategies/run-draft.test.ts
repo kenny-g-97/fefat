@@ -4,6 +4,7 @@ import {
   estimateAsked,
   feeTableOf,
   isTradeDate,
+  readWords,
   runReadiness,
   shownDates,
   ticksRefusal,
@@ -121,6 +122,19 @@ describe("estimateAsked of a window that runs backwards", () => {
   })
 })
 
+describe("readWords", () => {
+  it("leaves out the kind of data a run reads none of", () => {
+    expect(readWords(ESTIMATE)).toBe("2 sessions, 2,760 bars")
+    expect(readWords({ ...ESTIMATE, bars: 0, ticks: 114_749 })).toBe(
+      "2 sessions, 114,749 ticks"
+    )
+    expect(readWords({ ...ESTIMATE, ticks: 12 })).toBe(
+      "2 sessions, 2,760 bars, 12 ticks"
+    )
+    expect(readWords({ ...ESTIMATE, sessions: 0, bars: 0 })).toBe("0 sessions")
+  })
+})
+
 describe("feeTableOf", () => {
   it("names the table chosen or the default, and none that does not price the root", () => {
     expect(feeTableOf(UNTOUCHED, ESTIMATE)).toBe("retail-default")
@@ -201,14 +215,33 @@ describe("runReadiness", () => {
     })
   })
 
+  it("sends a side of slippage left alone at the estimate's default", () => {
+    const read = runReadiness(
+      "v1",
+      { ...UNTOUCHED, slippage: { market: "2", stop: null } },
+      {
+        ...ESTIMATE,
+        settings: {
+          ...ESTIMATE.settings,
+          slippage_ticks: { market: 1, stop: 4 },
+        },
+      },
+      true
+    )
+
+    expect(read).toMatchObject({
+      kind: "ready",
+      request: { settings: { slippage_ticks: { market: 2, stop: 4 } } },
+    })
+  })
+
+  it("is reading while the estimate is another draft's", () => {
+    expect(runReadiness("v1", UNTOUCHED, ESTIMATE, false)).toEqual({
+      kind: "reading",
+    })
+  })
+
   it.each([
-    [
-      "an estimate of another draft",
-      UNTOUCHED,
-      ESTIMATE,
-      false,
-      "Reading your latest change",
-    ],
     [
       "a date outside the data",
       { ...UNTOUCHED, from: "2026-03-05" },
@@ -239,7 +272,7 @@ describe("runReadiness", () => {
     ],
     [
       "ticks that are no number",
-      { ...UNTOUCHED, slippage: { market: "1.5", stop: "1" } },
+      { ...UNTOUCHED, slippage: { market: "1.5", stop: null } },
       ESTIMATE,
       true,
       "Type whole ticks of slippage",

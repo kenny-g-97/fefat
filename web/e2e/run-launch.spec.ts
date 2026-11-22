@@ -41,6 +41,10 @@ test("a run launched from the strategy page reaches 100% and lands on its page",
   await expect(page.getByRole("region", { name: "Parameters" })).toContainText(
     "6"
   )
+  const key = new URL(page.url()).searchParams.get("key")
+  const run = await (await page.request.get(`/v1/runs/${key}`)).json()
+  const job = await (await page.request.get(`/v1/jobs/${run.job_id}`)).json()
+  expect(job.progress).toBe(100)
   await page.mouse.move(700, 36)
   await screenshot(page, "run-launched")
   expect(errors).toEqual([])
@@ -111,6 +115,12 @@ test("Run with stress asks for the run at one and at two more ticks", async ({
   })
   await page.mouse.move(700, 36)
   await screenshot(page, "runs-stressed")
+
+  // The line stays while the filters change, so that the list does not jump under the pointer.
+  await page.getByLabel("Status").click()
+  await page.getByRole("option", { name: "Succeeded" }).click()
+  await expect(page).toHaveURL(/status=succeeded/)
+  await expect(page.getByTestId("runs-stressed")).toBeVisible()
 })
 
 test("a strategy on data FEAT does not hold cannot run, and the dialog says why", async ({

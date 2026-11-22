@@ -2,7 +2,12 @@ import type { RunEstimated } from "@/api/runs"
 import { fidelityLabel } from "@/ui/figures"
 import { KeptField } from "@/ui/kept-field"
 import { Choice, Picker } from "@/ui/picker"
-import { feeTableOf, type RunDraft, ticksRefusal } from "./run-draft"
+import {
+  feeTableOf,
+  type RunDraft,
+  shownTicks,
+  ticksRefusal,
+} from "./run-draft"
 
 /** The fidelity select's first choice, the setting left out. No level is written so. */
 const AUTO = "(auto)"
@@ -15,8 +20,8 @@ type RunCostFieldsProps = Readonly<{
 
 /** How the run fills and what it costs: the fidelity, Auto by default, each level the data
  * holds; the fee table, among those that price the instrument; and the ticks of slippage on
- * market and stop orders, which show the run's default until they are typed, so that a change
- * of fidelity still moves it. */
+ * market and stop orders, each showing the run's default until it is typed, so that a change of
+ * fidelity still moves it. */
 export function RunCostFields({
   draft,
   estimate,
@@ -91,11 +96,7 @@ function levelInASentence(level: string): string {
 }
 
 function RunSlippage({ draft, estimate, onChange }: RunCostFieldsProps) {
-  const applied = estimate.settings.slippage_ticks
-  const ticks =
-    draft.slippage === null
-      ? { market: String(applied.market), stop: String(applied.stop) }
-      : draft.slippage
+  const ticks = shownTicks(draft, estimate)
   const marketRefusal = ticksRefusal(ticks.market)
   const stopRefusal = ticksRefusal(ticks.stop)
   return (
@@ -113,7 +114,7 @@ function RunSlippage({ draft, estimate, onChange }: RunCostFieldsProps) {
             marketRefusal === null ? undefined : "run-slippage-market-refusal"
           }
           onKeep={(market) =>
-            onChange({ ...draft, slippage: { ...ticks, market } })
+            onChange({ ...draft, slippage: { ...draft.slippage, market } })
           }
         />
       </Choice>
@@ -130,7 +131,7 @@ function RunSlippage({ draft, estimate, onChange }: RunCostFieldsProps) {
             stopRefusal === null ? undefined : "run-slippage-stop-refusal"
           }
           onKeep={(stop) =>
-            onChange({ ...draft, slippage: { ...ticks, stop } })
+            onChange({ ...draft, slippage: { ...draft.slippage, stop } })
           }
         />
       </Choice>

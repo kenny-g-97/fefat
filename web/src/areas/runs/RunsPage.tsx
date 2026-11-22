@@ -69,7 +69,10 @@ function RunList({ filters }: Readonly<{ filters: RunsSearch }>) {
         <p className="text-foreground-secondary">
           No run matches these filters.
         </p>
-        <Button variant="ghost" onClick={() => void navigate({ search: {} })}>
+        <Button
+          variant="ghost"
+          onClick={() => void navigate({ search: {}, state: true })}
+        >
           Clear filters
         </Button>
       </div>
@@ -87,7 +90,11 @@ function RunList({ filters }: Readonly<{ filters: RunsSearch }>) {
       <RunHead />
       <ul className="flex flex-col gap-1">
         {listed.map((run) => (
-          <RunRow key={run.id} run={liveRun(run, jobs.data)} />
+          <RunRow
+            key={run.id}
+            run={liveRun(run, jobs.data)}
+            filters={filters}
+          />
         ))}
       </ul>
       {runs.hasNextPage && (

@@ -98,7 +98,7 @@ function RecentState({ run }: Readonly<{ run: ListedRun }>) {
         data-testid="recent-verdict"
         className="rounded-xl border border-transparent bg-accent px-2 py-0.5 text-xs font-semibold text-foreground"
       >
-        {VERDICT_LABELS[verdict]}
+        {`Verdict: ${VERDICT_LABELS[verdict]}`}
       </span>
       <span
         data-testid="recent-pnl"

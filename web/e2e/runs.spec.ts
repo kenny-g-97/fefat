@@ -165,6 +165,7 @@ test("the list shows a saved run's figures as the API gives them", async ({
   await expect(row).toContainText(seeded.start)
   await expect(row).toContainText(seeded.end)
   await expect(row.getByTestId("run-slippage")).toHaveText("1 tick")
+  await expect(row.getByTestId("run-parameters")).toContainText("lookback 12")
   await expect(row.getByTestId("run-pnl")).toHaveText(
     moneyText(seeded.key_metrics.pnl)
   )
@@ -216,6 +217,13 @@ test("the filters stay in the address and say when no run matches", async ({
   await page.getByRole("option", { name: "demo" }).click()
   await expect(page).toHaveURL(/strategy=demo/)
   await expect(page.getByTestId("run-strategy").first()).toHaveText("demo")
+
+  // Back to Runs returns to the list as it was filtered.
+  await page.getByTestId("run-row").first().click()
+  await expect(page.getByTestId("run-page-status")).toBeVisible()
+  await page.getByRole("link", { name: "Back to Runs" }).click()
+  await expect(page).toHaveURL(/strategy=demo/)
+  await expect(page.getByLabel("Strategy")).toHaveText("demo")
 })
 
 test("Show more reads the next page, and a list it cannot read fails alone", async ({
@@ -376,6 +384,13 @@ test("a saved run's page shows its status, its key, and every setting", async ({
   const settings = page.getByTestId("run-settings")
   await expect(settings).toContainText(seeded.settings.provider)
   await expect(settings).toContainText(seeded.settings.fee_table)
+  // Words stand beside their labels: only figures align right.
+  await expect(settings.getByText("Spliced", { exact: true })).not.toHaveCSS(
+    "text-align",
+    "right"
+  )
+  // A run's row keeps the time it was asked for, which is not when it was saved.
+  await expect(page.getByText(/^Created /)).toBeVisible()
   const parameters = page.getByRole("region", { name: "Parameters" })
   await expect(parameters).toContainText("lookback")
   await expect(parameters).toContainText("12")
@@ -431,8 +446,13 @@ test("the dialog shows what the data holds and what the run would read", async (
   await expect(dialog.getByLabel("To", { exact: true })).toHaveValue(
     answer.held.end
   )
+  // The seed's ES fills on its trades alone, so the line leaves the bars out.
+  expect(answer.bars).toBe(0)
   await expect(dialog.getByTestId("run-estimate")).toHaveText(
-    `${answer.sessions} sessions, ${answer.bars.toLocaleString("en-US")} bars, ${answer.ticks.toLocaleString("en-US")} ticks`
+    `${answer.sessions} sessions, ${answer.ticks.toLocaleString("en-US")} ticks`
+  )
+  await expect(dialog.getByTestId("run-stress-note")).toHaveText(
+    "Run with stress also runs it at 1 and at 2 more ticks of slippage"
   )
   await expect(dialog.getByTestId("run-launch")).toBeEnabled()
   await expect(dialog.getByLabel("Contract")).toBeFocused()
@@ -443,12 +463,36 @@ test("the dialog shows what the data holds and what the run would read", async (
   const fidelity = await boxOf(dialog.getByLabel("Fidelity"))
   const lookback = await boxOf(dialog.getByLabel("lookback"))
   expect(lookback.width).toBeCloseTo(fidelity.width, 0)
+  // At the window's full height the pinned foot covers no field.
+  const foot = await boxOf(dialog.locator("footer"))
+  expect(lookback.y + lookback.height).toBeLessThan(foot.y)
   expect(await lowContrastInEachTheme(page)).toEqual([])
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   await screenshot(page, "run-dialog", [], "window")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
   await screenshot(page, "run-dialog-light", [], "window")
   await page.evaluate(() => document.documentElement.classList.add("dark"))
+
+  // In a short window the fields scroll under what the run would read and its buttons.
+  await page.setViewportSize({ width: 1280, height: 520 })
+  await dialog.getByLabel("Contract").scrollIntoViewIfNeeded()
+  await expect(dialog.getByTestId("run-estimate")).toBeInViewport({ ratio: 1 })
+  await expect(dialog.getByTestId("run-launch")).toBeInViewport({ ratio: 1 })
+  await page.setViewportSize({ width: 1280, height: 800 })
+
+  // Asked for more contrast, the scrim is solid.
+  await page.emulateMedia({ reducedMotion: "reduce", contrast: "more" })
+  const scrim = await page
+    .locator('[data-slot="dialog-overlay"]')
+    .evaluate((overlay) => getComputedStyle(overlay).backgroundColor)
+  const ground = await page.evaluate(
+    () => getComputedStyle(document.body).backgroundColor
+  )
+  expect(scrim).toBe(ground)
+  await page.emulateMedia({
+    reducedMotion: "reduce",
+    contrast: "no-preference",
+  })
 
   await page.keyboard.press("Escape")
   await expect(dialog).toHaveCount(0)
@@ -482,6 +526,11 @@ test("the dialog refuses a date the data does not hold, and a window without dat
   await dialog.getByLabel("From", { exact: true }).blur()
   await expect(dialog).toContainText("Type a date such as 2026-03-06.")
   await expect(launch).toBeDisabled()
+  // That refusal is From's: To keeps its own date.
+  await expect(dialog.getByLabel("To", { exact: true })).toHaveAttribute(
+    "aria-invalid",
+    "false"
+  )
 
   await dialog.getByTestId("run-whole-range").click()
   await expect(dialog.getByLabel("From", { exact: true })).toHaveValue(
@@ -558,6 +607,19 @@ test("what the dialog holds outlives closing it, and a refusal of the data stand
   )
   await expect(dialog.getByTestId("run-launch")).toBeDisabled()
   await expect(dialog.getByLabel("From", { exact: true })).toBeVisible()
+
+  // Opened again on the choice refused, its fields stand, so that it can be changed back.
+  await page.keyboard.press("Escape")
+  await expect(dialog).toHaveCount(0)
+  await page.getByTestId("run-backtest").click()
+  await expect(dialog.getByTestId("run-estimate-refusal")).toContainText(
+    "Expected a level at or coarser than 1m"
+  )
+  await page.unroute("**/v1/runs/estimate")
+  await dialog.getByLabel("Fidelity").click()
+  await page.getByRole("option", { name: "Auto" }).click()
+  await expect(dialog.getByTestId("run-estimate-refusal")).toHaveCount(0)
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
 })
 
 test("the dialog picks the data by provider and contract, and says when no fee table prices it", async ({
@@ -566,10 +628,18 @@ test("the dialog picks the data by provider and contract, and says when no fee t
   // The seed holds ES from one provider: a second is answered here, its data the first's.
   const asked: z.infer<typeof estimateAsked>[] = []
   let priced = true
+  let refused: string | null = null
+  let noDates = false
   await page.route("**/v1/runs/estimate", async (route) => {
     const request = estimateAsked.parse(route.request().postDataJSON())
     asked.push(request)
     const { provider, ...others } = request.settings
+    if (provider !== undefined && provider === refused) {
+      await route.fulfill(
+        problemAnswer(400, `Expected a provider of ES, got ${provider}.`)
+      )
+      return
+    }
     const real = await route.fetch({
       postData: JSON.stringify({ ...request, settings: others }),
     })
@@ -579,6 +649,9 @@ test("the dialog picks the data by provider and contract, and says when no fee t
         ...body,
         providers: ["synthetic", "vendor"],
         ...(priced ? {} : { fee_tables: [] }),
+        ...(noDates
+          ? { held: null, window: null, sessions: 0, bars: 0, ticks: 0 }
+          : {}),
         settings: {
           ...body.settings,
           provider: provider === undefined ? "synthetic" : provider,
@@ -594,6 +667,9 @@ test("the dialog picks the data by provider and contract, and says when no fee t
     "synthetic holds ESH2026"
   )
   expect(asked.at(-1)?.settings.contract).toBe("ESH2026")
+  await dialog.getByLabel("Fidelity").click()
+  await page.getByRole("option", { name: "1-minute bars" }).click()
+  await expect.poll(() => asked.at(-1)?.settings.fidelity).toBe("1m")
 
   await dialog.getByLabel("Data").click()
   await page.getByRole("option", { name: "vendor" }).click()
@@ -601,9 +677,39 @@ test("the dialog picks the data by provider and contract, and says when no fee t
     "vendor holds ES from"
   )
   expect(asked.at(-1)?.settings.provider).toBe("vendor")
-  // Another provider holds other contracts, so the choice goes back to the spliced series.
+  // Another provider holds other contracts and levels, so both choices go back.
   expect(asked.at(-1)?.settings.contract).toBeUndefined()
+  expect(asked.at(-1)?.settings.fidelity).toBeUndefined()
   await expect(dialog.getByLabel("Contract")).toHaveText("Spliced")
+  await expect(dialog.getByLabel("Fidelity")).toHaveText("Auto")
+
+  // A provider refused stays chosen, so that the one before it can be chosen again.
+  refused = "synthetic"
+  await dialog.getByLabel("Data").click()
+  await page.getByRole("option", { name: "synthetic" }).click()
+  await expect(dialog.getByTestId("run-estimate-refusal")).toContainText(
+    "Expected a provider of ES"
+  )
+  await expect(dialog.getByLabel("Data")).toHaveText("synthetic")
+  await dialog.getByLabel("Data").click()
+  await page.getByRole("option", { name: "vendor" }).click()
+  await expect(dialog.getByTestId("run-estimate-refusal")).toHaveCount(0)
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+
+  // A provider whose data cannot make the series says so, and the form stays to choose again.
+  noDates = true
+  await dialog.getByLabel("Contract").click()
+  await page.getByRole("option", { name: "ESH2026" }).click()
+  await expect(dialog.getByTestId("run-coverage")).toHaveText(
+    "vendor holds no bars of ESH2026 that build 5m bars. Choose other data."
+  )
+  await expect(dialog.getByTestId("run-launch")).toBeDisabled()
+  noDates = false
+  await dialog.getByLabel("Contract").click()
+  await page.getByRole("option", { name: "Spliced" }).click()
+  await expect(dialog.getByTestId("run-coverage")).toContainText(
+    "vendor holds ES from"
+  )
 
   priced = false
   await dialog.getByLabel("Fidelity").click()
@@ -616,6 +722,171 @@ test("the dialog picks the data by provider and contract, and says when no fee t
     "Choose a fee table that prices ES"
   )
   await expect(dialog.getByTestId("run-launch")).toBeDisabled()
+})
+
+test("a press on Run while the estimate is read is kept, and sends the new date", async ({
+  loggedIn: page,
+}) => {
+  // Pressing Run leaves the date's field, which asks a new estimate before the press ends.
+  const seeded = await theSeededRun(page)
+  const dialog = await openTheDialog(page)
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+  const sent: unknown[] = []
+  await page.route(THE_LIST, async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback()
+      return
+    }
+    sent.push(route.request().postDataJSON())
+    await route.fulfill({ json: { state: "saved", run_key: seeded.run_key } })
+  })
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route("**/v1/runs/estimate", async (route) => {
+    await released
+    await route.fallback()
+  })
+
+  await dialog.getByLabel("To", { exact: true }).fill("2026-03-06")
+  await dialog.getByTestId("run-launch").click()
+
+  await expect(dialog.getByTestId("run-waiting")).toHaveText(
+    "Looking the run up"
+  )
+  expect(sent).toEqual([])
+  release()
+  await expect(page).toHaveURL(`/runs/run?key=${seeded.run_key}`)
+  expect(sent).toHaveLength(1)
+  expect(z.object({ end: z.string() }).parse(sent[0]).end).toBe("2026-03-06")
+})
+
+test("ticks typed while an estimate is read stay, and the other side follows the fidelity", async ({
+  loggedIn: page,
+}) => {
+  const seeded = await theSeededRun(page)
+  const dialog = await openTheDialog(page)
+  const sent: unknown[] = []
+  await page.route(THE_LIST, async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback()
+      return
+    }
+    sent.push(route.request().postDataJSON())
+    await route.fulfill({ json: { state: "saved", run_key: seeded.run_key } })
+  })
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route("**/v1/runs/estimate", async (route) => {
+    await released
+    const body = estimateAnswer.parse(await (await route.fetch()).json())
+    await route.fulfill({
+      json: {
+        ...body,
+        settings: { ...body.settings, slippage_ticks: { market: 0, stop: 0 } },
+      },
+    })
+  })
+
+  await dialog.getByLabel("Fidelity").click()
+  await page.getByRole("option", { name: "1-minute bars" }).click()
+  const market = dialog.getByLabel("Slippage on market orders, ticks")
+  await market.fill("3")
+  release()
+
+  await expect(dialog.getByLabel("Slippage on stop orders, ticks")).toHaveValue(
+    "0"
+  )
+  await expect(market).toHaveValue("3")
+  await market.blur()
+  await dialog.getByTestId("run-launch").click()
+  await expect.poll(() => sent.length).toBe(1)
+  expect(
+    z
+      .object({
+        settings: z.object({
+          slippage_ticks: z.object({ market: z.number(), stop: z.number() }),
+        }),
+      })
+      .parse(sent[0]).settings.slippage_ticks
+  ).toEqual({ market: 3, stop: 0 })
+})
+
+test("the dialog says the refusal of the last launch", async ({
+  loggedIn: page,
+}) => {
+  await page.route(THE_LIST, (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill(problemAnswer(400, "Expected a run this test refuses."))
+      : route.fallback()
+  )
+  await page.route("**/v1/runs/stress", (route) =>
+    route.fulfill(problemAnswer(400, "Expected a stress this test refuses."))
+  )
+  const dialog = await openTheDialog(page)
+
+  await dialog.getByTestId("run-launch").click()
+  await expect(dialog.getByTestId("run-refusal")).toHaveText(
+    "Expected a run this test refuses."
+  )
+
+  await dialog.getByTestId("run-stress").click()
+  await expect(dialog.getByTestId("run-refusal")).toHaveText(
+    "Expected a stress this test refuses."
+  )
+})
+
+test("an estimate the server cannot answer offers Try again, not another choice", async ({
+  loggedIn: page,
+}) => {
+  const dialog = await openTheDialog(page)
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+  let failing = true
+  await page.route("**/v1/runs/estimate", (route) =>
+    failing
+      ? route.fulfill(
+          problemAnswer(500, "The server could not read the store.")
+        )
+      : route.fallback()
+  )
+
+  await dialog.getByLabel("Fidelity").click()
+  await page.getByRole("option", { name: "1-minute bars" }).click()
+
+  await expect(dialog.getByRole("alert")).toContainText(
+    "The server could not read the store."
+  )
+  await expect(dialog.getByTestId("run-estimate-refusal")).toHaveCount(0)
+  failing = false
+  await dialog.getByRole("button", { name: "Try again" }).click()
+  await expect(dialog.getByRole("alert")).toHaveCount(0)
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+})
+
+test("a Cancel the server refuses says why in the row", async ({
+  loggedIn: page,
+}) => {
+  const seeded = await theSeededRun(page)
+  const row = aSubmittedRow(seeded, "job-held")
+  await page.route(THE_LIST, (route) =>
+    route.fulfill({ json: { runs: [row], next_cursor: null } })
+  )
+  await page.route("**/v1/runs/run-live/cancel", (route) =>
+    route.fulfill(
+      problemAnswer(409, "Expected a run under way, for this test.")
+    )
+  )
+
+  await page.goto("/runs")
+  await page.getByTestId("run-cancel").click()
+
+  await expect(page.getByTestId("run-cancel-refusal")).toHaveText(
+    "Expected a run under way, for this test."
+  )
+  await expect(page.getByTestId("run-cancel")).toBeEnabled()
 })
 
 test("a submission whose row gave way opens the run its job names", async ({
@@ -660,7 +931,7 @@ test("Home shows the newest runs with their verdict and three jobs, then a count
     moneyText(seeded.key_metrics.pnl)
   )
   await expect(recent.getByTestId("recent-verdict").last()).toHaveText(
-    /Deploy-grade evidence|Refine|Abandon/
+    /^Verdict: (Deploy-grade evidence|Refine|Abandon)$/
   )
   const card = page.getByRole("region", { name: "Running jobs" })
   await expect(card.getByTestId("running-job")).toHaveCount(3)

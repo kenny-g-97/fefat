@@ -12,7 +12,8 @@ const ALL = "(all)"
 const NOT_SAVED = "(no saved version)"
 
 /** The list's two filters (web/DESIGN.md, Patterns, Runs list), by strategy and by status, each
- * kept in the page's address. */
+ * kept in the page's address; a change keeps what the page was told on arrival, so that the
+ * list does not move under the pointer. */
 export function RunFilters({ filters }: Readonly<{ filters: RunsSearch }>) {
   const navigate = useNavigate({ from: "/runs/" })
   const strategies = useQuery(strategiesQuery)
@@ -54,6 +55,7 @@ export function RunFilters({ filters }: Readonly<{ filters: RunsSearch }>) {
                   chosen === ALL || chosen === NOT_SAVED ? undefined : chosen,
                 versioned: chosen === NOT_SAVED ? false : undefined,
               }),
+              state: true,
             })
           }
         />
@@ -76,6 +78,7 @@ export function RunFilters({ filters }: Readonly<{ filters: RunsSearch }>) {
                 ...before,
                 status: RUN_STATUSES.find((status) => status === chosen),
               }),
+              state: true,
             })
           }
         />
