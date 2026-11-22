@@ -98,7 +98,7 @@ def test_a_lookup_and_a_backtest_answer_the_run_and_its_stages(
     ("settings", "parameters", "said"),
     [
         (None, {"lookback": "24"}, "Expected the strategy's parameters as its schema gives them"),
-        (RunConfig(contract="NQH2026"), {}, "Expected a contract of ES, the strategy's root"),
+        (RunConfig(contract="NQH2026"), {}, "Expected a contract of ES, the root the run trades"),
     ],
 )
 def test_a_lookup_refuses_what_the_sdk_refuses_in_its_words(

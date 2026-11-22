@@ -26,6 +26,7 @@ from fefat.backtest.run_signals import contract_of
 from fefat.backtest.snapshots import level_rank
 from fefat.config import FefatPaths
 from fefat.market.contracts import parse_contract_name
+from fefat.market.coverage import session_datasets
 from fefat.market.dataset_choice import (
     UnbuildableSeriesError,
     building_datasets,
@@ -71,13 +72,15 @@ def estimated(
     config: RunConfig,
     paths: FefatPaths,
 ) -> WindowEstimate | None:
-    """What a run of `root` in `timeframe` bars under `config` would read from `start` to `end`,
-    each left out meaning where the data starts or ends; None where the store holds none of
-    `root`, and zero counts for a window that holds no session, or a series the provider's data
-    cannot make, which holds no dates and still names what can be chosen instead. Where several
-    providers hold the root and `config` names none, the catalog's recommended one, or else the
-    first by name. Refused as the run would be for a provider or a contract it cannot read, and
-    for a session whose levels are all finer than the fidelity."""
+    """What a run of `root`, or of the instrument `config` names in its place (D-114), in
+    `timeframe` bars under `config` would read from `start` to `end`, each left out meaning where
+    the data starts or ends; None where the store holds none of that instrument, and zero counts
+    for a window that holds no session, or a series the provider's data cannot make, which holds
+    no dates and still names what can be chosen instead. Where several providers hold the root
+    and `config` names none, the catalog's recommended one, or else the first by name. Refused as
+    the run would be for a provider or a contract it cannot read, and for a session whose levels
+    are all finer than the fidelity."""
+    root = root if config.instrument is None else config.instrument
     store = Store(paths.data_dir)
     providers = held_providers(store, root)
     if not providers:
@@ -86,7 +89,7 @@ def estimated(
     symbol = root if config.contract is None else contract_of(root, config.contract)
     source, dates = _source_and_dates(store, paths, symbol, provider, timeframe)
     ranked = sorted(source.datasets.values(), key=lambda dataset: level_rank(level_of(dataset)))
-    settings = config.applied(level_of(ranked[0]), source.instrument.kind, source.provider)
+    settings = config.applied(level_of(ranked[0]), source.instrument, source.provider)
     held = None if dates is None else Window(start=dates[0], end=dates[1])
     window = None if held is None else _within(held, start, end)
     sessions, bars, ticks = (
@@ -104,6 +107,12 @@ def estimated(
         bars=bars,
         ticks=ticks,
     )
+
+
+def held_instruments(paths: FefatPaths) -> tuple[str, ...]:
+    """The roots whose trades, TBBO, or bars the store holds, by name: what a run can trade
+    (D-114)."""
+    return tuple(sorted({dataset.root for dataset in session_datasets(Store(paths.data_dir))}))
 
 
 def _source_and_dates(

@@ -14,7 +14,7 @@ import pytest
 import fefat as ff
 import gen_fixtures
 from fefat.backtest import RunConfig, estimates
-from fefat.backtest.estimates import WindowEstimate, estimated
+from fefat.backtest.estimates import WindowEstimate, estimated, held_instruments
 from fefat.backtest.record import Window
 from fefat.config import resolve_paths
 from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
@@ -120,7 +120,7 @@ def test_a_named_contract_is_counted_unspliced() -> None:
 def test_a_contract_of_another_root_is_refused() -> None:
     store_with("ohlcv-1m")
 
-    with pytest.raises(ValueError, match="Expected a contract of ES, the strategy's root"):
+    with pytest.raises(ValueError, match="Expected a contract of ES, the root the run trades"):
         estimate_of(RunConfig(contract="NQH2026"))
 
 
@@ -296,3 +296,39 @@ def test_a_fee_table_that_prices_the_root_in_every_schedule_is_offered() -> None
 
     assert "binance-default" not in estimate.fee_tables
     assert estimate.settings.fee_table in estimate.fee_tables
+
+
+def test_an_estimate_reads_the_instrument_its_settings_name() -> None:
+    # D-114: a run on another instrument reads that instrument's data, contracts, and fees.
+    store_with("ohlcv-1m")
+
+    found = estimate_of(RunConfig(instrument="BTCUSDT-PERP"), start=None, end=None)
+
+    assert found.settings.instrument == "BTCUSDT-PERP"
+    assert found.contracts == ()
+    assert (found.fee_tables, found.settings.fee_table) == (
+        ("binance-default",),
+        "binance-default",
+    )
+    assert found.sessions > 0
+    assert found.bars > 0
+
+
+def test_an_instrument_named_that_the_store_does_not_hold_has_no_estimate() -> None:
+    store_with("ohlcv-1m")
+
+    found = estimated(
+        "ES", FIVE_MINUTES, None, None, RunConfig(instrument="MNQ"), resolve_paths(os.environ)
+    )
+
+    assert found is None
+
+
+def test_the_instruments_held_are_those_with_bars_or_ticks() -> None:
+    paths = resolve_paths(os.environ)
+    store_with("funding")
+    assert held_instruments(paths) == ()
+
+    store_with("ohlcv-1m")
+
+    assert held_instruments(paths) == ("BTCUSDT-PERP", "ES")

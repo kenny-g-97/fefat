@@ -18,7 +18,7 @@ saved run's fidelity check out again (`fefat.backtest.fidelity`, step 2.12), and
 waits for fill exports.
 """
 
-from fefat.backtest.estimates import WindowEstimate, estimated
+from fefat.backtest.estimates import WindowEstimate, estimated, held_instruments
 from fefat.backtest.fidelity import fidelity_check
 from fefat.backtest.metrics import (
     FidelityCheck,
@@ -72,6 +72,7 @@ __all__ = [
     "WindowEstimate",
     "estimated",
     "fidelity_check",
+    "held_instruments",
     "reconcile",
     "run",
     "running_drawdown",
