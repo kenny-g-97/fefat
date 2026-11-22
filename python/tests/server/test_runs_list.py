@@ -224,11 +224,6 @@ def test_a_folder_the_sdk_refuses_is_passed_over(library: LibraryTables, engine:
     assert listed.run_key == run.hash
 
 
-def versions_of(client: TestClient) -> dict[str, Any]:
-    (strategy,) = client.get("/v1/strategies").json()
-    return strategy["versions"][0]
-
-
 def test_the_lists_answer_a_notebooks_run_without_an_import(
     client: TestClient, container: Container, breakout_workspace: Path
 ) -> None:
