@@ -57,6 +57,7 @@ const identity = z.object({ csrf_token: z.string() })
 
 const estimateAsked = z.looseObject({
   settings: z.object({
+    instrument: z.string().optional(),
     provider: z.string().optional(),
     contract: z.string().optional(),
     fidelity: z.string().optional(),
@@ -455,7 +456,7 @@ test("the dialog shows what the data holds and what the run would read", async (
     "Run with stress also runs it at 1 and at 2 more ticks of slippage"
   )
   await expect(dialog.getByTestId("run-launch")).toBeEnabled()
-  await expect(dialog.getByLabel("Contract")).toBeFocused()
+  await expect(dialog.getByLabel("Instrument")).toBeFocused()
   // Whole range stands level with the dates, and a parameter fills its column as a select does.
   const from = await boxOf(dialog.getByLabel("From", { exact: true }))
   const wholeRange = await boxOf(dialog.getByTestId("run-whole-range"))
@@ -743,6 +744,82 @@ test("the dialog picks the data by provider and contract, and says when no fee t
     "Choose a fee table that prices ES"
   )
   await expect(dialog.getByTestId("run-launch")).toBeDisabled()
+})
+
+test("the dialog chooses the instrument a run trades, and reads that instrument's data", async ({
+  loggedIn: page,
+}) => {
+  // D-114: the seed holds ES, which demo's code names, and MES and the perpetual beside it.
+  const asked: z.infer<typeof estimateAsked>[] = []
+  await page.route("**/v1/runs/estimate", async (route) => {
+    asked.push(estimateAsked.parse(route.request().postDataJSON()))
+    await route.fallback()
+  })
+  const dialog = await openTheDialog(page)
+  const written = dialog.getByText(
+    "Version 1 of demo, written for ES in 5m bars"
+  )
+  await expect(written).toBeVisible()
+  await expect(dialog.getByLabel("Instrument")).toHaveText("ES")
+  expect(asked.at(-1)?.settings.instrument).toBeUndefined()
+
+  await dialog.getByLabel("Contract").click()
+  await page.getByRole("option", { name: "ESH2026" }).click()
+  await expect(dialog.getByTestId("run-coverage")).toContainText(
+    "synthetic holds ESH2026"
+  )
+  await dialog.getByLabel("Instrument").click()
+  await expect(page.getByRole("option")).toHaveText([
+    "BTCUSDT-PERP",
+    "ES",
+    "MES",
+  ])
+  await page.getByRole("option", { name: "MES", exact: true }).click()
+
+  // Another instrument has its own contracts, so the one chosen goes back to Spliced.
+  await expect(dialog.getByTestId("run-coverage")).toContainText(
+    "synthetic holds MES from"
+  )
+  expect(asked.at(-1)?.settings.instrument).toBe("MES")
+  expect(asked.at(-1)?.settings.contract).toBeUndefined()
+  await expect(dialog.getByLabel("Contract")).toHaveText("Spliced")
+  await expect(written).toBeVisible()
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+
+  // A perpetual has no contract to choose, and the fee table follows it.
+  await dialog.getByLabel("Instrument").click()
+  await page.getByRole("option", { name: "BTCUSDT-PERP" }).click()
+  await expect(dialog.getByTestId("run-coverage")).toContainText(
+    "synthetic holds BTCUSDT-PERP from"
+  )
+  await expect(dialog.getByLabel("Contract")).toHaveCount(0)
+  await expect(dialog.getByLabel("Fee table")).toHaveText("binance-default")
+
+  // The code's own instrument, chosen again, is the setting a run leaves out. Its estimate is the
+  // first one, still fresh, so what the run sends is what shows it.
+  await dialog.getByLabel("Instrument").click()
+  await page.getByRole("option", { name: "ES", exact: true }).click()
+  await expect(dialog.getByTestId("run-coverage")).toContainText(
+    "synthetic holds ES from"
+  )
+  await expect(dialog.getByLabel("Fee table")).toHaveText("retail-default")
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+  const seeded = await theSeededRun(page)
+  const sent: unknown[] = []
+  await page.route(THE_LIST, async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback()
+      return
+    }
+    sent.push(route.request().postDataJSON())
+    await route.fulfill({ json: { state: "saved", run_key: seeded.run_key } })
+  })
+
+  await dialog.getByTestId("run-launch").click()
+
+  await expect(page).toHaveURL(`/runs/run?key=${seeded.run_key}`)
+  expect(sent).toHaveLength(1)
+  expect(estimateAsked.parse(sent[0]).settings.instrument).toBeUndefined()
 })
 
 test("a press on Run while the estimate is read is kept, and sends the new date", async ({

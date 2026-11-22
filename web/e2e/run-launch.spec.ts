@@ -139,3 +139,55 @@ test("a strategy on data FEAT does not hold cannot run, and the dialog says why"
   await expect(dialog.getByRole("link", { name: "Import data" })).toBeVisible()
   await expect(dialog.getByTestId("run-launch")).toHaveCount(0)
 })
+
+test("a strategy written for data FEAT lacks runs on the instrument chosen", async ({
+  loggedIn: page,
+}) => {
+  // D-114: the template names MES, gone by now, and the run trades ES, as if the code named it.
+  await strategyFromTemplate(page.request, "written_for_mes", "breakout")
+  await page.goto("/strategies/strategy?name=written_for_mes")
+  await page.getByTestId("run-backtest").click()
+  const dialog = page.getByRole("dialog", { name: "Run backtest" })
+  await expect(dialog.getByRole("alert")).toContainText(
+    "FEAT holds no data of MES."
+  )
+  await expect(dialog.getByLabel("Instrument")).toBeFocused()
+  await page.mouse.move(700, 36)
+  await screenshot(page, "run-dialog-no-data", [], "window")
+
+  await dialog.getByLabel("Instrument").click()
+  await page.getByRole("option", { name: "ES", exact: true }).click()
+
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+  await expect(dialog.getByLabel("Instrument")).toBeFocused()
+  await expect(
+    dialog.getByText("Version 1 of written_for_mes, written for MES in 5m bars")
+  ).toBeVisible()
+  // Another lookback than the other specs', so that the run is this strategy's own.
+  await dialog.getByLabel("lookback").fill("7")
+  await dialog.getByLabel("lookback").blur()
+  await page.mouse.move(700, 36)
+  await screenshot(page, "run-dialog-instrument", [], "window")
+
+  await dialog.getByTestId("run-launch").click()
+
+  await expect(page).toHaveURL(/key=[0-9a-f]{64}/, { timeout: RUN_TIMEOUT })
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "written_for_mes"
+  )
+  await expect(page.getByTestId("run-page-status")).toHaveText("Succeeded")
+  await expect(page.getByText(/^Version 1, ES in 5m bars, /)).toBeVisible()
+  const instrument = page
+    .getByTestId("run-settings")
+    .getByRole("definition")
+    .first()
+  await expect(instrument).toHaveText("ES")
+  await page.mouse.move(700, 36)
+  await screenshot(page, "run-page-instrument")
+
+  await page.getByRole("link", { name: "Back to Runs" }).click()
+  const row = page.getByTestId("run-row").filter({ hasText: "written_for_mes" })
+  await expect(row.getByTestId("run-parameters")).toContainText(
+    "ES in 5m bars, lookback 7"
+  )
+})
