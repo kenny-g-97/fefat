@@ -5039,9 +5039,11 @@
         "type": "object"
       },
       "RunEstimated": {
-        "description": "What a run of the version would read, before anything runs\n(`fefat.backtest.estimates`): its instrument and timeframe; what the dialog offers, the\nproviders that hold the instrument, the applied provider's contracts in time order, the\nlevels it holds, finest first, and the fee tables that price the instrument; the settings\nwith every default applied; the trade dates held, the window estimated, and the sessions,\nbars, and ticks the engine would replay on it.",
+        "additionalProperties": false,
+        "description": "What a run of the version would read, before anything runs (`WindowEstimate`), with the\nversion's instrument and timeframe.",
         "properties": {
           "bars": {
+            "minimum": 0.0,
             "title": "Bars",
             "type": "integer"
           },
@@ -5088,6 +5090,7 @@
             "type": "array"
           },
           "sessions": {
+            "minimum": 0.0,
             "title": "Sessions",
             "type": "integer"
           },
@@ -5101,6 +5104,7 @@
             "type": "string"
           },
           "ticks": {
+            "minimum": 0.0,
             "title": "Ticks",
             "type": "integer"
           },
@@ -5120,18 +5124,18 @@
           }
         },
         "required": [
-          "instrument",
-          "timeframe",
+          "settings",
           "providers",
           "contracts",
           "levels",
           "fee_tables",
-          "settings",
           "held",
           "window",
           "sessions",
           "bars",
-          "ticks"
+          "ticks",
+          "instrument",
+          "timeframe"
         ],
         "title": "RunEstimated",
         "type": "object"

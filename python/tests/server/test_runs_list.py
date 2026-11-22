@@ -7,9 +7,10 @@ read before anything runs; and a stress, the same run at more ticks of slippage.
 import json
 import os
 import shutil
+from base64 import urlsafe_b64encode
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +19,7 @@ from sqlalchemy import Engine
 import fefat as ff
 from fefat.config import resolve_paths
 from fefat_app.container import Container
+from fefat_app.database import workspace_index
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
 from fefat_app.database.run_records import RunTables
@@ -97,7 +99,13 @@ def test_the_list_pages_through_runs_of_one_day_and_one_instant(
 
 
 def test_a_cursor_no_page_gave_is_refused(records: RunTables) -> None:
-    for cursor in ("not base64 at all", "bm90IGEgY3Vyc29y", "MjAyNi0wMy0wNnxpZA=="):
+    before_any_instant = urlsafe_b64encode(b"0001-01-01T00:00:00+14:00|id").decode()
+    for cursor in (
+        "not base64 at all",
+        "bm90IGEgY3Vyc29y",
+        "MjAyNi0wMy0wNnxpZA==",
+        before_any_instant,
+    ):
         with pytest.raises(RunCursorError, match="Expected a cursor the list of runs gave"):
             records.page(strategy=None, versioned=None, status=None, cursor=cursor, limit=2)
 
@@ -222,6 +230,50 @@ def test_a_folder_the_sdk_refuses_is_passed_over(library: LibraryTables, engine:
     (listed,) = page_of(RunTables(engine, resolve_paths(os.environ)))
     assert isinstance(listed, SavedRun)
     assert listed.run_key == run.hash
+
+
+def test_a_folder_that_cannot_be_opened_is_read_by_the_next_list(
+    library: LibraryTables, engine: Engine
+) -> None:
+    # An antivirus or a notebook can hold a run's file for a moment: no list fails on it, and
+    # the folder is not given up, as one the SDK refuses is.
+    def held_open(runs_dir: Path, run_key: str) -> NoReturn:
+        raise PermissionError(f"Another program holds {run_key} in {runs_dir}.")
+
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(workspace_index, "saved_run", held_open)
+        library.index_saved_runs()
+    records = RunTables(engine, resolve_paths(os.environ))
+    assert page_of(records) == ()
+
+    library.index_saved_runs()
+
+    (listed,) = page_of(records)
+    assert isinstance(listed, SavedRun)
+    assert listed.run_key == the_run().hash
+
+
+def test_only_a_lists_first_page_looks_for_new_folders(
+    client: TestClient,
+    container: Container,
+    breakout_workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logged_in(client, container)
+    shutil.copytree(breakout_workspace, resolve_paths(os.environ).workspace_dir)
+    looked: list[LibraryTables] = []
+
+    def noted(index: LibraryTables) -> None:
+        looked.append(index)
+
+    monkeypatch.setattr(LibraryTables, "index_saved_runs", noted)
+    next_page = urlsafe_b64encode(b"2026-03-06T00:00:00+00:00|id").decode()
+
+    assert client.get("/v1/runs", params={"cursor": next_page}).status_code == 200
+    assert looked == []
+
+    assert client.get("/v1/runs").status_code == 200
+    assert len(looked) == 1
 
 
 def test_the_lists_answer_a_notebooks_run_without_an_import(

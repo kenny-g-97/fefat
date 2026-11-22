@@ -133,18 +133,21 @@ def index_saved_runs(engine: Engine, paths: FefatPaths, passed_over: set[str]) -
     indexed while any backtest is queued or running, its status read again under the write
     lock: a job asked to stop still indexes the run it saved. A folder the SDK refuses, or
     another engine's, is passed over and kept in `passed_over`, so that a list does not read it
-    again; the write is given up where another writer holds the database, and the next list
-    makes it."""
+    again, and one that cannot be opened for now is read by the next list; the write is given up
+    where another writer holds the database, and the next list makes it."""
     with Session(reading(engine)) as session:
+        if _a_backtest_is_under_way(session):
+            return
         held = set(session.scalars(select(RunRow.run_key).where(RunRow.run_key.is_not(None))))
-        under_way = _a_backtest_is_under_way(session)
     unseen = [
         folder.name
         for folder in saved_run_folders(paths.runs_dir)
         if folder.name not in held and folder.name not in passed_over
     ]
-    if under_way or not unseen:
+    if not unseen:
         return
+    # shortcut: every new folder in one read and one write, fine for the hundreds a notebook
+    # saves; write them in batches once a sweep saves thousands outside the app (BACKLOG.md).
     runs = _readable_runs(paths, unseen, passed_over)
     if not runs:
         return
@@ -166,13 +169,18 @@ def _a_backtest_is_under_way(session: Session) -> bool:
 
 
 def _readable_runs(paths: FefatPaths, keys: list[str], passed_over: set[str]) -> list[Run]:
-    """The saved runs of `keys` the SDK reads, each other key added to `passed_over`."""
+    """The saved runs of `keys` the SDK reads, each key it refuses added to `passed_over`; a file
+    another program holds, or a folder removed since it was listed, is left for the next list."""
     runs: list[Run] = []
     for key in keys:
         try:
             runs.append(saved_run(paths.runs_dir, key))
         except ValueError:
+            # shortcut: a folder repaired by hand shows after a restart; compare its file's time
+            # if that proves common.
             passed_over.add(key)
+        except OSError:
+            continue
     return runs
 
 

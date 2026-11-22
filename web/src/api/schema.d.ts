@@ -3144,12 +3144,8 @@ export interface components {
         };
         /**
          * RunEstimated
-         * @description What a run of the version would read, before anything runs
-         *     (`fefat.backtest.estimates`): its instrument and timeframe; what the dialog offers, the
-         *     providers that hold the instrument, the applied provider's contracts in time order, the
-         *     levels it holds, finest first, and the fee tables that price the instrument; the settings
-         *     with every default applied; the trade dates held, the window estimated, and the sessions,
-         *     bars, and ticks the engine would replay on it.
+         * @description What a run of the version would read, before anything runs (`WindowEstimate`), with the
+         *     version's instrument and timeframe.
          */
         RunEstimated: {
             /** Bars */

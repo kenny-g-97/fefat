@@ -17,6 +17,7 @@ from fefat.backtest import RunConfig
 from fefat.backtest.estimates import estimated
 from fefat.config import FefatPaths
 from fefat.market.schema import Timeframe
+from fefat.reference.settings import SlippageTicks
 from fefat_app.execution import BacktestSpec
 from fefat_app.job_models import JobStatus
 from fefat_app.library import (
@@ -135,8 +136,10 @@ class Runs:
         )
 
     def page(self, asked: RunsAsked) -> RunPage:
-        """A page of the runs, newest first, the saved folders found first (step 5.6)."""
-        self.index.index_saved_runs()
+        """A page of the runs, newest first, a list's first page finding the saved folders no
+        row holds (step 5.6)."""
+        if asked.cursor is None:
+            self.index.index_saved_runs()
         return self.records.page(
             strategy=asked.strategy,
             versioned=asked.versioned,
@@ -196,7 +199,7 @@ class Runs:
         )
 
 
-def _at_slippage(asked: RunAsked, ticks: object) -> RunAsked:
+def _at_slippage(asked: RunAsked, ticks: SlippageTicks) -> RunAsked:
     settings = asked.settings.model_copy(update={"slippage_ticks": ticks})
     return RunAsked(
         strategy_version_id=asked.strategy_version_id,

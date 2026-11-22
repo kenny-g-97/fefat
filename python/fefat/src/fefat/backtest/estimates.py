@@ -72,20 +72,20 @@ def estimated(
 ) -> WindowEstimate | None:
     """What a run of `root` in `timeframe` bars under `config` would read from `start` to `end`,
     each left out meaning where the data starts or ends; None where the store holds none of
-    `root`, and zero counts for a window that holds no session. Where several providers hold the
-    root and `config` names none, the catalog's recommended one, or else the first by name.
-    Refused as the run would be for a provider or a contract it cannot read, and for a session
-    whose levels are all finer than the fidelity."""
+    `root`, and zero counts for a window that holds no session, or a series the provider's data
+    cannot make, which holds no dates and still names what can be chosen instead. Where several
+    providers hold the root and `config` names none, the catalog's recommended one, or else the
+    first by name. Refused as the run would be for a provider or a contract it cannot read, and
+    for a session whose levels are all finer than the fidelity."""
     store = Store(paths.data_dir)
     providers = held_providers(store, root)
     if not providers:
         return None
     provider = default_provider(root, providers) if config.provider is None else config.provider
     symbol = root if config.contract is None else contract_of(root, config.contract)
-    source = series_source_in(store, paths.cache_dir, symbol, provider=provider)
+    source, dates = _source_and_dates(store, paths, symbol, provider, timeframe)
     ranked = sorted(source.datasets.values(), key=lambda dataset: level_rank(level_of(dataset)))
     settings = config.applied(level_of(ranked[0]), source.instrument.kind, source.provider)
-    dates = source.decided_dates(timeframe)
     held = None if dates is None else Window(start=dates[0], end=dates[1])
     window = None if held is None else _within(held, start, end)
     sessions, bars, ticks = (
@@ -103,6 +103,23 @@ def estimated(
         bars=bars,
         ticks=ticks,
     )
+
+
+def _source_and_dates(
+    store: Store, paths: FefatPaths, symbol: str, provider: str, timeframe: Timeframe
+) -> tuple[SeriesSource, tuple[date, date] | None]:
+    """The series a run reads and the trade dates it holds; where the provider's data cannot make
+    it, for want of bars to splice its contracts or of any that build `timeframe`, the series
+    unspliced and no dates. A provider or a contract the store does not hold is refused by that
+    second read too."""
+    try:
+        source = series_source_in(store, paths.cache_dir, symbol, provider=provider)
+        return source, source.decided_dates(timeframe)
+    except ValueError:
+        unspliced = series_source_in(
+            store, paths.cache_dir, symbol, continuous=False, provider=provider
+        )
+        return unspliced, None
 
 
 def _within(held: Window, start: date | None, end: date | None) -> Window | None:

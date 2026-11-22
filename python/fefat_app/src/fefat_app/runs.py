@@ -24,8 +24,9 @@ from pydantic import (
     JsonValue,
 )
 
+from fefat.backtest.estimates import WindowEstimate
 from fefat.backtest.metrics import Metrics, Verdict
-from fefat.backtest.record import Hash, Window
+from fefat.backtest.record import Hash
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.market.fidelity import FidelityEra
 from fefat.market.schema import frozen
@@ -223,29 +224,13 @@ class NoDataToEstimate(BaseModel):
     timeframe: str
 
 
-class RunEstimated(BaseModel):
-    """What a run of the version would read, before anything runs
-    (`fefat.backtest.estimates`): its instrument and timeframe; what the dialog offers, the
-    providers that hold the instrument, the applied provider's contracts in time order, the
-    levels it holds, finest first, and the fee tables that price the instrument; the settings
-    with every default applied; the trade dates held, the window estimated, and the sessions,
-    bars, and ticks the engine would replay on it."""
-
-    model_config = ConfigDict(frozen=True)
+class RunEstimated(WindowEstimate):
+    """What a run of the version would read, before anything runs (`WindowEstimate`), with the
+    version's instrument and timeframe."""
 
     state: Literal[EstimateState.ESTIMATED] = EstimateState.ESTIMATED
     instrument: str
     timeframe: str
-    providers: tuple[str, ...]
-    contracts: tuple[str, ...]
-    levels: tuple[str, ...]
-    fee_tables: tuple[str, ...]
-    settings: AppliedRunConfig
-    held: Window | None
-    window: Window | None
-    sessions: int
-    bars: int
-    ticks: int
 
 
 RunEstimate = Annotated[NoDataToEstimate | RunEstimated, Field(discriminator="state")]

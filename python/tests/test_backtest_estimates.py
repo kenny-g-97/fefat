@@ -233,6 +233,38 @@ def test_a_root_of_two_providers_estimates_the_named_one() -> None:
         estimate_of(RunConfig(provider="zzz"))
 
 
+def test_a_provider_that_cannot_splice_the_root_still_names_the_choices() -> None:
+    # Ticks alone give no bars for a roll calendar: the answer holds no dates, and names the
+    # providers and the contracts, one of which reads without a calendar.
+    store_with("trades", "ohlcv-1m")
+    paths = resolve_paths(os.environ)
+    theirs = paths.data_dir / "aaa" / "trades" / "root=ES"
+    theirs.parent.mkdir(parents=True)
+    shutil.copytree(paths.data_dir / "synthetic" / "trades" / "root=ES", theirs)
+
+    spliced = estimate_of(RunConfig(provider="aaa"))
+
+    assert spliced.providers == ("aaa", "synthetic")
+    assert spliced.levels == ("trades",)
+    assert "ESH2026" in spliced.contracts
+    assert (spliced.held, spliced.window, counts(spliced)) == (None, None, (0, 0, 0))
+    one_contract = estimate_of(RunConfig(provider="aaa", contract="ESH2026"))
+    assert one_contract.held is not None
+    assert one_contract.ticks > 0
+
+
+def test_bars_that_cannot_build_the_timeframe_hold_no_dates() -> None:
+    store_with("ohlcv-1m")
+
+    found = estimated(
+        "ES", Timeframe.parse("30s"), None, None, RunConfig(), resolve_paths(os.environ)
+    )
+
+    assert found is not None
+    assert (found.held, found.window, counts(found)) == (None, None, (0, 0, 0))
+    assert found.levels == ("1m",)
+
+
 def test_a_fee_table_that_prices_the_root_in_every_schedule_is_offered() -> None:
     store_with("ohlcv-1m")
 

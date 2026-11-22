@@ -215,16 +215,18 @@ def _cursor_of(row: RunRow) -> str:
 
 
 def _parsed_cursor(cursor: str) -> tuple[datetime, str]:
-    """The instant and the id `cursor` holds, refused where the list did not give it."""
+    """The instant in UTC and the id `cursor` holds, refused where the list did not give it, as
+    an instant with no offset, or one UTC cannot write."""
     try:
         text = urlsafe_b64decode(cursor.encode()).decode()
         instant, run_id = text.split(_CURSOR_PARTS)
         created_at = datetime.fromisoformat(instant)
-    except ValueError as unreadable:
+        in_utc = None if created_at.tzinfo is None else created_at.astimezone(UTC)
+    except (ValueError, OverflowError) as unreadable:
         raise RunCursorError(cursor) from unreadable
-    if created_at.tzinfo is None:
+    if in_utc is None:
         raise RunCursorError(cursor)
-    return created_at, run_id
+    return in_utc, run_id
 
 
 def _listed(row: _PageRow) -> IndexedRun:
