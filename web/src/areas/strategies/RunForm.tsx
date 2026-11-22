@@ -6,7 +6,6 @@ import {
   type ListedRun,
   type RunEstimated,
   type RunSubmission,
-  readRunEstimate,
   runEstimateQuery,
   useRunSubmission,
   useStressSubmission,
@@ -138,24 +137,13 @@ function FilledForm({
           }
         />
       </section>
-      {failure !== null &&
-        (isRefusal(failure, 400) ? (
-          <p
-            role="alert"
-            data-testid="run-estimate-refusal"
-            className="text-negative"
-          >
-            {failure.message}
-          </p>
-        ) : (
-          <SectionFailure error={failure} onRetry={onRetry} />
-        ))}
       <RunActions
         version={version}
         draft={draft}
         estimate={estimate}
         latest={latest}
         failure={failure}
+        onRetry={onRetry}
       />
     </div>
   )
@@ -167,24 +155,36 @@ type RunActionsProps = Readonly<{
   estimate: RunEstimated
   latest: boolean
   failure: Error | null
+  onRetry: () => void
 }>
+
+/** Which of the two actions a press asked for. */
+type Launch = "run" | "stress"
 
 /** What the run would read, why it waits where it does, and its two actions: Run backtest, and
  * Run with stress, which adds the same run at one and at two more ticks of slippage. A run found
  * saved opens as Cached; a run queued opens on its page, which follows its job. A press while the
- * estimate is read, as leaving a typed date by pressing makes it, is kept until its answer. */
+ * estimate is read, as leaving a typed date by pressing makes it, is kept until its answer, and
+ * given up if the draft changes, the estimate fails, or the dialog closes. */
 function RunActions({
   version,
   draft,
   estimate,
   latest,
   failure,
+  onRetry,
 }: RunActionsProps) {
   const navigate = useNavigate()
   const submission = useRunSubmission()
   const stress = useStressSubmission()
-  const [holding, setHolding] = useState(false)
+  const [held, setHeld] = useState<Readonly<{
+    launch: Launch
+    draft: RunDraft
+  }> | null>(null)
+  const sent = useRef<typeof held>(null)
   const readiness = runReadiness(version.id, draft, estimate, latest)
+  const standing = held !== null && held.draft === draft && failure === null
+  const holding = standing && readiness.kind === "reading"
   const sending = submission.isPending || stress.isPending || holding
   const closed = failure !== null || readiness.kind === "waiting" || sending
   const failed = submission.error ?? stress.error
@@ -198,11 +198,12 @@ function RunActions({
           }
         : { to: "/runs/run", search: { id: run.id, job: run.job_id } }
     )
-  const launch = (request: RunSubmission) => {
-    stress.reset()
-    submission.mutate(request, { onSuccess: open })
-  }
-  const launchWithStress = (request: RunSubmission) => {
+  const send = (launch: Launch, request: RunSubmission) => {
+    if (launch === "run") {
+      stress.reset()
+      submission.mutate(request, { onSuccess: open })
+      return
+    }
     submission.reset()
     stress.mutate(request, {
       onSuccess: () =>
@@ -213,21 +214,19 @@ function RunActions({
         }),
     })
   }
-  const press = async (send: (request: RunSubmission) => void) => {
+  const press = (launch: Launch) => {
     if (readiness.kind === "ready") {
-      send(readiness.request)
-      return
-    }
-    setHolding(true)
-    const fresh = await readRunEstimate(estimateAsked(version.id, draft))
-    setHolding(false)
-    if (fresh?.state === "estimated") {
-      const read = runReadiness(version.id, draft, fresh, true)
-      if (read.kind === "ready") {
-        send(read.request)
-      }
+      send(launch, readiness.request)
+    } else {
+      setHeld({ launch, draft })
     }
   }
+  useEffect(() => {
+    if (standing && readiness.kind === "ready" && sent.current !== held) {
+      sent.current = held
+      send(held.launch, readiness.request)
+    }
+  })
   return (
     <footer className="sticky -bottom-6 -mx-6 -mb-6 flex flex-col gap-3 border-t bg-card px-6 pt-5 pb-6">
       <div className="flex flex-col gap-1">
@@ -241,6 +240,9 @@ function RunActions({
           Run with stress also runs it at 1 and at 2 more ticks of slippage
         </p>
       </div>
+      {failure !== null && (
+        <EstimateFailure failure={failure} onRetry={onRetry} />
+      )}
       {failed !== null && (
         <p
           role="alert"
@@ -263,20 +265,39 @@ function RunActions({
             variant="ghost"
             data-testid="run-stress"
             disabled={closed}
-            onClick={() => void press(launchWithStress)}
+            onClick={() => press("stress")}
           >
             Run with stress
           </Button>
           <Button
             data-testid="run-launch"
             disabled={closed}
-            onClick={() => void press(launch)}
+            onClick={() => press("run")}
           >
             Run backtest
           </Button>
         </div>
       </div>
     </footer>
+  )
+}
+
+/** An estimate that did not answer, in the pinned foot, which would otherwise cover it: a refusal
+ * in the server's words, or a failure with Try again. */
+function EstimateFailure({
+  failure,
+  onRetry,
+}: Readonly<{ failure: Error; onRetry: () => void }>) {
+  return isRefusal(failure, 400) ? (
+    <p
+      role="alert"
+      data-testid="run-estimate-refusal"
+      className="text-negative wrap-anywhere"
+    >
+      {failure.message}
+    </p>
+  ) : (
+    <SectionFailure error={failure} onRetry={onRetry} />
   )
 }
 

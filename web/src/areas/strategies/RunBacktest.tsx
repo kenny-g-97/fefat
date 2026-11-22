@@ -42,6 +42,7 @@ export function RunBacktest({
       {version.status === "success" && (
         <DialogContent
           showCloseButton={false}
+          className="scroll-pb-44"
           data-testid="run-dialog"
           onOpenAutoFocus={(event) => {
             // The form takes the focus once it is drawn; until then the dialog holds it.

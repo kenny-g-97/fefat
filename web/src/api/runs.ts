@@ -125,12 +125,6 @@ export function runEstimateQuery(asked: RunEstimateRequest) {
   })
 }
 
-/** The estimate of `asked`, from the read under way where there is one; null where it fails or
- * is given up, which the form reading the same query says. */
-export function readRunEstimate(asked: RunEstimateRequest) {
-  return queryClient.fetchQuery(runEstimateQuery(asked)).catch(() => null)
-}
-
 /** Read again what a new or a cancelled run changes: the lists, the run, and the jobs. */
 function readRunsAgain(): void {
   void queryClient.invalidateQueries({ queryKey: ["runs"] })

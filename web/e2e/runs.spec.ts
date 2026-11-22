@@ -478,6 +478,13 @@ test("the dialog shows what the data holds and what the run would read", async (
   await dialog.getByLabel("Contract").scrollIntoViewIfNeeded()
   await expect(dialog.getByTestId("run-estimate")).toBeInViewport({ ratio: 1 })
   await expect(dialog.getByTestId("run-launch")).toBeInViewport({ ratio: 1 })
+  // A field the focus reaches stands clear of the foot, even one the window already shows.
+  await page.setViewportSize({ width: 1280, height: 650 })
+  await dialog.evaluate((content) => content.scrollTo(0, 0))
+  await dialog.getByLabel("lookback").focus()
+  const focused = await boxOf(dialog.getByLabel("lookback"))
+  const pinned = await boxOf(dialog.locator("footer"))
+  expect(focused.y + focused.height).toBeLessThanOrEqual(pinned.y)
   await page.setViewportSize({ width: 1280, height: 800 })
 
   // Asked for more contrast, the scrim is solid.
@@ -607,6 +614,10 @@ test("what the dialog holds outlives closing it, and a refusal of the data stand
   )
   await expect(dialog.getByTestId("run-launch")).toBeDisabled()
   await expect(dialog.getByLabel("From", { exact: true })).toBeVisible()
+  // The refusal stands in the pinned foot, which would otherwise cover it.
+  await expect(
+    dialog.locator("footer").getByTestId("run-estimate-refusal")
+  ).toBeVisible()
 
   // Opened again on the choice refused, its fields stand, so that it can be changed back.
   await page.keyboard.press("Escape")
@@ -701,10 +712,20 @@ test("the dialog picks the data by provider and contract, and says when no fee t
   await dialog.getByLabel("Contract").click()
   await page.getByRole("option", { name: "ESH2026" }).click()
   await expect(dialog.getByTestId("run-coverage")).toHaveText(
-    "vendor holds no bars of ESH2026 that build 5m bars. Choose other data."
+    "vendor cannot make ESH2026 in 5m bars from the data it holds. Choose other data."
   )
   await expect(dialog.getByTestId("run-launch")).toBeDisabled()
+  await dialog.getByLabel("Contract").click()
+  await page.getByRole("option", { name: "Spliced" }).click()
+  await expect(dialog.getByTestId("run-coverage")).toHaveText(
+    "vendor cannot make ES in 5m bars from the data it holds. Choose one contract or other data."
+  )
   noDates = false
+  await dialog.getByLabel("Contract").click()
+  await page.getByRole("option", { name: "ESH2026" }).click()
+  await expect(dialog.getByTestId("run-coverage")).toContainText(
+    "vendor holds ESH2026 from"
+  )
   await dialog.getByLabel("Contract").click()
   await page.getByRole("option", { name: "Spliced" }).click()
   await expect(dialog.getByTestId("run-coverage")).toContainText(
@@ -760,6 +781,61 @@ test("a press on Run while the estimate is read is kept, and sends the new date"
   await expect(page).toHaveURL(`/runs/run?key=${seeded.run_key}`)
   expect(sent).toHaveLength(1)
   expect(z.object({ end: z.string() }).parse(sent[0]).end).toBe("2026-03-06")
+})
+
+test("a press kept for the estimate is given up when the draft changes or the dialog closes", async ({
+  loggedIn: page,
+}) => {
+  const seeded = await theSeededRun(page)
+  const dialog = await openTheDialog(page)
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+  const sent: unknown[] = []
+  await page.route(THE_LIST, async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback()
+      return
+    }
+    sent.push(route.request().postDataJSON())
+    await route.fulfill({ json: { state: "saved", run_key: seeded.run_key } })
+  })
+  let release = () => {}
+  let released = Promise.resolve()
+  const holdEstimates = () => {
+    released = new Promise<void>((resolve) => {
+      release = resolve
+    })
+  }
+  await page.route("**/v1/runs/estimate", async (route) => {
+    await released
+    await route.fallback()
+  })
+
+  holdEstimates()
+  await dialog.getByLabel("To", { exact: true }).fill("2026-03-06")
+  await dialog.getByTestId("run-launch").click()
+  await expect(dialog.getByTestId("run-waiting")).toHaveText(
+    "Looking the run up"
+  )
+  await dialog.getByLabel("lookback").fill("20")
+  await expect(dialog.getByTestId("run-waiting")).toHaveText(
+    "Reading your latest change"
+  )
+  release()
+  await expect(dialog.getByTestId("run-waiting")).toHaveText("")
+  expect(sent).toEqual([])
+
+  // Back on dates already read, whose answer is cached: closing still gives the press up.
+  holdEstimates()
+  await dialog.getByLabel("To", { exact: true }).fill("2026-03-09")
+  await dialog.getByTestId("run-launch").click()
+  await expect(dialog.getByTestId("run-waiting")).toHaveText(
+    "Looking the run up"
+  )
+  await page.keyboard.press("Escape")
+  await expect(dialog).toHaveCount(0)
+  release()
+  await page.waitForTimeout(500)
+  expect(sent).toEqual([])
 })
 
 test("ticks typed while an estimate is read stay, and the other side follows the fidelity", async ({
@@ -871,6 +947,13 @@ test("a Cancel the server refuses says why in the row", async ({
 }) => {
   const seeded = await theSeededRun(page)
   const row = aSubmittedRow(seeded, "job-held")
+  let ended = false
+  await page.route("**/v1/jobs", (route) =>
+    route.fulfill({
+      json: [aJob("job-held", ended ? "failed" : "running", { progress: 40 })],
+    })
+  )
+  await page.route("**/v1/streams/**", (route) => route.abort())
   await page.route(THE_LIST, (route) =>
     route.fulfill({ json: { runs: [row], next_cursor: null } })
   )
@@ -887,6 +970,14 @@ test("a Cancel the server refuses says why in the row", async ({
     "Expected a run under way, for this test."
   )
   await expect(page.getByTestId("run-cancel")).toBeEnabled()
+
+  // Once the run has ended, no Cancel is left for the refusal to speak of.
+  ended = true
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange", { bubbles: true }))
+  )
+  await expect(page.getByTestId("run-status")).toHaveText("Failed")
+  await expect(page.getByTestId("run-cancel-refusal")).toHaveCount(0)
 })
 
 test("a submission whose row gave way opens the run its job names", async ({

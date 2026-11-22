@@ -11,10 +11,15 @@ export function slippageWords(run: ListedRun): string {
 
 /** The parameters a run ran with, as a row of the list names them: `lookback 12, stop_atr 1.5`,
  * which tell apart two runs of one version; empty for a run that names none. */
-export function parameterWords(run: ListedRun): string {
+export function parameterWords(run: Pick<ListedRun, "parameters">): string {
   return Object.entries(run.parameters)
-    .map(([name, value]) => `${name} ${String(value)}`)
+    .map(([name, value]) => `${name} ${parameterText(value)}`)
     .join(", ")
+}
+
+/** A parameter's value as text: a number, a word, or a flag as it is, anything nested as JSON. */
+export function parameterText(value: unknown): string {
+  return typeof value === "object" ? JSON.stringify(value) : String(value)
 }
 
 /** What a run's page says of it under its title: its version, what it trades, and its dates. */

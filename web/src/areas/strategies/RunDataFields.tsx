@@ -90,9 +90,13 @@ function RunDates({ draft, estimate, onChange }: RunDataFieldsProps) {
   const applied = estimate.settings.contract
   const series = applied === null ? estimate.instrument : applied
   if (held === null || dates === null) {
+    const wayOut =
+      applied === null && estimate.contracts.length > 0
+        ? "Choose one contract or other data."
+        : "Choose other data."
     return (
       <p role="alert" data-testid="run-coverage" className="text-negative">
-        {`${estimate.settings.provider} holds no bars of ${series} that build ${estimate.timeframe} bars. Choose other data.`}
+        {`${estimate.settings.provider} cannot make ${series} in ${estimate.timeframe} bars from the data it holds. ${wayOut}`}
       </p>
     )
   }

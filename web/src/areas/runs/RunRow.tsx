@@ -85,7 +85,7 @@ export function RunRow({
           </span>
         )}
       </div>
-      {cancellation.error !== null && (
+      {isActive(run) && cancellation.error !== null && (
         <p
           role="alert"
           data-testid="run-cancel-refusal"

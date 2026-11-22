@@ -4,6 +4,7 @@ import type { ListedRun } from "@/api/runs"
 import { counted, fidelityLabel, formatMoney } from "@/ui/figures"
 import { IdentityChip } from "@/ui/identity-chip"
 import { Panel } from "@/ui/panel"
+import { parameterText } from "./run-words"
 
 /** A list of labels and values (web/DESIGN.md, Patterns, Run page), each label in body text and
  * its value in heading text, aligned right where the values are `figures`. */
@@ -47,7 +48,10 @@ export function RunParametersCard({ run }: Readonly<{ run: ListedRun }>) {
       ) : (
         <Facts
           figures
-          facts={parameters.map(([name, value]) => [name, String(value)])}
+          facts={parameters.map(([name, value]) => [
+            name,
+            parameterText(value),
+          ])}
         />
       )}
     </Panel>
