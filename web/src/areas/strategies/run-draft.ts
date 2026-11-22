@@ -1,0 +1,226 @@
+import type {
+  RunEstimated,
+  RunEstimateRequest,
+  RunSubmission,
+} from "@/api/runs"
+import type { EnteredValues, ParameterValue } from "@/ui/schema-fields"
+
+/** What the trader chose in the Run backtest dialog (web/DESIGN.md, Patterns, Run backtest
+ * dialog); a choice left at null is the run's default, which the estimate names. Dates and
+ * ticks are texts as typed, read once kept; `parameters` is null while a field is refused, and
+ * `entered` holds the fields' texts for a dialog opened again. */
+export type RunDraft = Readonly<{
+  provider: string | null
+  contract: string | null
+  fidelity: string | null
+  feeTable: string | null
+  slippage: Readonly<{ market: string; stop: string }> | null
+  from: string | null
+  to: string | null
+  parameters: Readonly<Record<string, ParameterValue>> | null
+  entered: EnteredValues
+}>
+
+/** A draft that asks for nothing but the run's defaults. */
+export const UNTOUCHED: RunDraft = {
+  provider: null,
+  contract: null,
+  fidelity: null,
+  feeTable: null,
+  slippage: null,
+  from: null,
+  to: null,
+  parameters: {},
+  entered: new Map(),
+}
+
+/** Whether the dialog can send its run, with the request, or why it waits, in words. */
+export type RunReadiness =
+  | Readonly<{ kind: "ready"; request: RunSubmission }>
+  | Readonly<{ kind: "waiting"; why: string }>
+
+/** A window of trade dates, as the API writes them. */
+type TradeDates = Readonly<{ start: string; end: string }>
+
+const DATE_TEXT = /^(\d{4})-(\d{2})-(\d{2})$/
+const WHOLE = /^\d+$/
+const MOST_TICKS = 1_000
+
+/** The days of `month` of `year`, from the calendar's rule rather than the browser's clock,
+ * which would move a date near midnight. */
+function daysIn(year: number, month: number): number {
+  if (month === 2) {
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+    return leap ? 29 : 28
+  }
+  return [4, 6, 9, 11].includes(month) ? 30 : 31
+}
+
+/** Whether `text` is a date as the app writes one, `2026-03-06`, that the calendar holds. */
+export function isTradeDate(text: string): boolean {
+  const found = DATE_TEXT.exec(text)
+  if (found === null) {
+    return false
+  }
+  const [year, month, day] = [found[1], found[2], found[3]].map(Number)
+  return month >= 1 && month <= 12 && day >= 1 && day <= daysIn(year, month)
+}
+
+/** Why `text` is no trade date of the data held from `held.start` to `held.end`, or null. Dates
+ * are compared as the texts they are, which sort as dates, so that no browser's time zone moves
+ * them a day. */
+export function tradeDateRefusal(
+  text: string,
+  held: TradeDates
+): string | null {
+  if (!isTradeDate(text)) {
+    return "Type a date such as 2026-03-06."
+  }
+  if (text < held.start || text > held.end) {
+    return `Choose a date from ${held.start} to ${held.end}, the data this run reads.`
+  }
+  return null
+}
+
+/** Why a window from `from` to `to` cannot run, or null. */
+export function windowRefusal(from: string, to: string): string | null {
+  return to < from ? `Choose an end on or after ${from}.` : null
+}
+
+/** Why `text` is no number of ticks, or null. */
+export function ticksRefusal(text: string): string | null {
+  return WHOLE.test(text) && Number(text) <= MOST_TICKS
+    ? null
+    : "Type a whole number of ticks, such as 1."
+}
+
+/** What the estimate is asked of the draft: the choices that change what the run reads, each
+ * date only once it is one. */
+export function estimateAsked(
+  versionId: string,
+  draft: RunDraft
+): RunEstimateRequest {
+  return {
+    strategy_version_id: versionId,
+    ...(draft.from !== null && isTradeDate(draft.from)
+      ? { start: draft.from }
+      : {}),
+    ...(draft.to !== null && isTradeDate(draft.to) ? { end: draft.to } : {}),
+    settings: {
+      ...(draft.provider === null ? {} : { provider: draft.provider }),
+      ...(draft.contract === null ? {} : { contract: draft.contract }),
+      ...(draft.fidelity === null ? {} : { fidelity: draft.fidelity }),
+    },
+  }
+}
+
+/** The fee table the run names: the one chosen, or the estimate's default where it prices the
+ * instrument; null where none does, and a run could not be priced. */
+export function feeTableOf(
+  draft: RunDraft,
+  estimate: RunEstimated
+): string | null {
+  const wanted =
+    draft.feeTable === null ? estimate.settings.fee_table : draft.feeTable
+  return estimate.fee_tables.includes(wanted) ? wanted : null
+}
+
+/** The dates the fields show: what was typed, or else the window the estimate read, or where it
+ * met nothing, the dates the data holds; null where the data holds none. */
+export function shownDates(
+  draft: RunDraft,
+  estimate: RunEstimated
+): Readonly<{ from: string; to: string }> | null {
+  if (estimate.held === null) {
+    return null
+  }
+  const read = estimate.window === null ? estimate.held : estimate.window
+  return {
+    from: draft.from === null ? read.start : draft.from,
+    to: draft.to === null ? read.end : draft.to,
+  }
+}
+
+/** What the draft sends, once the estimate read for it holds a window with sessions, or why it
+ * waits. */
+export function runReadiness(
+  versionId: string,
+  draft: RunDraft,
+  estimate: RunEstimated,
+  latest: boolean
+): RunReadiness {
+  if (!latest) {
+    return { kind: "waiting", why: "Reading your latest change" }
+  }
+  const window = windowOf(draft, estimate)
+  if (window === null) {
+    return { kind: "waiting", why: "Choose dates the data holds" }
+  }
+  if (estimate.sessions === 0) {
+    return { kind: "waiting", why: "This window holds no data" }
+  }
+  const feeTable = feeTableOf(draft, estimate)
+  if (feeTable === null) {
+    return {
+      kind: "waiting",
+      why: `Choose a fee table that prices ${estimate.instrument}`,
+    }
+  }
+  const ticks = draft.slippage
+  if (
+    ticks !== null &&
+    (ticksRefusal(ticks.market) !== null || ticksRefusal(ticks.stop) !== null)
+  ) {
+    return { kind: "waiting", why: "Type whole ticks of slippage" }
+  }
+  if (draft.parameters === null) {
+    return { kind: "waiting", why: "Correct the parameter refused above" }
+  }
+  return {
+    kind: "ready",
+    request: {
+      strategy_version_id: versionId,
+      parameters: { ...draft.parameters },
+      start: window.start,
+      end: window.end,
+      settings: {
+        latency_ms: estimate.settings.latency_ms,
+        limit_fill: estimate.settings.limit_fill,
+        roll_handling: estimate.settings.roll_handling,
+        capital: estimate.settings.capital,
+        replay: estimate.settings.replay,
+        provider: estimate.settings.provider,
+        fee_table: feeTable,
+        ...(draft.contract === null ? {} : { contract: draft.contract }),
+        ...(draft.fidelity === null ? {} : { fidelity: draft.fidelity }),
+        ...(ticks === null
+          ? {}
+          : {
+              slippage_ticks: {
+                market: Number(ticks.market),
+                stop: Number(ticks.stop),
+              },
+            }),
+      },
+    },
+  }
+}
+
+/** The window the draft asks for, each date left untouched being the estimate's; null while a
+ * date typed is refused or the dates meet no data. */
+function windowOf(draft: RunDraft, estimate: RunEstimated): TradeDates | null {
+  const { held, window: read } = estimate
+  if (held === null || read === null) {
+    return null
+  }
+  const start = draft.from === null ? read.start : draft.from
+  const end = draft.to === null ? read.end : draft.to
+  if (
+    tradeDateRefusal(start, held) !== null ||
+    tradeDateRefusal(end, held) !== null ||
+    windowRefusal(start, end) !== null
+  ) {
+    return null
+  }
+  return { start, end }
+}

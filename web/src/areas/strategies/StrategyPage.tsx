@@ -14,14 +14,15 @@ import { BackLink } from "@/ui/text-link"
 import { AbandonCard, AbandonedPanel } from "./AbandonedMark"
 import { CodeCard } from "./CodeCard"
 import { ParametersCard } from "./ParametersCard"
+import { RunBacktest } from "./RunBacktest"
 import type { StrategySearch } from "./strategy-names"
 import { latestVersion, versionNumbered } from "./strategy-versions"
 import { VersionsCard } from "./VersionsCard"
 
 /** A strategy's page (step 5.5; web/DESIGN.md, Patterns, Strategy page), its name and a version
- * in the address, the latest where none is: the version's hypothesis above its code, the code in
- * the editor with Validate and Save as new version, the versions, the version's parameters, and
- * the abandoned mark, or the way to make one. */
+ * in the address, the latest where none is: Run backtest in its header (step 5.6), the version's
+ * hypothesis above its code, the code in the editor with Validate and Save as new version, the
+ * versions, the version's parameters, and the abandoned mark, or the way to make one. */
 export function StrategyPage() {
   const shown = useSearch({ from: "/_shell/strategies/strategy" })
   const strategies = useQuery(strategiesQuery)
@@ -40,6 +41,15 @@ export function StrategyPage() {
       title={shown.name === undefined ? "Strategy" : shown.name}
       description={version === undefined ? undefined : version.hypothesis}
       back={<BackLink to="/strategies">Back to Strategies</BackLink>}
+      action={
+        strategy === undefined || version === undefined ? undefined : (
+          <RunBacktest
+            key={`${strategy.name} ${version.version}`}
+            strategy={strategy}
+            number={version.version}
+          />
+        )
+      }
     >
       <QueryBody query={strategies}>
         {() =>

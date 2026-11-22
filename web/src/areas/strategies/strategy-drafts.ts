@@ -81,6 +81,17 @@ export function forgetDraft(name: string, version: number): void {
   }
 }
 
+/** Whether this browser keeps a draft of version `version` of the strategy `name` whose code is
+ * not `code`, the version's as saved, which a run of the version does not read. */
+export function hasKeptDraft(
+  name: string,
+  version: number,
+  code: string
+): boolean {
+  const kept = keptText(draftKey(name, version))
+  return kept !== null && kept.code !== code
+}
+
 function keptText(key: string): StrategyDraft | null {
   try {
     return storedDraft(localStorage.getItem(key))
