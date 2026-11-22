@@ -484,7 +484,7 @@ A specification is refused before it runs when a breakeven, a trailing stop, a t
 
 Every run is also rerun at one more tick of slippage, which `run.metrics.pnl_at_plus_one_tick` reports, and, where its trade dates are finer than a minute, at one second and at one minute: `run.metrics.fidelity_check`, or `ff.backtest.fidelity_check(run)`, compares those reruns with the run.
 
-`ff.backtest.estimated(root, timeframe, start, end, config, paths)` tells what a run of a window would read before anything runs, as the app's Run backtest dialog shows it: the settings it would apply, the providers, contracts, levels, and fee tables to choose among, the trade dates held, and the sessions, bars, and ticks the engine would replay, each session on the level it fills on. It builds no strategy and loads no bar, answers None where the store holds none of the root and zero counts for a window without data, and leaves out the rerun at one more tick.
+`ff.backtest.estimated(root, timeframe, start, end, config, paths)` tells what a run of a window would read before anything runs, as the app's Run backtest dialog shows it: the settings it would apply, the providers, contracts, levels, and fee tables to choose among, the trade dates held, and the sessions, bars, and ticks the engine would replay, each session on the level it fills on. It builds no strategy and loads no bar, answers None where the store holds none of the root, zero counts for a window without data, and no dates for a series the provider's data cannot make, naming what can be chosen instead, and leaves out the rerun at one more tick.
 
 ## The fill rules in brief
 
