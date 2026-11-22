@@ -16,6 +16,7 @@ from sqlalchemy import Engine
 
 from fefat.backtest import RunConfig, saved_runs_in
 from fefat.config import resolve_paths
+from fefat.reference.settings import SlippageTicks
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
 from fefat_app.database.run_records import RunTables
@@ -33,10 +34,10 @@ from fefat_app.execution import (
 )
 from fefat_app.job_models import JobStatus
 from fefat_app.library import LibraryRefusedError
-from fefat_app.runs import RequestedRun, RunToMake, SavedRunFound
+from fefat_app.runs import RequestedRun, RunToMake, SavedRun, SavedRunFound
 from fefat_app.services.code_runs import BACKTEST_LIMITS, LIBRARY_LIMITS, CodeRefusedError
 from fefat_app.services.jobs import Jobs
-from fefat_app.services.runs import RunAsked, Runs
+from fefat_app.services.runs import RunAsked, Runs, RunsAsked
 from fefat_app.services.strategies import NoSuchStrategyError
 from local_server import STARTED_AT, RecordingDispatcher, SettableClock
 
@@ -77,7 +78,7 @@ def runs_over(
     paths = resolve_paths(os.environ)
     clock = SettableClock(STARTED_AT)
     jobs = Jobs(JobTables(engine), dispatcher, clock)
-    return Runs(RunTables(engine, paths), library, executor, jobs, paths.strategies_dir, clock)
+    return Runs(RunTables(engine, paths), library, executor, jobs, paths, clock)
 
 
 def asked(library: LibraryTables, **parameters: int) -> RunAsked:
@@ -148,6 +149,7 @@ def test_a_run_found_saved_is_the_row_waiting_on_its_request(
 
     saved = runs.submit(asked(workspace))
 
+    assert isinstance(saved, SavedRun)
     assert (saved.id, saved.run_key, saved.status) == (
         waiting.id,
         the_saved_key(),
@@ -197,12 +199,12 @@ def test_a_runs_status_is_its_jobs_until_it_is_saved(
     runs = runs_over(engine, workspace, executor, dispatcher)
     job_id = runs.submit(asked(workspace)).job_id or "none"
     jobs = JobTables(engine)
-    statuses = [runs.newest()[0].status]
+    statuses = [runs.page(RunsAsked()).runs[0].status]
 
     jobs.start(job_id, 4242, STARTED_AT, STARTED_AT)
-    statuses.append(runs.newest()[0].status)
+    statuses.append(runs.page(RunsAsked()).runs[0].status)
     jobs.requeue(job_id, 4242)
-    statuses.append(runs.newest()[0].status)
+    statuses.append(runs.page(RunsAsked()).runs[0].status)
 
     assert statuses == [JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.QUEUED]
 
@@ -225,7 +227,31 @@ def test_an_unknown_version_a_file_replaced_and_refused_code_are_refused(
 
     assert (refused.value.line, str(refused.value)) == (9, "ValueError: no such column")
     assert dispatcher.calls == []
-    assert runs.newest() == ()
+    assert (
+        runs.records.page(strategy=None, versioned=None, status=None, cursor=None, limit=10).runs
+        == ()
+    )
+
+
+def test_a_stress_asks_for_the_run_and_the_same_at_one_and_two_more_ticks(
+    engine: Engine, workspace: LibraryTables
+) -> None:
+    # Step 5.6 (D-29): each variant is a run of its own, the ticks added to what the base applied.
+    executor, dispatcher = LookingUp(to_make(None)), RecordingDispatcher()
+    runs = runs_over(engine, workspace, executor, dispatcher)
+    applied = to_make().settings.slippage_ticks
+
+    stressed = runs.stressed(asked(workspace, lookback=24))
+
+    lookups = [spec for spec in executor.specs if isinstance(spec, RunLookupSpec)]
+    assert [spec.run.settings.slippage_ticks for spec in lookups] == [
+        None,
+        SlippageTicks(market=applied.market + 1, stop=applied.stop + 1),
+        SlippageTicks(market=applied.market + 2, stop=applied.stop + 2),
+    ]
+    assert len({run.id for run in stressed.runs}) == 3
+    assert len({run.job_id for run in stressed.runs}) == 3
+    assert [each.split()[0] for each in dispatcher.calls] == ["submit"] * 3
 
 
 def test_a_runs_job_is_queued_only_once_no_delete_holds_the_jobs_back(

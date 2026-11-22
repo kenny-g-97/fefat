@@ -124,4 +124,4 @@ def test_an_unknown_version_and_a_window_ending_before_it_starts_are_refused(
 
     assert (unknown.status_code, backwards.status_code, missing.status_code) == (404, 422, 404)
     assert "Expected the id of a saved strategy version" in unknown.json()["detail"]
-    assert client.get("/v1/runs").json() == []
+    assert client.get("/v1/runs").json() == {"runs": [], "next_cursor": None}

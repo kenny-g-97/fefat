@@ -38,7 +38,13 @@ from fefat_app.job_models import JobStatus, job_stream
 from fefat_app.jobs.backtests import run_backtest
 from fefat_app.jobs.progress import JobCancelledError, JobProgress
 from fefat_app.jobs.worker import JobTimings, run_job
-from fefat_app.runs import NewRun, RequestedRun, Submitted
+from fefat_app.runs import (
+    NewRun,
+    RequestedRun,
+    SavedRunWithMetrics,
+    Submitted,
+    SubmittedRun,
+)
 from local_server import STARTED_AT, running_runners
 from notebook_runs import store_with
 from strategy_code import ES_BREAKOUT, HYPOTHESIS
@@ -119,7 +125,7 @@ def test_a_backtest_job_saves_the_run_a_notebook_makes_of_its_version(
     job = job_records.by_id(job_id)
     run = RunTables(engine, resolve_paths(os.environ)).by_id(made.run.id)
     assert job is not None
-    assert run is not None
+    assert isinstance(run, SavedRunWithMetrics)
     assert (job.status, run.status, run.metrics is not None) == (
         JobStatus.SUCCEEDED,
         JobStatus.SUCCEEDED,
@@ -156,8 +162,8 @@ def test_a_strategy_that_fails_on_real_bars_fails_its_run_with_its_words(
     run_job(made.queued_job_id or "none", resolve_paths(os.environ), JobTimings())
 
     run = RunTables(engine, resolve_paths(os.environ)).by_id(made.run.id)
-    assert run is not None
-    assert (run.status, run.run_key) == (JobStatus.FAILED, None)
+    assert isinstance(run, SubmittedRun)
+    assert run.status == JobStatus.FAILED
     assert run.error is not None
     assert "ValueError: this strategy refuses real bars" in run.error
     assert saved_runs_in(resolve_paths(os.environ).runs_dir) == ()

@@ -62,6 +62,9 @@ class LibraryChangedAfterItsFirstIndexing:
     def features(self) -> tuple[IndexedFeature, ...]:
         return ()
 
+    def index_saved_runs(self) -> None:
+        """No run folder to find."""
+
 
 def test_a_refused_save_comes_back_with_its_line_whatever_the_library_holds_after_it(
     tmp_path: Path,

@@ -23,7 +23,6 @@ from fefat.config import resolve_paths
 from fefat_app.container import Container
 from fefat_app.database.models import StrategyVersionRow
 from fefat_app.database.run_records import RunTables
-from fefat_app.database.workspace_index import index_workspace
 from fefat_app.http import strategies
 from fefat_app.http.problems import PROBLEM_MEDIA_TYPE
 from fefat_app.runs import NewRun
@@ -271,12 +270,12 @@ def test_a_version_a_notebook_saved_is_listed_without_a_save_through_the_app(
 def test_the_list_names_each_strategys_last_saved_run(
     client: TestClient, container: Container, engine: Engine, breakout_workspace: Path
 ) -> None:
-    # Step 5.5: the list shows when each strategy last ran, from the saved runs the index holds;
-    # a submission still waiting on its job, made after, is no run yet.
+    # Step 5.5: the list shows when each strategy last ran, from the saved runs the index holds,
+    # which since step 5.6 it finds in their folders itself; a submission still waiting on its
+    # job, made after, is no run yet.
     logged_in(client, container)
     paths = resolve_paths(os.environ)
     shutil.copytree(breakout_workspace, paths.workspace_dir)
-    index_workspace(engine, paths)
     ff.strategy.save("unrun", BREAKOUT, hypothesis=HYPOTHESIS)
     (run,) = saved_runs_in(paths.runs_dir)
     (breakout,) = [

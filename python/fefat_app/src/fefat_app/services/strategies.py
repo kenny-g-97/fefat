@@ -79,9 +79,11 @@ class SavedStrategies:
     strategies_dir: Path
 
     def strategies(self) -> tuple[IndexedStrategy, ...]:
-        """The saved strategies by name, each with its versions in order, the library indexed
-        first; refused with `LibraryRefusedError` where its files cannot be followed."""
+        """The saved strategies by name, each with its versions in order, the library and the
+        run folders no row holds indexed first, so that a strategy's last run counts a notebook's;
+        refused with `LibraryRefusedError` where its files cannot be followed."""
         self.index.refresh()
+        self.index.index_saved_runs()
         return self.index.strategies()
 
     def abandon(self, strategy_id: str, breaking_point: str, lesson: str) -> IndexedStrategy:
