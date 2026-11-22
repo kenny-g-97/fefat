@@ -15,7 +15,7 @@ import { IdentityChip } from "@/ui/identity-chip"
 import { PercentBar } from "@/ui/percent-bar"
 import { StatusBadge } from "@/ui/status-badge"
 import type { RunsSearch } from "./run-search"
-import { parameterWords, slippageWords } from "./run-words"
+import { runDetail, slippageWords } from "./run-words"
 
 // shortcut: fixed tracks fit a window of 1280 px beside the sidebar, the strategy taking what is
 // left and a long name wrapping; content-sized tracks through subgrid if a column outgrows them.
@@ -55,10 +55,10 @@ export function RunHead() {
 }
 
 /** A run as a row that opens its page (web/DESIGN.md, Patterns, Runs list): what it ran, its
- * dates and slippage, its status, then how it went once saved, or its bar while it runs, its
- * parameters on a line under them, with Cancel beside the row's link, since no button sits
- * inside one, and why where a Cancel was refused. The page is told the list's `filters`, which
- * its Back to Runs returns to. */
+ * dates and slippage, its status, then how it went once saved, or its bar while it runs, what it
+ * trades and its parameters on a line under them, with Cancel beside the row's link, since no
+ * button sits inside one, and why where a Cancel was refused. The page is told the list's
+ * `filters`, which its Back to Runs returns to. */
 export function RunRow({
   run,
   filters,
@@ -102,7 +102,7 @@ function RunLink({
   run,
   filters,
 }: Readonly<{ run: ListedRun; filters: RunsSearch }>) {
-  const parameters = parameterWords(run)
+  const detail = runDetail(run)
   return (
     <Link
       to="/runs/run"
@@ -161,13 +161,13 @@ function RunLink({
           className="size-4 justify-self-end text-foreground-secondary"
         />
       )}
-      {parameters !== "" && (
+      {detail !== "" && (
         <span
           data-testid="run-parameters"
-          title={parameters}
+          title={detail}
           className="col-span-full truncate text-xs text-muted-foreground"
         >
-          {parameters}
+          {detail}
         </span>
       )}
     </Link>

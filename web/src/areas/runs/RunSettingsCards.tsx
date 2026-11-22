@@ -6,13 +6,16 @@ import { IdentityChip } from "@/ui/identity-chip"
 import { Panel } from "@/ui/panel"
 import { parameterText } from "./run-words"
 
+/** A label and its value. */
+type Fact = readonly [string, ReactNode]
+
 /** A list of labels and values (web/DESIGN.md, Patterns, Run page), each label in body text and
  * its value in heading text, aligned right where the values are `figures`. */
 function Facts({
   facts,
   figures = false,
 }: Readonly<{
-  facts: readonly (readonly [string, ReactNode])[]
+  facts: readonly Fact[]
   figures?: boolean
 }>) {
   return (
@@ -61,14 +64,18 @@ export function RunParametersCard({ run }: Readonly<{ run: ListedRun }>) {
 /** Every setting a run runs under, each default applied, as its record keeps them. */
 export function RunSettingsCard({ run }: Readonly<{ run: ListedRun }>) {
   const { settings } = run
-  const left: readonly (readonly [string, ReactNode])[] = [
+  const instrument = settings.instrument ?? null
+  const traded: readonly Fact[] =
+    instrument === null ? [] : [["Instrument", instrument]]
+  const left: readonly Fact[] = [
+    ...traded,
     ["Data", <IdentityChip key="provider">{settings.provider}</IdentityChip>],
     ["Contract", settings.contract === null ? "Spliced" : settings.contract],
     ["Fidelity", fidelityLabel(settings.fidelity)],
     ["Fee table", settings.fee_table],
     ["Capital", formatMoney(settings.capital)],
   ]
-  const right: readonly (readonly [string, ReactNode])[] = [
+  const right: readonly Fact[] = [
     [
       "Slippage on market orders",
       counted(settings.slippage_ticks.market, "tick"),
