@@ -35,7 +35,7 @@ A `ff.SignalStrategy` holds what the strategy computes, as Polars expressions ov
 
 | Field | Meaning |
 | --- | --- |
-| `instrument` | the root it trades, such as `MES`; a run follows the roll calendar's front contracts unless `RunConfig.contract` names one |
+| `instrument` | the root it trades, such as `MES`, unless `RunConfig.instrument` names another for a run; a run follows the roll calendar's front contracts unless `RunConfig.contract` names one |
 | `timeframe` | the signal bars whose closes decide, such as `5m`: a count, then `s`, `m`, `h`, or `d` |
 | `features` | a mapping of names to expressions, each evaluated in turn over the bars and the features before it, and to features with their parameters, such as `ff.indicators.rsi(14)`, a combination, or `ff.features.ref("rsi", version=1, n=14)` from your library; every trade records each feature's value at its entry as `<feature>_at_entry` |
 | `long_entry`, `short_entry` | the entry signals, a boolean expression each; a null counts as false |
@@ -481,10 +481,11 @@ A specification is refused before it runs when a breakeven, a trailing stop, a t
 | `replay` | `skipping`, which passes over records no order can act on, or `full`; both give the same fills | `skipping` |
 | `provider` | whose datasets the run reads, as `load` takes it | the catalog's recommended source |
 | `contract` | one contract of the root, read unspliced, so that the run crosses no roll | the roll calendar's fronts |
+| `instrument` | the root the run trades in place of the one the strategy names, as if its code named it: that root's bars, sessions, contracts, tick, fees, and fills, so that a stop of 12 ticks is 12 of its ticks. A feature keeps reading an instrument it declares as an input, which is how signals from one instrument and trades on another are written; where it declares the root traded it reads its own bars, and the run's record warns of it (D-114) | the strategy's own |
 
 Every run is also rerun at one more tick of slippage, which `run.metrics.pnl_at_plus_one_tick` reports, and, where its trade dates are finer than a minute, at one second and at one minute: `run.metrics.fidelity_check`, or `ff.backtest.fidelity_check(run)`, compares those reruns with the run.
 
-`ff.backtest.estimated(root, timeframe, start, end, config, paths)` tells what a run of a window would read before anything runs, as the app's Run backtest dialog shows it: the settings it would apply, the providers, contracts, levels, and fee tables to choose among, the trade dates held, and the sessions, bars, and ticks the engine would replay, each session on the level it fills on. It builds no strategy and loads no bar, answers None where the store holds none of the root, zero counts for a window without data, and no dates for a series the provider's data cannot make, naming what can be chosen instead, and leaves out the rerun at one more tick.
+`ff.backtest.held_instruments(paths)` names the roots the store holds trades, TBBO, or bars of, and `ff.backtest.estimated(root, timeframe, start, end, config, paths)` tells what a run of a window would read before anything runs, on `config.instrument` where it names one, as the app's Run backtest dialog shows it: the settings it would apply, the providers, contracts, levels, and fee tables to choose among, the trade dates held, and the sessions, bars, and ticks the engine would replay, each session on the level it fills on. It builds no strategy and loads no bar, answers None where the store holds none of the root, zero counts for a window without data, and no dates for a series the provider's data cannot make, naming what can be chosen instead, and leaves out the rerun at one more tick.
 
 ## The fill rules in brief
 
