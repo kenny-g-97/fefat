@@ -74,6 +74,7 @@ from fefat_app.imports import (
     ImportWrote,
     NoSuchUploadError,
     PathRefusedError,
+    ProfileRefusedError,
     RefusedImport,
     RoundFile,
 )
@@ -712,7 +713,7 @@ def test_a_file_whose_runner_runs_out_of_time_or_cannot_start_is_left_out_with_w
     result = the_import_jobs(runner).run(job.payload, JobProgress(job_records, job.id, WORKER))
 
     timed_out, unstarted, refused = (each["message"] for each in result["round"]["not_imported"])
-    assert timed_out.startswith("This job ran past its limit of")
+    assert timed_out == "This file's import ran past its limit of 6 hours and was stopped."
     assert unstarted.endswith("No space left on device")
     assert refused.startswith(f"{STOPPED_WHILE_WRITING}Expected the partitions written")
     assert len(refused) == LINE_CHARS
@@ -974,3 +975,37 @@ def test_run_again_of_a_path_the_import_roots_no_longer_hold_is_refused(
 
     assert dispatcher_refused.calls == []
     assert dispatcher_allowed.calls == [f"submit {again.id}"]
+
+
+def test_run_again_of_an_import_whose_profile_name_is_taken_since_is_refused(
+    job_records: JobTables, tmp_path: Path
+) -> None:
+    # A new import refuses a whole profile under a saved name that holds another.
+    roots = tmp_path / "exports"
+    roots.mkdir()
+    (march,) = exports(roots, "ES 03-26.Last.txt")
+    imports, dispatcher = imports_over(job_records, (roots,))
+    mine = PRESETS["ninjatrader"].model_copy(update={"name": "mine"})
+    request = FileRequest(
+        path=march,
+        profile=mine,
+        keep_profile=True,
+        contract=None,
+        root=None,
+        time_zone=None,
+        differing=DifferingRecords.REFUSE,
+    )
+    payload = ImportJobPayload(
+        spec=ImportSpec(request=request, limits=IMPORT_LIMITS), upload_id=None
+    )
+    ended = job_records.add(JobKind.IMPORT, payload.model_dump(mode="json"), 3, STARTED_AT)
+    job_records.cancel_queued(ended.id, STARTED_AT)
+    keep_profile(
+        mine.model_copy(update={"description": "Another"}),
+        resolve_paths(os.environ).profiles_dir,
+    )
+
+    with pytest.raises(ProfileRefusedError):
+        imports.start_again(ended)
+
+    assert dispatcher.calls == []

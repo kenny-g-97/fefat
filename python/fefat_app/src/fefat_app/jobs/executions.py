@@ -32,6 +32,10 @@ NO_RESULT = (
     "the same way, read the log below."
 )
 """What a job's error says first where its runner ended without a result (step 5.19)."""
+CANNOT_START = (
+    "This job could not start its process. Free some disk space or memory and run it again:"
+)
+"""What a job's error says before the system's reason where its runner could not start."""
 
 
 class ExecutionTimedOutError(Exception):
@@ -66,16 +70,28 @@ def executed(
     """The execution of `spec`, run to its end, its reports given to `report` and `check` asked
     each second without one; `ExecutionTimedOutError` or `ExecutionFailedError` where it did not
     end."""
-    result = executor.run(spec, report, check)
+    try:
+        result = executor.run(spec, report, check)
+    except OSError as refused:
+        raise ExecutionFailedError(f"{CANNOT_START} {refused}") from refused
     if isinstance(result, ExecutionTimedOut):
-        raise ExecutionTimedOutError(
-            f"This job ran past its limit of {_duration(spec.limits.timeout_seconds)} and was "
-            "stopped. Run it again on less data."
-        )
+        raise ExecutionTimedOutError(_past_its_limit(spec))
     if isinstance(result, ExecutionFailed):
         said = f"{NO_RESULT}\n\n{result.error}" if result.gave_no_result else result.error
         raise ExecutionFailedError(said)
     return result
+
+
+def _past_its_limit(spec: JobSpec) -> str:
+    """What a job's error says where it ran out of time; an import's says no more, since what
+    repairs it depends on whether it wrote (`fefat_app.jobs.imports`)."""
+    limit = _duration(spec.limits.timeout_seconds)
+    if isinstance(spec, ImportSpec):
+        return f"This file's import ran past its limit of {limit} and was stopped."
+    return (
+        f"This job ran past its limit of {limit} and was stopped. Run again repeats the same "
+        "data, so start a new one on less data."
+    )
 
 
 def _duration(seconds: float) -> str:

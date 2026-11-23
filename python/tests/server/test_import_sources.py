@@ -105,6 +105,18 @@ def test_a_file_of_feats_own_folders_under_a_root_that_holds_them_is_refused(
         confined_path(str(paths.config_file), ReadKind.FILE, (holder,), paths, toml_too)
 
 
+def linked(link: Path, target: Path) -> None:
+    """`link` made to lead to the folder `target`."""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        if sys.platform != "win32":
+            raise
+        import _winapi  # a junction, which Windows makes without the right a link needs
+
+        _winapi.CreateJunction(str(target), str(link))
+
+
 def test_a_link_out_of_a_root_is_refused_where_it_resolves(
     root: Path, paths: FefatPaths, tmp_path: Path
 ) -> None:
@@ -112,14 +124,23 @@ def test_a_link_out_of_a_root_is_refused_where_it_resolves(
     outside.mkdir()
     (outside / "secret.csv").write_text("a,b\n1,2\n", encoding="utf-8")
     link = root / "linked"
-    try:
-        link.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        if sys.platform != "win32":
-            raise
-        import _winapi  # a junction, which Windows makes without the right a link needs
-
-        _winapi.CreateJunction(str(outside), str(link))
+    linked(link, outside)
 
     with pytest.raises(PathRefusedError):
         confined_path(str(link / "secret.csv"), ReadKind.FILE, (root,), paths, UPLOAD_SUFFIXES)
+
+
+def test_a_path_already_resolved_past_a_root_that_is_a_link_is_read(
+    paths: FefatPaths, tmp_path: Path
+) -> None:
+    # Step 5.19: Run again checks the path a first import kept, which is resolved.
+    real = tmp_path / "real"
+    real.mkdir()
+    export = real / "ES 03-26.Last.txt"
+    export.write_text("20260304 230100;1;1;1;1;1\n", encoding="utf-8")
+    root_link = tmp_path / "root-link"
+    linked(root_link, real)
+
+    read = confined_path(str(export), ReadKind.FILE, (root_link,), paths, UPLOAD_SUFFIXES)
+
+    assert read == export.resolve()

@@ -50,7 +50,7 @@ def _start_of_one_stream(
     """The event the stream `stream_id` starts after; refused before the response begins with
     404 for a job that does not exist, and with 204, which tells an event source to stop
     reconnecting, for a job that has ended with no event left to send."""
-    after = 0 if last_event_id is None else last_event_id
+    after = 0 if last_event_id is None else min(last_event_id, container.jobs.newest_event_id())
     job_id = job_of_stream(stream_id)
     if job_id is None:
         return after

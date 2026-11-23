@@ -163,23 +163,20 @@ class JobTables:
             )
 
     def events_after(self, stream_id: str, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
-        with Session(reading(self.engine)) as session:
-            rows = session.scalars(
-                select(EventRow)
-                .where(EventRow.stream_id == stream_id, EventRow.id > after_id)
-                .order_by(EventRow.id)
-                .limit(limit)
-            )
-            return tuple(_stream_event(row) for row in rows)
+        return self._events(after_id, limit, EventRow.stream_id == stream_id)
 
     def job_events_after(self, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
+        return self._events(
+            after_id, limit, EventRow.stream_id.startswith(JOB_STREAM_PREFIX, autoescape=True)
+        )
+
+    def _events(
+        self, after_id: int, limit: int, of_the_stream: ColumnElement[bool]
+    ) -> tuple[StreamEvent, ...]:
         with Session(reading(self.engine)) as session:
             rows = session.scalars(
                 select(EventRow)
-                .where(
-                    EventRow.id > after_id,
-                    EventRow.stream_id.startswith(JOB_STREAM_PREFIX, autoescape=True),
-                )
+                .where(of_the_stream, EventRow.id > after_id)
                 .order_by(EventRow.id)
                 .limit(limit)
             )

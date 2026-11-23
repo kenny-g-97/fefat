@@ -40,6 +40,7 @@ from fefat_app.imports import (
     CHECKING_MESSAGE,
     CHECKING_PERCENT,
     LINE_CHARS,
+    REPORT_FAILED,
     WRITING_PERCENT,
     DatasetWritten,
     ImportAnswer,
@@ -153,7 +154,7 @@ class ImportJobs:
                 tried_while_busy(self.index_profiles)
         except Exception as failure:
             raise ExecutionFailedError(
-                f"{imported}, then its quality report failed: "
+                f"{imported}, {REPORT_FAILED}: "
                 f"{type(failure).__name__}: {failure}. Check quality on its dataset's page "
                 "writes the report again."
             ) from failure

@@ -69,13 +69,22 @@ class Jobs:
 
     def start_unless_under_way(self, kind: JobKind, payload: Mapping[str, Any]) -> Job:
         """The job of `kind` with `payload` queued or running and not asked to stop, or else a
-        new one, decided under the lock that starts jobs, so that two presses queue one job."""
+        new one (`start_unless_covered`)."""
+        return self.start_unless_covered(kind, payload, lambda job: job.payload == payload)
+
+    def start_unless_covered(
+        self, kind: JobKind, payload: Mapping[str, Any], covers: Callable[[Job], bool]
+    ) -> Job:
+        """The job of `kind` queued or running and not asked to stop that `covers` says does
+        this work, or else a new one with `payload`, decided under the lock that starts jobs, so
+        that two requests at once queue one job."""
         with self.starting:
-            job = self.under_way_with(kind, payload)
-            if job is None:
-                job = self.records.add(kind, payload, MAX_ATTEMPTS, self.clock())
-                self.dispatcher.submit(job.id)
-        return job
+            for job in self.active(kind):
+                if job.cancel_requested_at is None and covers(job):
+                    return job
+            started = self.records.add(kind, payload, MAX_ATTEMPTS, self.clock())
+            self.dispatcher.submit(started.id)
+        return started
 
     def submit(self, job_id: str) -> None:
         """Give the dispatcher the queued job `job_id`, which another area's records queued, as

@@ -10,10 +10,21 @@ import threading
 import time
 from datetime import UTC, datetime
 
+import pytest
+
 from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
-from fefat_app.execution import ExecutionLimits, PythonSnippetSpec
+from fefat_app.execution import (
+    ExecutionLimits,
+    ExecutionResult,
+    ExecutionSpec,
+    ProgressReport,
+    PythonSnippetSpec,
+    StopCheck,
+    keep_running,
+)
 from fefat_app.job_models import Job, JobKind, JobStatus, job_stream
+from fefat_app.jobs.executions import ExecutionFailedError, executed
 from fefat_app.jobs.worker import JobTimings, run_job
 from local_server import STARTED_AT, running_runners
 
@@ -43,7 +54,8 @@ def test_a_snippet_job_that_runs_out_of_time_ends_timed_out_after_its_progress(
 
     assert (ended.status, ended.result) == (JobStatus.TIMED_OUT, None)
     assert ended.error == (
-        "This job ran past its limit of 2 seconds and was stopped. Run it again on less data."
+        "This job ran past its limit of 2 seconds and was stopped. Run again repeats the "
+        "same data, so start a new one on less data."
     )
     events = job_records.events_after(job_stream(ended.id), 0, 100)
     assert [(event.event_type, event.said) for event in events] == [
@@ -150,3 +162,28 @@ def test_a_job_whose_payload_is_of_another_kind_fails_before_any_runner_starts(
     assert ended.status == JobStatus.FAILED
     assert ended.error is not None
     assert ended.error.startswith("ValidationError: ")
+
+
+class CannotStart:
+    """An executor whose runner cannot start, as on a full disk."""
+
+    def run(
+        self, spec: ExecutionSpec, report: ProgressReport, check: StopCheck = keep_running
+    ) -> ExecutionResult:
+        raise OSError(28, "No space left on device")
+
+    def close(self) -> None:
+        """Nothing to end."""
+
+
+def test_a_job_whose_runner_cannot_start_says_what_to_do() -> None:
+    spec = PythonSnippetSpec.model_validate(snippet("print(1)\n"))
+
+    with pytest.raises(ExecutionFailedError) as failed:
+        executed(CannotStart(), spec, lambda _: None, keep_running)
+
+    said = str(failed.value)
+    assert said.startswith(
+        "This job could not start its process. Free some disk space or memory and run it again: "
+    )
+    assert said.endswith("No space left on device")

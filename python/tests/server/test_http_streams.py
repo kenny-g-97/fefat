@@ -6,6 +6,7 @@ milliseconds here, which also bounds every read of these tests. From step 5.19: 
 every job's events, which replays nothing when opened anew, and a login checked at each read,
 so that a stream ends with its session or its token, and a job's own at its last status."""
 
+import asyncio
 import json
 from collections.abc import Iterator
 from datetime import timedelta
@@ -17,7 +18,15 @@ from fastapi.testclient import TestClient
 
 from fefat_app.container import Container
 from fefat_app.database.job_records import JobTables
-from fefat_app.job_models import Job, JobKind, JobStatus, job_stream
+from fefat_app.http import streams
+from fefat_app.job_models import (
+    Job,
+    JobEventType,
+    JobKind,
+    JobStatus,
+    StreamEvent,
+    job_stream,
+)
 from local_server import STARTED_AT, logged_in
 
 WORKER = 4242
@@ -230,6 +239,71 @@ def test_a_reconnect_after_a_jobs_last_event_is_told_to_stop(
     assert (told.status_code, told.content) == (204, b"")
     assert earlier.status_code == 200
     assert '"failed"' in earlier.text
+
+
+def test_a_jobs_stream_sends_every_event_past_a_full_read_before_it_ends(
+    client: TestClient,
+    container: Container,
+    job_records: JobTables,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(streams, "EVENTS_PER_READ", 2)
+    logged_in(client, container)
+    job = a_running_demo(job_records, reports=3)
+    job_records.finish(job.id, WORKER, JobStatus.SUCCEEDED, STARTED_AT)
+
+    answer = client.get(f"/v1/streams/{job_stream(job.id)}")
+
+    sent = [
+        line.removeprefix("id: ") for line in answer.text.splitlines() if line.startswith("id: ")
+    ]
+    kept = job_records.events_after(job_stream(job.id), 0, 100)
+    assert sent == [str(event.id) for event in kept]
+    assert len(sent) == 6
+
+
+def test_a_job_that_ends_during_a_read_still_sends_its_last_status() -> None:
+    # The stream asks whether the job has ended before it reads, so that this read's short
+    # answer never ends a stream whose last status was kept just after it.
+    def an_event(event_id: int, event_type: JobEventType, status: str) -> StreamEvent:
+        said = {"status": status}
+        return StreamEvent(
+            id=event_id,
+            stream_id="job:one",
+            event_type=event_type,
+            said=said,
+            created_at=STARTED_AT,
+        )
+
+    ended = [False]
+
+    def read_after(after: int) -> tuple[StreamEvent, ...]:
+        if after == 0:
+            ended[0] = True
+            return (an_event(1, JobEventType.STATUS, "running"),)
+        return (an_event(2, JobEventType.STATUS, "cancelled"),) if after == 1 else ()
+
+    async def sent_ids() -> list[str | None]:
+        events = streams._followed(
+            read_after, 0, lambda: True, lambda: ended[0], lambda event: event.said
+        )
+        return [event.id async for event in events if event.comment is None]
+
+    assert asyncio.run(sent_ids()) == ["1", "2"]
+
+
+def test_a_jobs_own_stream_resumed_past_the_newest_event_starts_at_the_newest(
+    client: TestClient, container: Container, job_records: JobTables
+) -> None:
+    logged_in(client, container)
+    job = a_running_demo(job_records, reports=0)
+    stream = f"/v1/streams/{job_stream(job.id)}"
+
+    with client.stream("GET", stream, headers={"Last-Event-ID": "999999"}) as opened:
+        job_records.advance(job.id, WORKER, 10.0, "Counted 1 of 10", {})
+        event = next_events(opened.iter_lines(), 1)[0]
+
+    assert json.loads(event["data"])["percent"] == 10.0
 
 
 def test_the_stream_of_a_job_that_does_not_exist_is_a_problem(

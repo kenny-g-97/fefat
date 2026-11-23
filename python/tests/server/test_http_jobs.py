@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from fefat_app.container import Container
 from fefat_app.database.job_records import JobTables
+from fefat_app.imports import REPORT_FAILED
 from fefat_app.job_models import Job, JobKind, JobStatus
 from local_server import STARTED_AT, SettableClock, logged_in
 from notebook_runs import store_with
@@ -229,7 +230,9 @@ def test_run_again_is_refused_for_a_job_under_way_or_succeeded_or_unknown(
 
     assert [refused.status_code for refused in refusals] == [409, 409, 409]
     assert refusals[2].headers["content-type"] == PROBLEM
-    assert "which is succeeded" in refusals[2].json()["detail"]
+    assert refusals[2].json()["detail"] == (
+        "Only a job that failed, was cancelled, or timed out runs again."
+    )
     assert unknown.status_code == 404
     assert len(job_records.recent(10)) == 3
 
@@ -245,4 +248,24 @@ def test_run_again_needs_a_login_and_the_csrf_token(
     unsigned = client.post(f"/v1/jobs/{job.id}/run-again")
 
     assert (anonymous.status_code, unsigned.status_code) == (401, 403)
+    assert len(job_records.recent(10)) == 1
+
+
+def test_run_again_of_an_import_that_wrote_points_to_its_quality_check(
+    client: TestClient, container: Container, job_records: JobTables, clock: SettableClock
+) -> None:
+    # Importing the file again would find it imported, end green, and write no report.
+    csrf = logged_in(client, container)
+    job = job_records.add(JobKind.IMPORT, {"spec": {}}, 3, clock())
+    job_records.start(job.id, 4242, clock() + timedelta(seconds=15), clock())
+    said = f"The file was imported, {REPORT_FAILED}: OSError: full."
+    job_records.finish(job.id, 4242, JobStatus.FAILED, clock(), error=said)
+
+    refused = client.post(f"/v1/jobs/{job.id}/run-again", headers=csrf)
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == (
+        "This import wrote its data and only its quality report failed. Press Check quality on "
+        "its dataset's page, and import again any file it left out."
+    )
     assert len(job_records.recent(10)) == 1

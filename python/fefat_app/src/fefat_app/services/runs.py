@@ -124,7 +124,6 @@ class Runs:
         """The run `requested`, as its job's payload holds it, asked for again as `submit` asks
         (step 5.19); `NoSuchStrategyError` where the library no longer holds that version as it
         ran."""
-        self.index.refresh()
         return self.submit(
             RunAsked(
                 strategy_version_id=self._version_as_it_ran(requested).id,
@@ -220,8 +219,8 @@ class Runs:
                 if (strategy.name, version.version, version.hash) == ran:
                     return version
         raise NoSuchStrategyError(
-            f"Expected version {requested.version} of the strategy {requested.strategy} as it "
-            "ran, got none: its file was removed or changed."
+            f"Version {requested.version} of the strategy {requested.strategy} is no longer held "
+            "as it ran: its file was removed or changed. Run the strategy from its page."
         )
 
 

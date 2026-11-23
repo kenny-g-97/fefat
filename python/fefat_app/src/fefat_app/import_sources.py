@@ -45,7 +45,7 @@ def _written_under_a_root(path: Path, roots: Sequence[Path]) -> bool:
         return False
     if any(part == ".." or ":" in part for part in path.parts[1:]):
         return False
-    return any(path.is_relative_to(root) for root in roots)
+    return any(path.is_relative_to(root) or path.is_relative_to(root.resolve()) for root in roots)
 
 
 def _readable(

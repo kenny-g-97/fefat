@@ -3,12 +3,19 @@ the inputs its own row holds, which is the undo of a Cancel. Each kind goes thro
 it, so that its rules hold: a backtest through its run, which the Runs list then shows, a quality
 check through the one sync of a product at a time, and an import through the checks of its files.
 Work already queued or running under the same inputs is that job, so that a second press or a
-second tab queues nothing."""
+second tab queues nothing. A refusal is said to the trader, in the jobs drawer."""
+
+import threading
 
 from pydantic import ValidationError
 
 from fefat_app.execution import BacktestSpec
-from fefat_app.imports import NoSuchUploadError, PathRefusedError
+from fefat_app.imports import (
+    REPORT_FAILED,
+    NoSuchUploadError,
+    PathRefusedError,
+    ProfileRefusedError,
+)
 from fefat_app.job_models import ACTIVE, Job, JobKind, JobStatus
 from fefat_app.library import LibraryRefusedError
 from fefat_app.runs import SavedRun
@@ -18,6 +25,10 @@ from fefat_app.services.imports import Imports
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.runs import Runs
 from fefat_app.services.strategies import NoSuchStrategyError
+
+_BACKTEST_AGAIN = threading.Lock()
+"""Held across a backtest's lookup, which takes seconds and so cannot hold the lock that starts
+every job, so that a second press finds the first one's job."""
 
 
 class JobNotRunAgainError(ValueError):
@@ -29,29 +40,30 @@ def run_again(job_id: str, jobs: Jobs, runs: Runs, catalog: MarketCatalog, impor
     `NoSuchJobError` for an unknown id and `JobNotRunAgainError` for a job that does not."""
     job = jobs.by_id(job_id)
     if job.status in (*ACTIVE, JobStatus.SUCCEEDED):
-        raise JobNotRunAgainError(
-            "Expected a job that failed, was cancelled, or timed out, got the job "
-            f"{job.id}, which is {job.status.value}."
-        )
+        raise JobNotRunAgainError("Only a job that failed, was cancelled, or timed out runs again.")
     try:
         if job.kind == JobKind.BACKTEST:
-            return _backtest_again(job, jobs, runs)
+            with _BACKTEST_AGAIN:
+                return _backtest_again(job, jobs, runs)
         if job.kind == JobKind.CATALOG_SYNC:
             return catalog.start_sync(job.payload["root"])
         if job.kind == JobKind.IMPORT:
-            return imports.start_again(job)
+            return _import_again(job, imports)
     except ValidationError as unread:
         raise JobNotRunAgainError(
-            f"Expected inputs this version of FEAT reads, got those of the job {job.id} in "
-            "another form: start it again from its page."
+            "This job's inputs were saved by another version of FEAT. Start it again from its page."
         ) from unread
+    except NoSuchUploadError as gone:
+        raise JobNotRunAgainError(
+            "The file this import read is no longer kept. Import it again from the Data page."
+        ) from gone
     except (
         CodeRefusedError,
         LibraryRefusedError,
         NoSuchStrategyError,
-        NoSuchUploadError,
         NothingToSyncError,
         PathRefusedError,
+        ProfileRefusedError,
     ) as refused:
         raise JobNotRunAgainError(str(refused)) from refused
     return jobs.start_unless_under_way(job.kind, job.payload)
@@ -65,8 +77,16 @@ def _backtest_again(job: Job, jobs: Jobs, runs: Runs) -> Job:
         return under_way
     run = runs.submit_again(BacktestSpec.model_validate(job.payload).run)
     if isinstance(run, SavedRun):
-        raise JobNotRunAgainError(
-            f"Expected a run still to make, got the run of the job {job.id} saved since: open "
-            "it on the Runs page."
-        )
+        raise JobNotRunAgainError("This backtest has been saved since. Open it on the Runs page.")
     return jobs.by_id(run.job_id)
+
+
+def _import_again(job: Job, imports: Imports) -> Job:
+    """The import of `job` queued again, unless it wrote its data and only its report failed:
+    importing the file again would find it imported, end green, and write no report."""
+    if job.error is not None and REPORT_FAILED in job.error:
+        raise JobNotRunAgainError(
+            "This import wrote its data and only its quality report failed. Press Check quality "
+            "on its dataset's page, and import again any file it left out."
+        )
+    return imports.start_again(job)
