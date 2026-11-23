@@ -11,12 +11,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, CursorResult, Engine, Update, select, update
+from sqlalchemy import ColumnElement, CursorResult, Engine, Update, func, select, update
 from sqlalchemy.orm import Session
 
 from fefat_app.database.models import EventRow, JobRow
 from fefat_app.database.schema import reading
 from fefat_app.job_models import (
+    JOB_STREAM_PREFIX,
     Job,
     JobEnd,
     JobEventType,
@@ -170,6 +171,24 @@ class JobTables:
                 .limit(limit)
             )
             return tuple(_stream_event(row) for row in rows)
+
+    def job_events_after(self, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
+        with Session(reading(self.engine)) as session:
+            rows = session.scalars(
+                select(EventRow)
+                .where(
+                    EventRow.id > after_id,
+                    EventRow.stream_id.startswith(JOB_STREAM_PREFIX, autoescape=True),
+                )
+                .order_by(EventRow.id)
+                .limit(limit)
+            )
+            return tuple(_stream_event(row) for row in rows)
+
+    def newest_event_id(self) -> int:
+        with Session(reading(self.engine)) as session:
+            newest = session.scalar(select(func.max(EventRow.id)))
+            return 0 if newest is None else newest
 
 
 def queued_job(

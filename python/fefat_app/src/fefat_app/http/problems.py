@@ -132,6 +132,8 @@ def _refused(request: Request, error: Exception) -> Response:
         raise error
     if isinstance(error, CodeRefused):
         return _response(_refused_code(request, error))
+    if error.status_code == HTTPStatus.NO_CONTENT:
+        return Response(status_code=HTTPStatus.NO_CONTENT, headers=error.headers)
     return problem_response(request, error.status_code, str(error.detail), error.headers)
 
 

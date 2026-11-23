@@ -145,3 +145,17 @@ class Jobs:
     def events_after(self, stream_id: str, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
         """At most `limit` events of the stream `stream_id` after the event `after_id`."""
         return self.records.events_after(stream_id, after_id, limit)
+
+    def job_events_after(self, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
+        """At most `limit` events of every job's stream after the event `after_id`."""
+        return self.records.job_events_after(after_id, limit)
+
+    def newest_event_id(self) -> int:
+        """The id of the newest event kept, where a stream opened anew starts."""
+        return self.records.newest_event_id()
+
+    def has_ended(self, job_id: str) -> bool:
+        """Whether the job `job_id` reached one of its ends; `NoSuchJobError` where there is
+        none. Its last status event is kept in the same write, so that a read of the events
+        made after this says true holds that event."""
+        return self.by_id(job_id).status not in ACTIVE
