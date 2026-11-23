@@ -1,4 +1,6 @@
 import { expect, it } from "vitest"
+import equityChart from "./EquityChart.tsx?raw"
+import histogram from "./Histogram.tsx?raw"
 import chart from "./PriceChart.tsx?raw"
 import readme from "./README.md?raw"
 import drawn from "./drawn-series.ts?raw"
@@ -24,5 +26,16 @@ it("documents every prop of PriceChart and every field of its panes and series",
   ]
 
   expect(named.length).toBeGreaterThan(20)
+  expect(named.filter((name) => !readme.includes(`\`${name}\``))).toEqual([])
+})
+
+it("documents every prop of the results' charts", () => {
+  // Step 5.7: the two charts of a finished run's page.
+  const named = [
+    ...fields(equityChart, "EquityChartProps"),
+    ...fields(histogram, "HistogramChartProps"),
+  ]
+
+  expect(named.length).toBe(9)
   expect(named.filter((name) => !readme.includes(`\`${name}\``))).toEqual([])
 })

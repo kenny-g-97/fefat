@@ -93,7 +93,10 @@ export function RunSettingsCard({ run }: Readonly<{ run: ListedRun }>) {
   ]
   return (
     <Panel title="Settings">
-      <div data-testid="run-settings" className="grid grid-cols-2 gap-x-12">
+      <div
+        data-testid="run-settings"
+        className="grid grid-cols-[auto_auto] gap-x-12"
+      >
         <Facts facts={left} />
         <Facts facts={right} />
       </div>

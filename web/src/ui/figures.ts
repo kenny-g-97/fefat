@@ -4,6 +4,22 @@ const DECIMALS: readonly number[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 const MONEY = /^(-?)(\d+)(?:\.(\d+))?$/
 const THOUSANDS = /\B(?=(\d{3})+$)/g
 
+const TWO_DECIMALS = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  signDisplay: "negative",
+})
+const PERCENT = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  signDisplay: "negative",
+})
+const EDGE = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+  signDisplay: "negative",
+})
+
 const UNITS: Readonly<Record<string, string>> = {
   s: "second",
   m: "minute",
@@ -60,6 +76,22 @@ export function formatMoney(text: string): string {
   const [, sign, whole, fraction = ""] = found
   const decimals = fraction.replace(/0+$/, "").padEnd(2, "0")
   return `${sign}${whole.replace(THOUSANDS, ",")}.${decimals}`
+}
+
+/** A ratio or an amount the API sends as a float, at two decimals with its thousands apart:
+ * `1.84`, `-0.31`, `51,250.50`; a value that rounds to zero carries no sign. */
+export function formatFigure(value: number): string {
+  return TWO_DECIMALS.format(value)
+}
+
+/** A share the API sends as a fraction, in percent at two decimals: 0.025 is `2.50%`. */
+export function formatShare(share: number): string {
+  return PERCENT.format(share)
+}
+
+/** A histogram's edge, with the decimals it holds and its thousands apart: `-1.5`, `12,500`. */
+export function formatEdge(edge: number): string {
+  return EDGE.format(edge)
 }
 
 /** The sign of money as the API sends it, read from its text. */

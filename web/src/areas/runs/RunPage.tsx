@@ -13,8 +13,10 @@ import {
 import { Page } from "@/ui/page"
 import { SectionFailure } from "@/ui/section-failure"
 import { BackLink } from "@/ui/text-link"
+import { RunResults } from "./RunResults"
 import { RunParametersCard, RunSettingsCard } from "./RunSettingsCards"
 import { RunStatusCard } from "./RunStatusCard"
+import { RunStatusLine } from "./RunStatusLine"
 import { foundWords, runLine } from "./run-words"
 
 /** Back to the list, as the row that opened this run had it filtered. */
@@ -32,8 +34,9 @@ function BackToRuns() {
 const BACK = <BackToRuns />
 
 /** A run's page (web/DESIGN.md, Patterns, Run page), addressed by its run key once saved, or by
- * its row's id with its job while it runs: its status and its progress, then the settings it
- * runs under, until step 5.7 adds its results. Keyed by the run, since one route shows many. */
+ * its row's id with its job while it runs: once saved, one line of its status, its results, and
+ * the settings it ran under at the foot; while it runs, its status and progress over its
+ * settings. Keyed by the run, since one route shows many. */
 export function RunPage() {
   const { key, id, job } = useSearch({ from: "/_shell/runs/run" })
   const address = key === undefined ? id : key
@@ -131,6 +134,7 @@ function ShownRun({ run }: Readonly<{ run: ListedRun }>) {
     select: (search) => search.key === undefined,
   })
   const cached = shown.state === "saved" && cachedRun === shown.run_key
+  const found = foundWords(shown, cached, askedVersion)
   const savedKey = run.state === "saved" ? run.run_key : null
   useEffect(() => {
     if (savedKey !== null && addressedById) {
@@ -148,17 +152,24 @@ function ShownRun({ run }: Readonly<{ run: ListedRun }>) {
       description={runLine(shown)}
       back={BACK}
     >
-      <div className="flex flex-col gap-6">
-        <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-6">
-          <RunStatusCard
-            run={shown}
-            cached={cached}
-            found={foundWords(shown, cached, askedVersion)}
-          />
-          <RunParametersCard run={shown} />
+      {shown.state === "saved" ? (
+        <div className="flex flex-col gap-6">
+          <RunStatusLine run={shown} cached={cached} found={found} />
+          <RunResults runKey={shown.run_key} />
+          <div className="grid grid-cols-[minmax(16rem,1fr)_auto] items-start gap-6">
+            <RunParametersCard run={shown} />
+            <RunSettingsCard run={shown} />
+          </div>
         </div>
-        <RunSettingsCard run={shown} />
-      </div>
+      ) : (
+        <div className="flex flex-col gap-6">
+          <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-6">
+            <RunStatusCard run={shown} found={found} />
+            <RunParametersCard run={shown} />
+          </div>
+          <RunSettingsCard run={shown} />
+        </div>
+      )}
     </Page>
   )
 }

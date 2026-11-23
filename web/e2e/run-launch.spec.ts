@@ -55,6 +55,9 @@ test("a run launched from the strategy page reaches 100% and lands on its page",
   await expect(page.getByRole("region", { name: "Parameters" })).toContainText(
     "6"
   )
+  // Step 5.7: the run's results stand on the page it lands on.
+  await expect(page.getByTestId("key-figures")).toBeVisible()
+  await expect(page.getByTestId("histogram-pnl")).toBeVisible()
   const key = new URL(page.url()).searchParams.get("key")
   const run = await (await page.request.get(`/v1/runs/${key}`)).json()
   const job = await (await page.request.get(`/v1/jobs/${run.job_id}`)).json()

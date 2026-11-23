@@ -1,0 +1,138 @@
+import type { Outcome, RunStatistics } from "@/api/run-results"
+import {
+  counted,
+  fidelityLabel,
+  formatCount,
+  formatFigure,
+  formatMoney,
+  formatShare,
+  moneySign,
+} from "@/ui/figures"
+import { Stat } from "@/ui/stat"
+
+const NONE = "None"
+
+/** A figure the engine worked out, or None where it could count nothing. */
+function figureOrNone(value: number | null | undefined): string {
+  return value === null || value === undefined ? NONE : formatFigure(value)
+}
+
+/** The tone of money: its sign's colour, none for zero. */
+function toneOf(money: string): "positive" | "negative" | undefined {
+  const sign = moneySign(money)
+  return sign === "zero" ? undefined : sign
+}
+
+/** The eight KPI cards of a finished run (web/DESIGN.md, Patterns, Stat card), each figure the
+ * API's, and where the engine could count nothing, None with the reason. */
+export function KeyFigures({
+  statistics,
+}: Readonly<{ statistics: RunStatistics }>) {
+  const { metrics, currency, pnl_share: pnlShare } = statistics
+  const { trades, drawdown, daily } = metrics
+  const none = trades.trades === 0 ? "No trades" : null
+  return (
+    <dl data-testid="key-figures" className="grid grid-cols-4 gap-4">
+      <Stat
+        testId="kpi-pnl"
+        label={`Net P&L, ${currency}`}
+        value={formatMoney(metrics.pnl)}
+        tone={toneOf(metrics.pnl)}
+        detail={`${formatShare(pnlShare)} of the capital`}
+      />
+      <Stat
+        testId="kpi-profit-factor"
+        label="Profit factor"
+        value={figureOrNone(trades.profit_factor)}
+        detail={
+          trades.profit_factor === null
+            ? (none ?? "No losing trade")
+            : "Profit over loss"
+        }
+      />
+      <Stat
+        testId="kpi-expectancy"
+        label="Expectancy"
+        value={
+          trades.expectancy_r === null
+            ? NONE
+            : `${formatFigure(trades.expectancy_r)} R`
+        }
+        detail={
+          trades.expectancy_r === null
+            ? (none ?? "No trade with a stop")
+            : `${figureOrNone(trades.expectancy)} a trade`
+        }
+      />
+      <Stat
+        testId="kpi-win-rate"
+        label="Win rate"
+        value={trades.win_rate === null ? NONE : formatShare(trades.win_rate)}
+        detail={
+          none ??
+          `${formatCount(trades.wins)} of ${counted(trades.trades, "trade")}`
+        }
+      />
+      <Stat
+        testId="kpi-drawdown"
+        label="Max drawdown"
+        value={formatMoney(drawdown.max_drawdown)}
+        detail={`${formatShare(drawdown.max_drawdown_share)} of the capital`}
+      />
+      <Stat
+        testId="kpi-sharpe"
+        label="Sharpe"
+        value={figureOrNone(daily.sharpe)}
+        detail={
+          daily.sharpe === null
+            ? "Needs two days that differ"
+            : `Over ${counted(daily.days, "day")}`
+        }
+      />
+      <Stat
+        testId="kpi-trades"
+        label="Trades"
+        value={formatCount(trades.trades)}
+        detail={`${counted(trades.wins, "win")}, ${counted(trades.losses, "loss", "losses")}`}
+      />
+      <FidelitySplit groups={metrics.breakdowns.fidelity} />
+    </dl>
+  )
+}
+
+/** The fidelity split: the run's trades by the fidelity their entry filled on. */
+function FidelitySplit({
+  groups,
+}: Readonly<{ groups: Readonly<Record<string, Outcome>> }>) {
+  const levels = Object.entries(groups)
+  if (levels.length === 0) {
+    return (
+      <Stat
+        testId="kpi-fidelity"
+        label="Fidelity split"
+        value={NONE}
+        detail="No trades"
+      />
+    )
+  }
+  return (
+    <Stat
+      testId="kpi-fidelity"
+      label="Fidelity split"
+      value={
+        <span className="flex flex-col gap-0.5 text-sm font-semibold tracking-normal">
+          {levels.map(([level, group]) => (
+            <span
+              key={level}
+              data-testid={`kpi-fidelity-${level}`}
+              className="flex justify-between gap-3"
+            >
+              <span>{fidelityLabel(level)}</span>
+              <span>{formatCount(group.trades)}</span>
+            </span>
+          ))}
+        </span>
+      }
+    />
+  )
+}

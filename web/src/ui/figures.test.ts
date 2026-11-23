@@ -6,10 +6,39 @@ import {
   formatAligned,
   formatCount,
   formatDecimal,
+  formatEdge,
+  formatFigure,
   formatMoney,
   formatPrice,
+  formatShare,
   moneySign,
 } from "./figures"
+
+describe("the results' figures (step 5.7)", () => {
+  it("writes a ratio or an amount at two decimals with its thousands apart", () => {
+    expect(formatFigure(1.8391)).toBe("1.84")
+    expect(formatFigure(-0.314)).toBe("-0.31")
+    expect(formatFigure(51250.5)).toBe("51,250.50")
+  })
+
+  it("writes no sign on a value that rounds to zero", () => {
+    expect(formatFigure(-0.001)).toBe("0.00")
+    expect(formatShare(-0.00001)).toBe("0.00%")
+  })
+
+  it("writes a share in percent", () => {
+    expect(formatShare(0.025)).toBe("2.50%")
+    expect(formatShare(0.5417)).toBe("54.17%")
+    expect(formatShare(-0.0166)).toBe("-1.66%")
+  })
+
+  it("writes a histogram's edge with the decimals it holds", () => {
+    expect(formatEdge(-1.5)).toBe("-1.5")
+    expect(formatEdge(0.29)).toBe("0.29")
+    expect(formatEdge(12500)).toBe("12,500")
+    expect(formatEdge(0)).toBe("0")
+  })
+})
 
 describe("formatAligned", () => {
   it("lines up a column's decimal points with spaces, adding no digit", () => {

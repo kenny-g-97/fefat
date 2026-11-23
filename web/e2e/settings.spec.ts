@@ -370,7 +370,7 @@ test("the data folder is shown and cannot be edited", async ({
   )
 })
 
-test("About shows the chart library's notice word for word, with its link", async ({
+test("About shows the chart libraries' notices word for word, with their links", async ({
   loggedIn: page,
 }) => {
   await page.goto("/settings")
@@ -381,7 +381,7 @@ test("About shows the chart library's notice word for word, with its link", asyn
   // The card says why a logo stands on each chart, the builder's question.
   await expect(
     about.getByText(
-      "The library that draws FEAT's charts, credited here and by the logo on each chart"
+      "The libraries that draw FEAT's charts, credited here and by the logo on a price chart"
     )
   ).toBeVisible()
   await expect(about.getByTestId("chart-notice").locator("p")).toHaveText([
@@ -392,4 +392,12 @@ test("About shows the chart library's notice word for word, with its link", asyn
   await expect(link).toHaveAttribute("href", "https://www.tradingview.com/")
   await expect(link).toHaveAttribute("target", "_blank")
   await expect(link).toHaveAttribute("rel", "noreferrer")
+  // The NOTICE file of the ECharts package, step 5.7's dependency, written apart from the app's.
+  await expect(
+    about.getByTestId("equity-chart-notice").locator("p")
+  ).toHaveText([
+    "Apache ECharts",
+    "Copyright 2017-2026 The Apache Software Foundation",
+    "This product includes software developed at The Apache Software Foundation https://www.apache.org/",
+  ])
 })
