@@ -192,10 +192,7 @@ export function liveRun<Run extends ListedRun>(
 /** The ids of the backtests among `jobs` that ended, as one text a hook's dependency can compare
  * from one read of the jobs to the next. */
 export function endedBacktests(jobs: readonly Job[]): string {
-  return jobs
-    .filter((job) => job.kind === "backtest" && !isActive(job))
-    .map((job) => job.id)
-    .join(" ")
+  return listedBacktests(jobs.filter((job) => !isActive(job)))
 }
 
 /** The ids of the backtests among `jobs`, as one text a hook's dependency can compare from one

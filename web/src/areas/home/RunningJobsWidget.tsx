@@ -31,16 +31,15 @@ export function RunningJobsWidget() {
 
 function RunningJobs() {
   const jobs = useQuery(jobsQuery)
-  if (jobs.status === "pending") {
-    return <div className="min-h-24" />
-  }
-  if (jobs.status === "error") {
-    return (
+  if (jobs.data === undefined) {
+    return jobs.status === "error" ? (
       <SectionFailure
         error={jobs.error}
         onRetry={() => void jobs.refetch()}
         className="min-h-24 justify-center"
       />
+    ) : (
+      <div className="min-h-24" />
     )
   }
   const running = jobs.data.filter(isActive)

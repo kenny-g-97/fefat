@@ -20,10 +20,11 @@ export function TopBar() {
     () => void router.invalidate(),
     [router]
   )
-  const { jobs, reconnecting } = useLiveJobs(readTheLoginAgain)
+  const { jobs, streamNote } = useLiveJobs(readTheLoginAgain)
   useStoreReadAfterWrites(jobs.data)
   useRunsReadAfterBacktests(jobs.data)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [revealedJob, setRevealedJob] = useState<string | null>(null)
   const { failures, said, clearFailures } = useJobEnds(jobs.data, drawerOpen)
   const running = countOf(jobs.data, "running")
   const queued = countOf(jobs.data, "queued")
@@ -43,6 +44,7 @@ export function TopBar() {
         onOpenChange={(open) => {
           setDrawerOpen(open)
           if (open) {
+            setRevealedJob(failures.length > 0 ? failures[0].id : null)
             clearFailures()
           }
         }}
@@ -71,13 +73,14 @@ export function TopBar() {
             {failures.length > 0 && (
               <span
                 aria-hidden="true"
+                data-slot="jobs-failure-dot"
                 data-testid="jobs-failure-dot"
                 className="absolute right-1.5 bottom-1.5 size-2 rounded-xl bg-negative ring-2 ring-background"
               />
             )}
           </Button>
         </SheetTrigger>
-        <JobsDrawer reconnecting={reconnecting} />
+        <JobsDrawer streamNote={streamNote} revealedJob={revealedJob} />
       </Sheet>
     </header>
   )

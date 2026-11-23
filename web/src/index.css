@@ -594,6 +594,11 @@ a[data-slot="row-link"]:active {
     outline-offset: 2px;
   }
 
+  /* The jobs button's failure dot keeps a mark there, its fill and its ring forced away. */
+  [data-slot="jobs-failure-dot"] {
+    background-color: Highlight;
+  }
+
   /* A frame's edge keeps its focus on its line there too. */
   [data-slot="frame-edge"]:focus-visible {
     outline: none;

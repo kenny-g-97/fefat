@@ -7,6 +7,7 @@ import {
   progressOf,
   startDemoJobs,
 } from "./support/jobs.ts"
+import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 
 // Step 5.19: one stream per tab carries every job, a job tells how it ended wherever you are, and
@@ -42,12 +43,18 @@ test.afterEach(async ({ page }) => {
 })
 
 test("one stream moves five active jobs", async ({ loggedIn: page }) => {
-  // Done means 1: a fifth active job is live too, over one connection.
+  // Done means 1: a fifth active job is live too, over one connection. Only the first read of
+  // the list is answered, so that the stream's events alone can move the bars.
   const ids = ["one", "two", "three", "four", "five"]
-  const answer = await listAnswered(
-    page,
-    ids.map((id) => aJob(id, "running", { progress: 5 }))
-  )
+  let reads = 0
+  await page.route(LIST, async (route) => {
+    reads += 1
+    if (reads === 1) {
+      await route.fulfill({
+        json: ids.map((id) => aJob(id, "running", { progress: 5 })),
+      })
+    }
+  })
   const streams = new Set<string>()
   page.on("request", (request) => {
     if (request.url().includes("/v1/streams/")) {
@@ -61,16 +68,13 @@ test("one stream moves five active jobs", async ({ loggedIn: page }) => {
       return `id: ${index + 1}\nevent: progress\ndata: ${JSON.stringify(said)}\n\n`
     })
     .join("")
-  await page.route(STREAM, (route) => {
-    answer.jobs = ids.map((id, index) =>
-      aJob(id, "running", { progress: (index + 1) * 10 })
-    )
-    return route.fulfill({
+  await page.route(STREAM, (route) =>
+    route.fulfill({
       status: 200,
       contentType: "text/event-stream",
       body: reports,
     })
-  })
+  )
 
   await page.goto("/")
   await page.getByTestId("jobs-indicator").click()
@@ -105,7 +109,7 @@ test("the jobs button carries a failure dot until the drawer opens", async ({
       kind: "backtest",
       progress: 60,
       finished_at: ENDED,
-      error: FAILED_WORDS,
+      error: `${FAILED_WORDS}\nThe log's last line`,
     }),
   ]
   await windowFocused(page)
@@ -125,12 +129,52 @@ test("the jobs button carries a failure dot until the drawer opens", async ({
 
   await indicator.click()
 
-  await expect(drawerOf(page).getByTestId("job-error")).toHaveText(FAILED_WORDS)
+  const error = drawerOf(page).getByTestId("job-error")
+  await expect(error).toContainText(FAILED_WORDS)
+  await expect(error).toHaveCSS("white-space", "pre-wrap")
   await expect(dot).toHaveCount(0)
   await expect(indicator).toHaveAccessibleName("Jobs")
   await expect(
     drawerOf(page).getByRole("button", { name: "Close" })
   ).toHaveAttribute("title", "Close")
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth
+    )
+  ).toBe(true)
+})
+
+test("the drawer opens on a failure below the running jobs", async ({
+  loggedIn: page,
+}) => {
+  // The dot goes as the drawer opens, so the row it stood for has to be in view.
+  const running = Array.from({ length: 9 }, (_, index) =>
+    aJob(`running-${index}`, "running", { progress: 10 })
+  )
+  const answer = await listAnswered(page, [
+    ...running,
+    aJob("watched", "running", { progress: 60 }),
+  ])
+  await page.route(STREAM, (route) => route.abort())
+  const indicator = page.getByTestId("jobs-indicator")
+  await page.goto("/")
+  await expect(indicator).toHaveAccessibleName("Jobs, 10 running")
+
+  answer.jobs = [
+    ...running,
+    aJob("watched", "failed", {
+      progress: 60,
+      finished_at: ENDED,
+      error: FAILED_WORDS,
+    }),
+  ]
+  await windowFocused(page)
+  await expect(page.getByTestId("jobs-failure-dot")).toBeVisible()
+  await indicator.click()
+
+  await expect(drawerOf(page).getByTestId("job-error")).toBeInViewport()
 })
 
 test("a cancelled job raises no failure dot, and a first read says nothing", async ({
@@ -180,6 +224,11 @@ test("a row reads Reconnecting while its stream waits", async ({
   await screenshot(page, "jobs-drawer-reconnecting")
   expect(await lowContrastInEachTheme(page)).toEqual([])
   await page.evaluate(() => document.documentElement.classList.add("dark"))
+  // After three waits, about seven seconds, it asks what to check.
+  await expect(rows.first()).toContainText(
+    "Reconnecting: is fefat up still running?",
+    { timeout: 15_000 }
+  )
 
   await page.unroute(STREAM)
 
@@ -187,6 +236,34 @@ test("a row reads Reconnecting while its stream waits", async ({
     timeout: 15_000,
   })
   await expect(rows.first()).not.toContainText("Reconnecting")
+})
+
+test("a read of the list that fails leaves the rows in the drawer", async ({
+  loggedIn: page,
+}) => {
+  // With the server down, the rows must stay to say they are reconnecting.
+  let reads = 0
+  await page.route(LIST, (route) => {
+    reads += 1
+    return reads === 1
+      ? route.fulfill({
+          json: [aJob("watched", "running", { progress: 40 })],
+        })
+      : route.fulfill(problemAnswer(502, "The server did not answer."))
+  })
+  await page.route(STREAM, (route) => route.abort())
+  await page.goto("/")
+  const indicator = page.getByTestId("jobs-indicator")
+  await expect(indicator).toHaveAccessibleName("Jobs, 1 running")
+  await indicator.click()
+  const before = reads
+
+  await windowFocused(page)
+
+  await expect.poll(() => reads).toBeGreaterThan(before)
+  const row = drawerOf(page).getByTestId("job-row").first()
+  await expect(row).toContainText("Reconnecting")
+  await expect(drawerOf(page).getByRole("alert")).toHaveCount(0)
 })
 
 test("a stream refused once the session ended leads to the login", async ({
@@ -224,10 +301,9 @@ test("Run again queues a cancelled job, which runs and shows live", async ({
   await first.getByTestId("job-cancel").click()
   await expect(first).toContainText("Cancelled", { timeout: 15_000 })
   const runAgain = first.getByTestId("job-run-again")
-  await expect(runAgain).toBeDisabled()
-  await page.mouse.move(0, 0)
   await expect(runAgain).toBeEnabled()
   await expect(runAgain).toHaveCSS("color", "rgb(168, 85, 247)")
+  await page.mouse.move(0, 0)
   await screenshot(page, "jobs-drawer-run-again")
   expect(await lowContrastInEachTheme(page)).toEqual([])
   await page.evaluate(() => document.documentElement.classList.add("dark"))
@@ -235,7 +311,9 @@ test("Run again queues a cancelled job, which runs and shows live", async ({
   // The list holds still under the pointer, so the new job's row comes once it leaves.
   const listed = await rows.count()
   await runAgain.click()
-  await expect(first.getByTestId("job-queued-again")).toHaveText("Queued again")
+  await expect(first.getByTestId("job-queued-again")).toHaveText(
+    /^(Queued|Running) again$/
+  )
   await expect(rows).toHaveCount(listed)
   await page.mouse.move(0, 0)
 
@@ -244,18 +322,43 @@ test("Run again queues a cancelled job, which runs and shows live", async ({
   await expect
     .poll(() => progressOf(first.getByRole("progressbar")), { timeout: 30_000 })
     .toBeGreaterThan(0)
-  await expect(rows.nth(1)).toContainText("Queued again")
+  await expect(rows.nth(1)).toContainText(/(Queued|Running) again/)
 })
 
-test("a double click on Cancel never runs the job again", async ({
+test("Run again from the keyboard moves the focus to what it did", async ({
   loggedIn: page,
 }) => {
-  // The review of step 5.19: Run again stands where Cancel stood, even for a slow second click.
+  const watched = aJob("watched", "cancelled", { finished_at: ENDED })
+  const next = aJob("next", "queued")
+  const answer = await listAnswered(page, [watched])
+  await page.route("**/v1/jobs/watched/run-again", (route) => {
+    answer.jobs = [next, watched]
+    return route.fulfill({ status: 202, json: next })
+  })
+  await page.route(STREAM, (route) => route.abort())
+  await page.goto("/")
+  await page.getByTestId("jobs-indicator").click()
+  const drawer = drawerOf(page)
+
+  await drawer.getByTestId("job-run-again").focus()
+  await page.keyboard.press("Enter")
+
+  await expect(drawer.getByTestId("job-queued-again")).toBeFocused()
+})
+
+test("a double click on Cancel, or a late click on its place, never runs the job again", async ({
+  loggedIn: page,
+}) => {
+  // The reviews of step 5.19: Run again stands away from Cancel's place, and a double click acts
+  // once wherever its second click lands.
+  await page.emulateMedia({ reducedMotion: "reduce" })
   const watched = aJob("watched", "queued")
   const cancelled = aJob("watched", "cancelled", { finished_at: ENDED })
   const answer = await listAnswered(page, [watched])
   await page.route(STREAM, (route) => route.abort())
+  let cancels = 0
   await page.route("**/v1/jobs/watched/cancel", (route) => {
+    cancels += 1
     answer.jobs = [cancelled]
     return route.fulfill({ json: cancelled })
   })
@@ -267,28 +370,31 @@ test("a double click on Cancel never runs the job again", async ({
   await page.goto("/")
   await page.getByTestId("jobs-indicator").click()
   const row = drawerOf(page).getByTestId("job-row").first()
-
-  await row.getByTestId("job-cancel").dblclick()
-  await expect(row).toContainText("Cancelled")
-  const spot = await row.getByTestId("job-run-again").boundingBox()
-  if (spot === null) {
-    throw new Error("Expected Run again drawn on the row, got nothing.")
+  const cancel = row.getByTestId("job-cancel")
+  const place = await cancel.boundingBox()
+  if (place === null) {
+    throw new Error("Expected Cancel drawn on the row, got nothing.")
   }
-  await page.mouse.click(spot.x + spot.width / 2, spot.y + spot.height / 2)
+
+  await cancel.dblclick()
+  await expect(row).toContainText("Cancelled")
+  await page.mouse.click(place.x + place.width / 2, place.y + place.height / 2)
+
+  expect(runsAgain).toBe(0)
+  expect(cancels).toBe(1)
+  const runAgain = row.getByTestId("job-run-again")
+  await runAgain.dispatchEvent("click", { detail: 2 })
   expect(runsAgain).toBe(0)
 
-  await page.mouse.move(0, 0)
-  await row.getByTestId("job-run-again").dispatchEvent("click", { detail: 2 })
-  expect(runsAgain).toBe(0)
-
-  await row.getByTestId("job-run-again").click()
+  await runAgain.click()
   await expect(row.getByTestId("job-queued-again")).toBeVisible()
   expect(runsAgain).toBe(1)
 })
 
-test("the drawer's rows hold still while the pointer is over the list", async ({
+test("the drawer's rows hold their place while the pointer is over the list", async ({
   loggedIn: page,
 }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" })
   const older = aJob("older", "running", { progress: 20, message: "Older" })
   const newer = aJob("newer", "running", { progress: 30, message: "Newer" })
   const answer = await listAnswered(page, [newer, older])
@@ -297,25 +403,35 @@ test("the drawer's rows hold still while the pointer is over the list", async ({
   await page.getByTestId("jobs-indicator").click()
   const rows = drawerOf(page).getByTestId("job-row")
   await expect(rows).toHaveCount(2)
+  const cancelBelow = rows.nth(1).getByTestId("job-cancel")
+  const before = await cancelBelow.boundingBox()
   await page.getByTestId("job-list").hover()
 
   answer.jobs = [
     aJob("started", "queued"),
-    aJob("newer", "cancelled", { progress: 30, finished_at: ENDED }),
+    aJob("newer", "failed", {
+      progress: 30,
+      finished_at: ENDED,
+      error: `${FAILED_WORDS}\nA second line\nA third line\nA fourth line`,
+    }),
     { ...older, progress: 25 },
   ]
   await windowFocused(page)
 
-  await expect(rows.first()).toContainText("Cancelled")
+  await expect(rows.first()).toContainText("Failed")
+  await expect(rows.first().getByTestId("job-held-error")).toBeVisible()
+  await expect(rows.first().getByTestId("job-error")).toHaveCount(0)
   await expect(rows).toHaveCount(2)
   await expect
     .poll(() => progressOf(rows.nth(1).getByRole("progressbar")))
     .toBe(25)
+  expect(await cancelBelow.boundingBox()).toEqual(before)
 
   await page.mouse.move(0, 0)
 
   await expect(rows).toHaveCount(3)
   await expect(rows.first()).toContainText("Queued")
   await expect(rows.nth(1)).toContainText("Running")
-  await expect(rows.nth(2)).toContainText("Cancelled")
+  await expect(rows.nth(2)).toContainText("Failed")
+  await expect(rows.nth(2).getByTestId("job-error")).toBeVisible()
 })

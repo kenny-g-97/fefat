@@ -1,10 +1,13 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { useEffect, useRef } from "react"
 import {
   isActive,
   isCancelling,
   type Job,
+  jobsQuery,
   KIND_LABELS,
   runsAgain,
+  STATUS_LABELS,
   useJobCancellation,
   useJobRunAgain,
 } from "@/api/jobs"
@@ -13,35 +16,35 @@ import { firstClick } from "@/ui/first-click"
 import { formatInstant } from "@/ui/instant"
 import { PercentBar } from "@/ui/percent-bar"
 import { StatusBadge } from "@/ui/status-badge"
-import { usePointerLeaving } from "./pointer-leaving"
 
-type JobRowProps = Readonly<{ job: Job; reconnecting: boolean }>
+type JobRowProps = Readonly<{
+  job: Job
+  streamNote: string | null
+  errorHeld: boolean
+  revealed: boolean
+}>
 
-/** A job in the jobs drawer (web/DESIGN.md, Patterns): its kind and status, then its bar and
- * Cancel while it is queued or running, or when it ended and why, with Run again unless it
- * succeeded, then its last message, or Reconnecting while its stream waits. A job that ends under
- * the pointer keeps Run again asleep until the pointer leaves the row, since Run again stands
- * where Cancel stood and a late second click would undo the Cancel. */
-export function JobRow({ job, reconnecting }: JobRowProps) {
-  const active = isActive(job)
+/** A job in the jobs drawer (web/DESIGN.md, Patterns): its kind and status; then its bar and
+ * Cancel while it is queued or running, or once it ended Run again at the left, unless it
+ * succeeded, and when it ended at the right, so that a late click meant for Cancel lands on plain
+ * text; then why it failed; then one last line, its message or what its stream is doing. A
+ * failure that arrives while the list is held stands cut to that line, so that no row moves, and
+ * opens once the pointer leaves. */
+export function JobRow({ job, streamNote, errorHeld, revealed }: JobRowProps) {
   const row = useRef<HTMLLIElement>(null)
-  const wasActive = useRef(active)
-  const [endedUnderPointer, setEndedUnderPointer] = useState(false)
-  const wake = useCallback(() => setEndedUnderPointer(false), [])
-  useLayoutEffect(() => {
-    if (wasActive.current && !active && row.current?.matches(":hover")) {
-      setEndedUnderPointer(true)
+  useEffect(() => {
+    if (revealed) {
+      row.current?.scrollIntoView({ block: "nearest" })
     }
-    wasActive.current = active
-  }, [active])
-  usePointerLeaving(endedUnderPointer, row, wake)
-  const note = active && reconnecting ? "Reconnecting" : job.message
+  }, [revealed])
+  const active = isActive(job)
+  const heldError = errorHeld ? job.error : null
+  const note = active && streamNote !== null ? streamNote : job.message
   return (
     <li
       ref={row}
       data-testid="job-row"
       className="flex flex-col gap-2 border-b py-4 last:border-b-0"
-      onPointerLeave={wake}
     >
       <div className="flex items-center justify-between gap-3">
         <span className="font-medium text-foreground">
@@ -52,9 +55,24 @@ export function JobRow({ job, reconnecting }: JobRowProps) {
       {active ? (
         <ActiveJob job={job} />
       ) : (
-        <EndedJob job={job} asleep={endedUnderPointer} />
+        <EndedJob job={job} showsError={heldError === null} />
       )}
-      {note !== null && <p className="text-xs text-muted-foreground">{note}</p>}
+      {heldError === null ? (
+        <p
+          title={note === null ? undefined : note}
+          className="min-h-4 truncate text-xs text-muted-foreground"
+        >
+          {note}
+        </p>
+      ) : (
+        <p
+          data-testid="job-held-error"
+          title={heldError}
+          className="min-h-4 truncate text-xs text-negative"
+        >
+          {heldError}
+        </p>
+      )}
     </li>
   )
 }
@@ -73,7 +91,7 @@ function ActiveJob({ job }: Readonly<{ job: Job }>) {
           size="sm"
           data-testid="job-cancel"
           disabled={cancellation.isPending || isCancelling(job)}
-          onClick={() => cancellation.mutate(job.id)}
+          onClick={firstClick(() => cancellation.mutate(job.id))}
         >
           Cancel
         </Button>
@@ -87,48 +105,76 @@ function ActiveJob({ job }: Readonly<{ job: Job }>) {
   )
 }
 
-function EndedJob({ job, asleep }: Readonly<{ job: Job; asleep: boolean }>) {
+/** When the job ended and why, with Run again, which reads Queued again or Running again while
+ * the job it started is under way, and offers itself again once that job has ended; a press from
+ * the keyboard moves the focus to those words, since the button leaves. */
+function EndedJob({
+  job,
+  showsError,
+}: Readonly<{ job: Job; showsError: boolean }>) {
   const runAgain = useJobRunAgain()
+  const jobs = useQuery(jobsQuery)
+  const pressedByKey = useRef(false)
+  const words = useRef<HTMLParagraphElement>(null)
+  const answered = runAgain.data
+  const listed = jobs.data?.find((each) => each.id === answered?.id)
+  const rerun = listed === undefined ? answered : listed
+  const again =
+    rerun !== undefined && isActive(rerun)
+      ? `${STATUS_LABELS[rerun.status]} again`
+      : null
+  useEffect(() => {
+    if (again !== null && pressedByKey.current) {
+      pressedByKey.current = false
+      words.current?.focus()
+    }
+  }, [again])
   return (
     <>
-      <div className="flex min-h-8 items-center justify-between gap-3">
-        {job.finished_at !== null && (
-          <p className="text-xs text-muted-foreground">
-            Ended {formatInstant(job.finished_at)}
-          </p>
-        )}
-        {runsAgain(job) && runAgain.isSuccess && (
+      <div className="flex min-h-8 items-center gap-3">
+        {runsAgain(job) && again !== null && (
           <p
+            ref={words}
+            tabIndex={-1}
             data-testid="job-queued-again"
             className="text-xs text-muted-foreground"
           >
-            Queued again
+            {again}
           </p>
         )}
-        {runsAgain(job) && !runAgain.isSuccess && (
+        {runsAgain(job) && again === null && (
           <Button
             variant="ghost"
             size="sm"
+            className="-ml-3"
             data-testid="job-run-again"
-            disabled={asleep || runAgain.isPending}
-            onClick={firstClick(() => runAgain.mutate(job.id))}
+            disabled={runAgain.isPending}
+            onClick={(event) => {
+              pressedByKey.current = event.detail === 0
+              firstClick(() => runAgain.mutate(job.id))(event)
+            }}
           >
             Run again
           </Button>
         )}
+        {job.finished_at !== null && (
+          <p className="ml-auto text-xs text-muted-foreground">
+            Ended {formatInstant(job.finished_at)}
+          </p>
+        )}
       </div>
-      {job.error !== null && (
-        <p
-          data-testid="job-error"
-          tabIndex={0}
-          className="max-h-32 overflow-y-auto text-xs whitespace-pre-wrap text-negative wrap-anywhere"
-        >
-          {job.error}
-        </p>
-      )}
       {runAgain.error !== null && (
         <p role="alert" className="text-xs text-negative">
           {runAgain.error.message}
+        </p>
+      )}
+      {showsError && job.error !== null && (
+        <p
+          data-testid="job-error"
+          tabIndex={0}
+          className="max-h-34 overflow-y-auto text-xs whitespace-pre-wrap text-negative wrap-anywhere"
+        >
+          {job.error}
         </p>
       )}
     </>

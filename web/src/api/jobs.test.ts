@@ -7,6 +7,9 @@ import {
   failureWords,
   type Job,
   jobsQuery,
+  newestRunOf,
+  reconnectingWords,
+  withReportsKept,
 } from "./jobs"
 
 function aJob(id: string, status: Job["status"], progress = 0): Job {
@@ -122,33 +125,46 @@ describe("one stream", () => {
     ])
   })
 
-  it("reads the list once more after a read a report landed during", async () => {
-    // That read may have left the server before the report, and would put the bar back; it
-    // runs to its end, since reports that keep landing would otherwise stop every read.
-    const isInvalidated = () =>
-      queryClient.getQueryState(jobsQuery.queryKey)?.isInvalidated
-    queryClient.setQueryData(jobsQuery.queryKey, [aJob("job-1", "running", 30)])
-    report(40, "1")
-    const withNoRead = isInvalidated()
-    let answerTheRead: (jobs: Job[]) => void = () => undefined
-    const reading = queryClient.fetchQuery({
-      queryKey: jobsQuery.queryKey,
-      queryFn: () =>
-        new Promise<Job[]>((resolve) => {
-          answerTheRead = resolve
-        }),
-      staleTime: 0,
-    })
+  it("keeps a report the list was read too early to hold", () => {
+    // That read may have left the server before the report, and would put the bar back.
+    queryClient.setQueryData(jobsQuery.queryKey, [aJob("job-1", "running", 60)])
 
-    report(50, "2")
-    report(60, "3")
-    const duringTheRead = isInvalidated()
-    answerTheRead([aJob("job-1", "running", 40)])
-    await reading
+    const [read] = withReportsKept([aJob("job-1", "running", 40)])
 
-    expect(withNoRead).toBe(false)
-    expect(duringTheRead).toBe(false)
-    await vi.waitFor(() => expect(isInvalidated()).toBe(true))
+    expect([read.progress, read.message]).toEqual([60, "Counted 60 percent"])
+  })
+
+  it("takes the list's figure for a new attempt or a job queued again", () => {
+    // Done means 1: no figure of an earlier attempt.
+    queryClient.setQueryData(jobsQuery.queryKey, [aJob("job-1", "running", 80)])
+    const nextAttempt = { ...aJob("job-1", "running", 10), attempt: 2 }
+
+    const [restarted] = withReportsKept([nextAttempt])
+    const [queuedAgain] = withReportsKept([aJob("job-1", "queued", 0)])
+
+    expect(restarted.progress).toBe(10)
+    expect(queuedAgain.progress).toBe(0)
+  })
+
+  it("says Reconnecting, then asks whether the server still runs", () => {
+    expect([0, 1, 2, 3, 9].map(reconnectingWords)).toEqual([
+      null,
+      "Reconnecting",
+      "Reconnecting",
+      "Reconnecting: is fefat up still running?",
+      "Reconnecting: is fefat up still running?",
+    ])
+  })
+})
+
+describe("newestRunOf", () => {
+  it("finds the newest job of the same kind and inputs, its Run again", () => {
+    const failed = aJob("first", "failed")
+    const again = aJob("again", "running")
+    const other = { ...aJob("other", "running"), payload: { seconds: 5 } }
+
+    expect(newestRunOf(failed, [other, again, failed])).toBe(again)
+    expect(newestRunOf(failed, [other])).toBe(failed)
   })
 })
 

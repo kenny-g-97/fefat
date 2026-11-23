@@ -8,9 +8,16 @@ const CSRF_HEADER = "X-CSRF-Token"
 const LOGIN = "/v1/auth/login"
 
 /** The one cache of what the server answered, which the router's loaders and the pages
- * share. */
+ * share. The server is on this PC, so a browser offline, as with its Wi-Fi down, pauses nothing. */
 export const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      retry: false,
+      refetchOnWindowFocus: false,
+      networkMode: "always",
+    },
+    mutations: { networkMode: "always" },
+  },
 })
 
 /** The typed client of the local server's API, generated from `web/openapi.json`. */

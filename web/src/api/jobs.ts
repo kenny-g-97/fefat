@@ -56,13 +56,40 @@ const progressReport = z.object({
 /** The statuses of a job that has not ended. */
 const ACTIVE_STATUSES: ReadonlySet<string> = new Set(["queued", "running"])
 
+/** The key of the jobs in the cache. */
+const JOBS_KEY = ["jobs"]
+
+/** How many waits to reconnect before a row asks whether the server still runs: the pauses
+ * double from a second, so about seven seconds. */
+const WAITS_BEFORE_ASKING = 3
+
 /** The hundred newest jobs, newest first, then the running jobs older than them; read again
  * when a hidden tab is shown, since it followed no stream meanwhile. */
 export const jobsQuery = queryOptions({
-  queryKey: ["jobs"],
-  queryFn: async () => answer(await api.GET("/v1/jobs")),
+  queryKey: JOBS_KEY,
+  queryFn: async () => withReportsKept(answer(await api.GET("/v1/jobs"))),
   refetchOnWindowFocus: true,
 })
+
+/** `listed`, a read of the jobs, with the figures the cache holds where they are further along
+ * for the same attempt of a running job: the read may have left the server before a report the
+ * stream has since applied, and would put the bar back. */
+export function withReportsKept(listed: Job[]): Job[] {
+  const cached = queryClient.getQueryData<Job[]>(JOBS_KEY)
+  if (cached === undefined) {
+    return listed
+  }
+  const seen = new Map(cached.map((job) => [job.id, job]))
+  return listed.map((job) => {
+    const before = seen.get(job.id)
+    return before !== undefined &&
+      job.status === "running" &&
+      before.attempt === job.attempt &&
+      before.progress > job.progress
+      ? { ...job, progress: before.progress, message: before.message }
+      : job
+  })
+}
 
 /** Whether `job`, or a run in its job's status, is queued or running, and so has progress to
  * follow. */
@@ -83,6 +110,16 @@ export function hasFailed(job: Readonly<Pick<Job, "status">>): boolean {
 /** Whether Run again applies to `job`: it ended and did not succeed. */
 export function runsAgain(job: Readonly<Pick<Job, "status">>): boolean {
   return !isActive(job) && job.status !== "succeeded"
+}
+
+/** The newest job among `jobs`, newest first, that runs the inputs of `job`: `job` itself, or
+ * a Run again of it. */
+export function newestRunOf(job: Job, jobs: readonly Job[]): Job {
+  const inputs = JSON.stringify(job.payload)
+  const newest = jobs.find(
+    (each) => each.kind === job.kind && JSON.stringify(each.payload) === inputs
+  )
+  return newest === undefined ? job : newest
 }
 
 /** Start a demo job that counts for a minute. */
@@ -133,15 +170,15 @@ export function useJobRunAgain() {
 /** The jobs, with their progress followed through one stream of every job's events, open while
  * this tab is shown and a job is queued or running: a progress event moves a bar, and a status
  * event asks for the list again, as does each opening of the stream, whose start the server fixes
- * first, so that what the list holds and what the stream sends leave nothing out. `reconnecting`
- * says that the stream waits to connect again. `onLoginEnded` hears a stream the server refused,
+ * first, so that what the list holds and what the stream sends leave nothing out. `streamNote`
+ * is what a running job's row says while the stream waits to connect again. `onLoginEnded` hears a stream the server refused,
  * as once the session ended. The list is also asked again when the window gets the focus, for a
  * job a notebook or another tab started. The shell's top bar calls it once; the drawer and the
  * home page read the same cache. */
 export function useLiveJobs(onLoginEnded: () => void) {
   const jobs = useQuery(jobsQuery)
   const shown = useSyncExternalStore(onVisibilityChange, isShown)
-  const [reconnecting, setReconnecting] = useState(false)
+  const [waits, setWaits] = useState(0)
   const follows = shown && jobs.data !== undefined && jobs.data.some(isActive)
 
   useEffect(() => {
@@ -154,18 +191,18 @@ export function useLiveJobs(onLoginEnded: () => void) {
       signal: stop.signal,
       onEvent: applyJobEvent,
       onOpen: () => {
-        setReconnecting(false)
+        setWaits(0)
         readTheJobsAgain()
       },
-      onWaiting: () => setReconnecting(true),
+      onWaiting: () => setWaits((count) => count + 1),
       onRefused: () => {
-        setReconnecting(false)
+        setWaits(0)
         onLoginEnded()
       },
     })
     return () => {
       stop.abort()
-      setReconnecting(false)
+      setWaits(0)
     }
   }, [follows, onLoginEnded])
 
@@ -174,7 +211,17 @@ export function useLiveJobs(onLoginEnded: () => void) {
     return () => window.removeEventListener("focus", readTheJobsAgain)
   }, [])
 
-  return { jobs, reconnecting }
+  return { jobs, streamNote: reconnectingWords(waits) }
+}
+
+/** What a queued or running job's row says after `waits` waits to reconnect. */
+export function reconnectingWords(waits: number): string | null {
+  if (waits === 0) {
+    return null
+  }
+  return waits < WAITS_BEFORE_ASKING
+    ? "Reconnecting"
+    : "Reconnecting: is fefat up still running?"
 }
 
 function readTheJobsAgain(): void {
@@ -190,10 +237,8 @@ function isShown(): boolean {
   return document.visibilityState === "visible"
 }
 
-/** A job's event in the cache: a report moves the progress of the job it names, never backwards,
- * and a read of the list under way when it lands is followed by one more, since it may have left
- * the server before the report and would put the bar back; a change of status asks for the
- * list. */
+/** A job's event in the cache: a report moves the progress of the job it names, never backwards;
+ * a change of status asks for the list. */
 export function applyJobEvent(event: StreamedEvent): void {
   if (event.event === "status") {
     readTheJobsAgain()
@@ -219,28 +264,6 @@ export function applyJobEvent(event: StreamedEvent): void {
             : job
         )
   )
-  if (queryClient.isFetching({ queryKey: jobsQuery.queryKey }) > 0) {
-    readOnceTheReadEnds()
-  }
-}
-
-/** Whether a read of the list is already due once the one under way ends. */
-let readIsDue = false
-
-/** One more read of the list once the one under way ends, whatever it answers; never a cancel of
- * it, since reports that keep landing would then stop every read from finishing. */
-function readOnceTheReadEnds(): void {
-  if (readIsDue) {
-    return
-  }
-  readIsDue = true
-  void queryClient
-    .fetchQuery(jobsQuery)
-    .catch(() => undefined)
-    .finally(() => {
-      readIsDue = false
-      readTheJobsAgain()
-    })
 }
 
 function parsedJson(text: string): unknown {
@@ -276,7 +299,8 @@ export function failureWords(failures: readonly Job[]): string {
 /** What this tab has seen end, by comparing each read of the list with the one before, the first
  * read saying nothing: `said`, the latest ends in words for a polite live region, and `failures`,
  * those that failed or timed out while the drawer was closed, which `clearFailures` forgets. They
- * live in the open tab alone. */
+ * live in the open tab alone. A live region reads a change alone, so the same words again end in
+ * a period. */
 export function useJobEnds(
   jobs: readonly Job[] | undefined,
   drawerOpen: boolean
@@ -301,8 +325,7 @@ export function useJobEnds(
       return
     }
     const words = ended.map(endWords).join(". ")
-    // A live region reads a change alone, so the same words again differ by a space.
-    setSaid((before) => (before === words ? `${words} ` : words))
+    setSaid((before) => (before === words ? `${words}.` : words))
     if (!drawerOpen) {
       setFailures((before) => [...before, ...ended.filter(hasFailed)])
     }
