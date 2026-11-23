@@ -67,6 +67,16 @@ class Jobs:
             self.dispatcher.submit(job.id)
         return job
 
+    def start_unless_under_way(self, kind: JobKind, payload: Mapping[str, Any]) -> Job:
+        """The job of `kind` with `payload` queued or running and not asked to stop, or else a
+        new one, decided under the lock that starts jobs, so that two presses queue one job."""
+        with self.starting:
+            job = self.under_way_with(kind, payload)
+            if job is None:
+                job = self.records.add(kind, payload, MAX_ATTEMPTS, self.clock())
+                self.dispatcher.submit(job.id)
+        return job
+
     def submit(self, job_id: str) -> None:
         """Give the dispatcher the queued job `job_id`, which another area's records queued, as
         the runs' records queue a run's job with its row (step 5.3), once no delete holds the
@@ -101,6 +111,13 @@ class Jobs:
     def active(self, kind: JobKind) -> tuple[Job, ...]:
         """The jobs of `kind` that are queued, then those that run, each oldest first."""
         return tuple(job for job in self.under_way() if job.kind == kind)
+
+    def under_way_with(self, kind: JobKind, payload: Mapping[str, Any]) -> Job | None:
+        """The job of `kind` with `payload` queued or running and not asked to stop, if any."""
+        for job in self.active(kind):
+            if job.payload == payload and job.cancel_requested_at is None:
+                return job
+        return None
 
     def recent(self) -> tuple[Job, ...]:
         """The newest jobs, newest first, then the running jobs older than them, which a queue

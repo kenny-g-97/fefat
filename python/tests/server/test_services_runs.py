@@ -16,6 +16,7 @@ from sqlalchemy import Engine
 
 from fefat.backtest import RunConfig, saved_runs_in
 from fefat.config import resolve_paths
+from fefat.market.store import Store
 from fefat.reference.settings import SlippageTicks
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
@@ -32,10 +33,12 @@ from fefat_app.execution import (
     StopCheck,
     keep_running,
 )
-from fefat_app.job_models import JobStatus
+from fefat_app.job_models import Job, JobKind, JobStatus
 from fefat_app.library import LibraryRefusedError
-from fefat_app.runs import RequestedRun, RunToMake, SavedRun, SavedRunFound
+from fefat_app.runs import RequestedRun, RunToMake, SavedRun, SavedRunFound, SubmittedRun
+from fefat_app.services.catalog import MarketCatalog
 from fefat_app.services.code_runs import BACKTEST_LIMITS, LIBRARY_LIMITS, CodeRefusedError
+from fefat_app.services.job_reruns import JobNotRunAgainError, run_again
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.runs import RunAsked, Runs, RunsAsked
 from fefat_app.services.strategies import NoSuchStrategyError
@@ -274,3 +277,98 @@ def test_a_runs_job_is_queued_only_once_no_delete_holds_the_jobs_back(
     assert waited
     assert queued_meanwhile == ()
     assert len(JobTables(engine).with_status(JobStatus.QUEUED)) == 1
+
+
+def run_again_through(runs: Runs, job_id: str) -> Job:
+    """Run again of the job `job_id`, over the jobs of `runs`."""
+    paths = resolve_paths(os.environ)
+    catalog = MarketCatalog(Store(paths.data_dir), paths.reports_dir, paths.cache_dir, runs.jobs)
+    return run_again(job_id, runs.jobs, runs, catalog)
+
+
+def a_cancelled_submission(runs: Runs, workspace: LibraryTables) -> Job:
+    """The job of a run asked for and cancelled while it was queued."""
+    first = runs.submit(asked(workspace, lookback=24))
+    assert isinstance(first, SubmittedRun)
+    runs.cancel(first.id)
+    return runs.jobs.by_id(first.job_id)
+
+
+def test_run_again_of_a_cancelled_backtest_queues_a_run_of_the_same_request(
+    engine: Engine, workspace: LibraryTables
+) -> None:
+    # Step 5.19: Run again is the undo of a Cancel, and the Runs list holds the run it makes.
+    executor, dispatcher = LookingUp(to_make()), RecordingDispatcher()
+    runs = runs_over(engine, workspace, executor, dispatcher)
+    cancelled = a_cancelled_submission(runs, workspace)
+
+    job = run_again_through(runs, cancelled.id)
+
+    assert cancelled.status == JobStatus.CANCELLED
+    assert (job.kind, job.status, job.payload) == (
+        JobKind.BACKTEST,
+        JobStatus.QUEUED,
+        cancelled.payload,
+    )
+    assert job.id != cancelled.id
+    assert dispatcher.calls[-1] == f"submit {job.id}"
+    newest = runs.page(RunsAsked()).runs[0]
+    assert (newest.job_id, newest.status) == (job.id, JobStatus.QUEUED)
+
+
+def test_run_again_pressed_twice_queues_one_backtest_even_without_a_request_key(
+    engine: Engine, workspace: LibraryTables
+) -> None:
+    # A strategy whose expressions call Python keys no request, so nothing else stops the second.
+    executor, dispatcher = LookingUp(to_make(None)), RecordingDispatcher()
+    runs = runs_over(engine, workspace, executor, dispatcher)
+    cancelled = a_cancelled_submission(runs, workspace)
+
+    first = run_again_through(runs, cancelled.id)
+    second = run_again_through(runs, cancelled.id)
+
+    assert second.id == first.id
+    assert dispatcher.calls.count(f"submit {first.id}") == 1
+
+
+def test_run_again_of_a_backtest_whose_run_was_saved_since_says_where_it_is(
+    engine: Engine, workspace: LibraryTables
+) -> None:
+    executor, dispatcher = LookingUp(to_make()), RecordingDispatcher()
+    runs = runs_over(engine, workspace, executor, dispatcher)
+    cancelled = a_cancelled_submission(runs, workspace)
+    executor.answer = SavedRunFound(
+        run_key=the_saved_key(),
+        request_key=REQUEST,
+        parameters={"lookback": 24},
+        settings=to_make().settings,
+    )
+
+    with pytest.raises(JobNotRunAgainError, match="open it on the Runs page"):
+        run_again_through(runs, cancelled.id)
+
+
+def test_run_again_of_a_version_the_library_no_longer_holds_is_refused(
+    engine: Engine, workspace: LibraryTables
+) -> None:
+    executor, dispatcher = LookingUp(to_make()), RecordingDispatcher()
+    runs = runs_over(engine, workspace, executor, dispatcher)
+    payload = a_cancelled_submission(runs, workspace).payload
+    replaced = {**payload, "run": {**payload["run"], "hash": "d" * 64}}
+    other = JobTables(engine).add(JobKind.BACKTEST, replaced, 3, STARTED_AT)
+    runs.jobs.cancel(other.id)
+
+    with pytest.raises(JobNotRunAgainError, match="version 1 of the strategy breakout"):
+        run_again_through(runs, other.id)
+
+
+def test_run_again_of_inputs_this_version_cannot_read_is_refused(
+    engine: Engine, workspace: LibraryTables
+) -> None:
+    executor, dispatcher = LookingUp(to_make()), RecordingDispatcher()
+    runs = runs_over(engine, workspace, executor, dispatcher)
+    other = JobTables(engine).add(JobKind.BACKTEST, {"kind": "backtest"}, 3, STARTED_AT)
+    runs.jobs.cancel(other.id)
+
+    with pytest.raises(JobNotRunAgainError, match="run it from its strategy's page"):
+        run_again_through(runs, other.id)

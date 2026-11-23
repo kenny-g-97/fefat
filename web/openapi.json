@@ -9457,6 +9457,100 @@
         ]
       }
     },
+    "/v1/jobs/{job_id}/run-again": {
+      "post": {
+        "description": "Run the job `job_id`, which failed, was cancelled, or timed out, again from the inputs it\nholds, a backtest through its run: the job that runs them, the one already queued or running\nwhere there is one. Refused with 404 where no job has the id, and with 409 for a job under\nway or succeeded, or whose inputs no longer run, as a strategy version since removed.",
+        "operationId": "run_job_again_v1_jobs__job_id__run_again_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run Job Again",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
     "/v1/market/bars": {
       "get": {
         "description": "A page of at most 20,000 of the instrument's bars on the trade dates from `from` to `to`,\nas `ff.market.load` gives them, column by column; `next_from` is the instant the next page\nopens at, to send as `from`, none on the last page. Refused with 404 for an instrument that\nnames no root and no contract of one, and with 400, in the SDK's words, for a window it\nrefuses, such as one a provider named does not hold.",
