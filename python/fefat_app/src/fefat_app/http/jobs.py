@@ -66,7 +66,9 @@ def run_job_again(job_id: str, container: ContainerDependency) -> Job:
     where there is one. Refused with 404 where no job has the id, and with 409 for a job under
     way or succeeded, or whose inputs no longer run, as a strategy version since removed."""
     try:
-        return run_again(job_id, container.jobs, container.runs, container.catalog)
+        return run_again(
+            job_id, container.jobs, container.runs, container.catalog, container.imports
+        )
     except NoSuchJobError as refused:
         raise HTTPException(404, str(refused)) from refused
     except JobNotRunAgainError as refused:

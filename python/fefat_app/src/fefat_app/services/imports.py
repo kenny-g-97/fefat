@@ -121,6 +121,24 @@ class Imports:
             payload = ImportJobPayload(spec=spec, upload_id=_upload_id(asked.source))
         return self.jobs.start(JobKind.IMPORT, payload.model_dump(mode="json"))
 
+    def start_again(self, job: Job) -> Job:
+        """The import of `job`'s inputs queued again (step 5.19), or the same one under way, each
+        of its files checked as a new import's is: an upload still kept, or a path still under
+        the import roots; refused with `NoSuchUploadError` or `PathRefusedError`."""
+        settings = self.settings
+        for spec, upload_id in ImportJobPayload.model_validate(job.payload).files():
+            if upload_id is not None:
+                self.uploads.path_of(upload_id)
+                continue
+            confined_path(
+                str(spec.request.path),
+                spec.request.kind,
+                settings.import_roots,
+                self.paths,
+                settings.upload_suffixes,
+            )
+        return self.jobs.start_unless_under_way(job.kind, job.payload)
+
     def _round(self, asked: FilesImportAsked) -> ImportJobPayload:
         """A round's payload (D-102): the profile resolved once, the first file's import its
         spec, each other file's path and upload beside it."""

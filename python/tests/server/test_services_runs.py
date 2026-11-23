@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import Engine
 
 from fefat.backtest import RunConfig, saved_runs_in
-from fefat.config import resolve_paths
+from fefat.config import Settings, resolve_paths
 from fefat.market.store import Store
 from fefat.reference.settings import SlippageTicks
 from fefat_app.database.job_records import JobTables
@@ -38,10 +38,12 @@ from fefat_app.library import LibraryRefusedError
 from fefat_app.runs import RequestedRun, RunToMake, SavedRun, SavedRunFound, SubmittedRun
 from fefat_app.services.catalog import MarketCatalog
 from fefat_app.services.code_runs import BACKTEST_LIMITS, LIBRARY_LIMITS, CodeRefusedError
+from fefat_app.services.imports import Imports
 from fefat_app.services.job_reruns import JobNotRunAgainError, run_again
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.runs import RunAsked, Runs, RunsAsked
 from fefat_app.services.strategies import NoSuchStrategyError
+from fefat_app.uploads import UploadFolders
 from local_server import STARTED_AT, RecordingDispatcher, SettableClock
 
 REQUEST = "c" * 64
@@ -283,7 +285,9 @@ def run_again_through(runs: Runs, job_id: str) -> Job:
     """Run again of the job `job_id`, over the jobs of `runs`."""
     paths = resolve_paths(os.environ)
     catalog = MarketCatalog(Store(paths.data_dir), paths.reports_dir, paths.cache_dir, runs.jobs)
-    return run_again(job_id, runs.jobs, runs, catalog)
+    uploads = UploadFolders(paths.uploads_dir, runs.clock)
+    imports = Imports(runs.executor, runs.jobs, uploads, paths, Settings())
+    return run_again(job_id, runs.jobs, runs, catalog, imports)
 
 
 def a_cancelled_submission(runs: Runs, workspace: LibraryTables) -> Job:
@@ -370,5 +374,5 @@ def test_run_again_of_inputs_this_version_cannot_read_is_refused(
     other = JobTables(engine).add(JobKind.BACKTEST, {"kind": "backtest"}, 3, STARTED_AT)
     runs.jobs.cancel(other.id)
 
-    with pytest.raises(JobNotRunAgainError, match="run it from its strategy's page"):
+    with pytest.raises(JobNotRunAgainError, match="start it again from its page"):
         run_again_through(runs, other.id)

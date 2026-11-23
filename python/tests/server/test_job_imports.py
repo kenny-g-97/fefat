@@ -8,6 +8,7 @@ writes; and a failure once the import wrote says the file was imported."""
 
 import asyncio
 import os
+import shutil
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -28,7 +29,7 @@ from export_samples import (
     with_a_lot_more_in_the_last_bar,
     written_export,
 )
-from fefat.config import resolve_paths
+from fefat.config import Settings, resolve_paths
 from fefat.market.calendar_breaks import (
     BarsInBreaks,
     BreaksWithBars,
@@ -71,6 +72,8 @@ from fefat_app.imports import (
     ImportOutput,
     ImportSpec,
     ImportWrote,
+    NoSuchUploadError,
+    PathRefusedError,
     RefusedImport,
     RoundFile,
 )
@@ -81,7 +84,7 @@ from fefat_app.jobs.imports import STOPPED_WHILE_WRITING, ImportJobs
 from fefat_app.jobs.progress import JobCancelledError, JobProgress
 from fefat_app.jobs.worker import JobTimings, run_job
 from fefat_app.ports import Executor
-from fefat_app.services.imports import IMPORT_LIMITS
+from fefat_app.services.imports import IMPORT_LIMITS, Imports
 from fefat_app.services.jobs import JobPastStoppingError, Jobs
 from fefat_app.uploads import UploadFolders
 from local_server import STARTED_AT, RecordingDispatcher, SettableClock, logged_in
@@ -898,3 +901,76 @@ def test_a_round_of_one_file_counts_its_file(
         "files_imported_before": 0,
         "not_imported": [],
     }
+
+
+def imports_over(
+    job_records: JobTables, roots: tuple[Path, ...]
+) -> tuple[Imports, RecordingDispatcher]:
+    """The imports over a dispatcher that runs nothing, with `roots` as the import roots."""
+    paths = resolve_paths(os.environ)
+    clock = SettableClock(STARTED_AT)
+    dispatcher = RecordingDispatcher()
+    imports = Imports(
+        SubprocessExecutor(paths, warm_previews=False),
+        Jobs(job_records, dispatcher, clock),
+        UploadFolders(paths.uploads_dir, clock),
+        paths,
+        Settings(import_roots=roots),
+    )
+    return imports, dispatcher
+
+
+def test_run_again_of_an_import_queues_its_files_once_while_they_are_kept(
+    job_records: JobTables, tmp_path: Path
+) -> None:
+    # Step 5.19: a failed or cancelled import keeps its upload for this.
+    imports, dispatcher = imports_over(job_records, ())
+    march, june = exports(tmp_path, "ES 03-26.Last.txt", "ES 06-26.Last.txt")
+    ended, _ = a_round(job_records, march, june)
+    job_records.cancel_queued(ended.id, STARTED_AT)
+
+    first = imports.start_again(ended)
+    second = imports.start_again(ended)
+
+    assert (first.kind, first.status, first.payload) == (
+        JobKind.IMPORT,
+        JobStatus.QUEUED,
+        ended.payload,
+    )
+    assert second.id == first.id
+    assert dispatcher.calls == [f"submit {first.id}"]
+
+
+def test_run_again_of_an_import_whose_upload_is_gone_is_refused(
+    job_records: JobTables, tmp_path: Path
+) -> None:
+    imports, dispatcher = imports_over(job_records, ())
+    march, june = exports(tmp_path, "ES 03-26.Last.txt", "ES 06-26.Last.txt")
+    ended, (_, removed) = a_round(job_records, march, june)
+    job_records.cancel_queued(ended.id, STARTED_AT)
+    shutil.rmtree(resolve_paths(os.environ).uploads_dir / str(removed))
+
+    with pytest.raises(NoSuchUploadError, match="choose the file again"):
+        imports.start_again(ended)
+
+    assert dispatcher.calls == []
+
+
+def test_run_again_of_a_path_the_import_roots_no_longer_hold_is_refused(
+    job_records: JobTables, tmp_path: Path
+) -> None:
+    # A root taken out of config.toml since the import first ran no longer lets it be read.
+    roots = tmp_path / "exports"
+    roots.mkdir()
+    (march,) = exports(roots, "ES 03-26.Last.txt")
+    ended = an_import(job_records, march)
+    job_records.cancel_queued(ended.id, STARTED_AT)
+    allowed, dispatcher_allowed = imports_over(job_records, (roots,))
+    refused, dispatcher_refused = imports_over(job_records, (tmp_path / "elsewhere",))
+
+    with pytest.raises(PathRefusedError):
+        refused.start_again(ended)
+    again = allowed.start_again(ended)
+
+    assert dispatcher_refused.calls == []
+    assert dispatcher_allowed.calls == [f"submit {again.id}"]
