@@ -159,6 +159,7 @@ def _relayed(
             error=f"{refused} The runner ended with exit code {exit_code}; its log ends:\n"
             f"{runner.log_tail()}",
             stdout_tail="",
+            gave_no_result=True,
         )
 
 

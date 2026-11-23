@@ -347,13 +347,15 @@ class ExecutionSucceeded(BaseModel):
 
 class ExecutionFailed(BaseModel):
     """An execution that failed: the end of its traceback, or why its result was refused, with
-    the last characters a snippet printed before."""
+    the last characters a snippet printed before, and whether its runner ended without a result
+    it could read, so that a job can say so in the trader's words (step 5.19)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     outcome: Literal[ExecutionOutcome.FAILED] = ExecutionOutcome.FAILED
     error: str
     stdout_tail: str
+    gave_no_result: bool = False
 
 
 class ExecutionTimedOut(BaseModel):

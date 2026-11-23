@@ -224,7 +224,10 @@ def test_a_killed_workers_job_is_queued_again_up_to_its_attempts_then_fails(
     assert first.attempt == 1
     assert second.worker_pid != first.worker_pid
     assert ended.attempt == 2
-    assert ended.error == f"The worker {second.worker_pid} stopped answering after 2 attempts."
+    assert ended.error == (
+        "This job stopped answering after 2 attempts. Run it again, and restart FEAT if it stops "
+        "the same way."
+    )
     statuses = [
         event.said["status"]
         for event in job_records.events_after(job_stream(job.id), 0, 1000)
@@ -276,7 +279,10 @@ def test_a_worker_that_stopped_renewing_its_lease_is_ended_with_its_last_attempt
     assert ended is not None
     assert not stand_in.is_alive()
     assert ended.status == JobStatus.FAILED
-    assert ended.error == f"The worker {stand_in.pid} stopped answering after 1 attempt."
+    assert ended.error == (
+        "This job stopped answering after 1 attempt. Run it again, and restart FEAT if it stops "
+        "the same way."
+    )
 
 
 def test_a_job_asked_to_stop_whose_worker_stopped_answering_is_cancelled(

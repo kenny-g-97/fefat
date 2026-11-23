@@ -709,7 +709,7 @@ def test_a_file_whose_runner_runs_out_of_time_or_cannot_start_is_left_out_with_w
     result = the_import_jobs(runner).run(job.payload, JobProgress(job_records, job.id, WORKER))
 
     timed_out, unstarted, refused = (each["message"] for each in result["round"]["not_imported"])
-    assert timed_out.startswith("Expected the execution to end within")
+    assert timed_out.startswith("This job ran past its limit of")
     assert unstarted.endswith("No space left on device")
     assert refused.startswith(f"{STOPPED_WHILE_WRITING}Expected the partitions written")
     assert len(refused) == LINE_CHARS

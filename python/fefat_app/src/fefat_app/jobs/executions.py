@@ -10,6 +10,7 @@ import's (`fefat_app.jobs.imports`)."""
 from collections.abc import Mapping
 from typing import Any
 
+from fefat.market.calendar import counted
 from fefat_app.execution import (
     BacktestSpec,
     ExecutionFailed,
@@ -26,6 +27,11 @@ from fefat_app.ports import Executor
 
 type JobSpec = FeaturePreviewSpec | PythonSnippetSpec | BacktestSpec | ImportSpec
 """The spec of an execution a job runs."""
+NO_RESULT = (
+    "The process running this job ended before it gave a result. Run it again, and if it ends "
+    "the same way, read the log below."
+)
+"""What a job's error says first where its runner ended without a result (step 5.19)."""
 
 
 class ExecutionTimedOutError(Exception):
@@ -63,9 +69,18 @@ def executed(
     result = executor.run(spec, report, check)
     if isinstance(result, ExecutionTimedOut):
         raise ExecutionTimedOutError(
-            f"Expected the execution to end within {spec.limits.timeout_seconds:g} s, got it "
-            "still running then: it was stopped."
+            f"This job ran past its limit of {_duration(spec.limits.timeout_seconds)} and was "
+            "stopped. Run it again on less data."
         )
     if isinstance(result, ExecutionFailed):
-        raise ExecutionFailedError(result.error)
+        said = f"{NO_RESULT}\n\n{result.error}" if result.gave_no_result else result.error
+        raise ExecutionFailedError(said)
     return result
+
+
+def _duration(seconds: float) -> str:
+    """`seconds` as a person says it: `6 hours`, `30 minutes`, `2 seconds`."""
+    for size, unit in ((3600, "hour"), (60, "minute")):
+        if seconds >= size and seconds % size == 0:
+            return counted(int(seconds // size), unit)
+    return f"{seconds:g} seconds"

@@ -43,7 +43,7 @@ def test_a_snippet_job_that_runs_out_of_time_ends_timed_out_after_its_progress(
 
     assert (ended.status, ended.result) == (JobStatus.TIMED_OUT, None)
     assert ended.error == (
-        "Expected the execution to end within 2 s, got it still running then: it was stopped."
+        "This job ran past its limit of 2 seconds and was stopped. Run it again on less data."
     )
     events = job_records.events_after(job_stream(ended.id), 0, 100)
     assert [(event.event_type, event.said) for event in events] == [
@@ -119,6 +119,27 @@ def test_a_preview_job_whose_code_defines_no_feature_fails_with_the_runner_s_err
         "ValueError: Expected the code of one feature, a function under its @ff.feature(...) "
         "call, got 1 statement.\n"
     )
+
+
+def test_a_job_whose_runner_ends_without_a_result_says_what_to_do_above_its_log(
+    job_records: JobTables,
+) -> None:
+    # Step 5.19: what the executor writes for a developer stays, with its line breaks, under a
+    # sentence in the trader's words.
+    code = "import os, sys\nprint('from the runner', file=sys.stderr, flush=True)\nos._exit(3)\n"
+
+    ended = ran(job_records, JobKind.PYTHON_SNIPPET, snippet(code))
+
+    assert ended.status == JobStatus.FAILED
+    assert ended.error is not None
+    first, blank, *details = ended.error.split("\n")
+    assert first == (
+        "The process running this job ended before it gave a result. Run it again, and if it "
+        "ends the same way, read the log below."
+    )
+    assert blank == ""
+    assert "The runner ended with exit code" in details[0]
+    assert any(line.startswith("from the runner") for line in details[1:])
 
 
 def test_a_job_whose_payload_is_of_another_kind_fails_before_any_runner_starts(
