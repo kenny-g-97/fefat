@@ -29,7 +29,7 @@ from fefat_app.execution import (
     ExecutionTimedOut,
     keep_running,
 )
-from fefat_app.import_sources import confined_path
+from fefat_app.import_sources import confined_path, kept_path_confined
 from fefat_app.imports import (
     BatchImportAsked,
     BatchRequest,
@@ -135,8 +135,8 @@ class Imports:
             if upload_id is not None:
                 self.uploads.path_of(upload_id)
                 continue
-            confined_path(
-                str(spec.request.path),
+            kept_path_confined(
+                spec.request.path,
                 spec.request.kind,
                 settings.import_roots,
                 self.paths,

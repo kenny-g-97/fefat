@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from fefat.config import UPLOAD_SUFFIXES, FefatPaths, resolve_paths
-from fefat_app.import_sources import confined_path
+from fefat_app.import_sources import confined_path, kept_path_confined
 from fefat_app.imports import PathRefusedError, ReadKind
 
 BACKSLASH = "\\"
@@ -141,6 +141,6 @@ def test_a_path_already_resolved_past_a_root_that_is_a_link_is_read(
     root_link = tmp_path / "root-link"
     linked(root_link, real)
 
-    read = confined_path(str(export), ReadKind.FILE, (root_link,), paths, UPLOAD_SUFFIXES)
+    read = kept_path_confined(export, ReadKind.FILE, (root_link,), paths, UPLOAD_SUFFIXES)
 
     assert read == export.resolve()
