@@ -12,12 +12,15 @@ run of the same key instead of running it again:
 From step 5.3 `run` tells a callable each stage it reaches (`RunStage`): `progress=print`; and
 `saved_runs_in(runs_dir)` lists the runs saved there (`fefat.backtest.saved_runs`), and
 `estimated` tells what a run of a window would read before anything runs (step 5.6).
-`RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
+`equity_curve` downsamples a run's equity, keeping its deepest drawdown, and `trade_distributions`
+counts its trades into histograms (step 5.7). `RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
 `fefat.backtest.schemas`, and the record is `fefat.backtest.record`. `fidelity_check` works a
 saved run's fidelity check out again (`fefat.backtest.fidelity`, step 2.12), and `reconcile`
 waits for fill exports.
 """
 
+from fefat.backtest.distributions import Histogram, TradeDistributions, trade_distributions
+from fefat.backtest.equity_curves import equity_curve
 from fefat.backtest.estimates import WindowEstimate, estimated, held_instruments
 from fefat.backtest.fidelity import fidelity_check
 from fefat.backtest.metrics import (
@@ -63,13 +66,16 @@ __all__ = [
     "FidelityCheck",
     "FidelityEra",
     "FidelityRerun",
+    "Histogram",
     "PeriodOutcome",
     "RefusedCheck",
     "Run",
     "RunConfig",
     "RunRecord",
     "RunStage",
+    "TradeDistributions",
     "WindowEstimate",
+    "equity_curve",
     "estimated",
     "fidelity_check",
     "held_instruments",
@@ -77,4 +83,5 @@ __all__ = [
     "run",
     "running_drawdown",
     "saved_runs_in",
+    "trade_distributions",
 ]

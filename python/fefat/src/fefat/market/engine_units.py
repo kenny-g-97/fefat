@@ -25,6 +25,8 @@ MONEY_DECIMALS = 6
 """Money counts micro-units of its currency."""
 PRICE_SCALE = 10**PRICE_DECIMALS
 """The 1e-9 units in one unit of price: a tick of 0.25 is 250_000_000 of them."""
+MONEY_SCALE = 10**MONEY_DECIMALS
+"""The micro-units in one unit of money."""
 
 
 def price_text(units: int) -> str:
@@ -41,6 +43,14 @@ def price_in_units(column: str) -> pl.Expr:
 def money_text(units: int) -> str:
     """An amount in micro-units as the decimal it is written as, such as -0.084514."""
     return format(Decimal(units).scaleb(-MONEY_DECIMALS), "f")
+
+
+def money_in_units(amounts: pl.Series) -> tuple[float, ...]:
+    """`amounts`, in micro-units, in their currency, each the float nearest its decimal, as the
+    API sends the series a chart draws (step 5.7): 51_250_500_000 is 51250.5. Python divides
+    whole numbers exactly rounded; Polars multiplies by a constant's inverse, a bit off on about
+    a third of values."""
+    return tuple(amount / MONEY_SCALE for amount in amounts.to_list())
 
 
 def micro_units(amount: Decimal) -> int:
