@@ -526,6 +526,16 @@ The units are the store's: prices in billionths of a point, money in millionths 
 
 `python/fefat/src/fefat/backtest/schemas.py` lists every column of every file. Polars reads any of them without FEFAT, for example `pl.read_parquet(folder / "trades.parquet")`.
 
+The run page's figures come from three functions a notebook can call too:
+
+```python
+run.pnl_share                               # the net P&L over the capital: 0.025 is 2.5 %
+ff.backtest.equity_curve(run, max_points=2000)  # ts, equity, drawdown, in the units above
+ff.backtest.trade_distributions(run.trades).r_multiple  # lower, upper, and trades per bin
+```
+
+`equity_curve` keeps every decision up to `max_points`; past it, each bucket of consecutive decisions keeps its lowest equity, its highest, and its deepest drawdown, so the curve's maximum drawdown is the run's. `trade_distributions` holds net P&L, the R multiple, MAE and MFE in ticks, and the minutes held, each in at most 40 bins of one width, with no bin across zero.
+
 ### Trade paths
 
 `trade_paths.parquet` keeps each trade's compact price path, what a prop firm's trailing drawdown needs (`docs/masterplan/03-prop-simulator.md` §4.2):
