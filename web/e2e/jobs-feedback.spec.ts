@@ -47,9 +47,12 @@ test("one stream moves five active jobs", async ({ loggedIn: page }) => {
   // the list is answered, so that the stream's events alone can move the bars.
   const ids = ["one", "two", "three", "four", "five"]
   let reads = 0
+  let lateReads = 0
+  let answersLate = false
   await page.route(LIST, async (route) => {
     reads += 1
-    if (reads === 1) {
+    if (reads === 1 || answersLate) {
+      lateReads += answersLate ? 1 : 0
       await route.fulfill({
         json: ids.map((id) => aJob(id, "running", { progress: 5 })),
       })
@@ -68,13 +71,18 @@ test("one stream moves five active jobs", async ({ loggedIn: page }) => {
       return `id: ${index + 1}\nevent: progress\ndata: ${JSON.stringify(said)}\n\n`
     })
     .join("")
-  await page.route(STREAM, (route) =>
-    route.fulfill({
+  let delivered = false
+  await page.route(STREAM, (route) => {
+    if (delivered) {
+      return route.abort()
+    }
+    delivered = true
+    return route.fulfill({
       status: 200,
       contentType: "text/event-stream",
       body: reports,
     })
-  )
+  })
 
   await page.goto("/")
   await page.getByTestId("jobs-indicator").click()
@@ -87,6 +95,19 @@ test("one stream moves five active jobs", async ({ loggedIn: page }) => {
       .toBe((index + 1) * 10)
   }
   expect([...streams]).toEqual(["/v1/streams/jobs"])
+
+  // A read that left the server before those reports never puts a bar back.
+  answersLate = true
+  await windowFocused(page)
+  await expect.poll(() => lateReads).toBeGreaterThan(0)
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(resolve))
+  )
+  for (const index of ids.keys()) {
+    expect(await progressOf(rows.nth(index).getByRole("progressbar"))).toBe(
+      (index + 1) * 10
+    )
+  }
 })
 
 test("the jobs button carries a failure dot until the drawer opens", async ({
@@ -346,6 +367,41 @@ test("Run again from the keyboard moves the focus to what it did", async ({
   await expect(drawer.getByTestId("job-queued-again")).toBeFocused()
 })
 
+test("a job Run again started says how it ended while the list is held", async ({
+  loggedIn: page,
+}) => {
+  // Its own row is held back, so the row that started it has to say.
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  const watched = aJob("watched", "cancelled", { finished_at: ENDED })
+  const next = aJob("next", "queued")
+  const answer = await listAnswered(page, [watched])
+  await page.route("**/v1/jobs/watched/run-again", (route) => {
+    answer.jobs = [next, watched]
+    return route.fulfill({ status: 202, json: next })
+  })
+  await page.route(STREAM, (route) => route.abort())
+  await page.goto("/")
+  await page.getByTestId("jobs-indicator").click()
+  const drawer = drawerOf(page)
+  await drawer.getByTestId("job-run-again").click()
+  const words = drawer.getByTestId("job-queued-again")
+  await expect(words).toHaveText("Queued again")
+
+  answer.jobs = [
+    aJob("next", "failed", { finished_at: ENDED, error: FAILED_WORDS }),
+    watched,
+  ]
+  await windowFocused(page)
+
+  await expect(words).toHaveText("Ran again: failed")
+  await expect(drawer.getByTestId("job-row")).toHaveCount(1)
+
+  await page.mouse.move(0, 0)
+
+  await expect(drawer.getByTestId("job-row")).toHaveCount(2)
+  await expect(drawer.getByTestId("job-run-again")).toHaveCount(2)
+})
+
 test("a double click on Cancel, or a late click on its place, never runs the job again", async ({
   loggedIn: page,
 }) => {
@@ -375,6 +431,9 @@ test("a double click on Cancel, or a late click on its place, never runs the job
   if (place === null) {
     throw new Error("Expected Cancel drawn on the row, got nothing.")
   }
+
+  await cancel.dispatchEvent("click", { detail: 2 })
+  expect(cancels).toBe(0)
 
   await cancel.dblclick()
   await expect(row).toContainText("Cancelled")

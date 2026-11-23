@@ -146,8 +146,26 @@ describe("one stream", () => {
     expect(queuedAgain.progress).toBe(0)
   })
 
+  it("lets go of an earlier attempt's report that a reconnect replayed", () => {
+    // Done means 1: the replay holds the old report, then the job's queueing again.
+    const second = { ...aJob("job-1", "running", 3), attempt: 2 }
+    queryClient.setQueryData(jobsQuery.queryKey, [second])
+
+    report(63, "8")
+    applyJobEvent({
+      id: "9",
+      event: "status",
+      data: '{"status": "queued", "job_id": "job-1"}',
+    })
+    const [read] = withReportsKept([
+      { ...aJob("job-1", "running", 4), attempt: 2 },
+    ])
+
+    expect(read.progress).toBe(4)
+  })
+
   it("says Reconnecting, then asks whether the server still runs", () => {
-    expect([0, 1, 2, 3, 9].map(reconnectingWords)).toEqual([
+    expect([0, 1, 3, 4, 9].map(reconnectingWords)).toEqual([
       null,
       "Reconnecting",
       "Reconnecting",

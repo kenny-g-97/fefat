@@ -20,6 +20,7 @@ import { StatusBadge } from "@/ui/status-badge"
 type JobRowProps = Readonly<{
   job: Job
   streamNote: string | null
+  listHeld: boolean
   errorHeld: boolean
   revealed: boolean
 }>
@@ -30,7 +31,13 @@ type JobRowProps = Readonly<{
  * text; then why it failed; then one last line, its message or what its stream is doing. A
  * failure that arrives while the list is held stands cut to that line, so that no row moves, and
  * opens once the pointer leaves. */
-export function JobRow({ job, streamNote, errorHeld, revealed }: JobRowProps) {
+export function JobRow({
+  job,
+  streamNote,
+  listHeld,
+  errorHeld,
+  revealed,
+}: JobRowProps) {
   const row = useRef<HTMLLIElement>(null)
   useEffect(() => {
     if (revealed) {
@@ -55,7 +62,11 @@ export function JobRow({ job, streamNote, errorHeld, revealed }: JobRowProps) {
       {active ? (
         <ActiveJob job={job} />
       ) : (
-        <EndedJob job={job} showsError={heldError === null} />
+        <EndedJob
+          job={job}
+          listHeld={listHeld}
+          showsError={heldError === null}
+        />
       )}
       {heldError === null ? (
         <p
@@ -106,27 +117,34 @@ function ActiveJob({ job }: Readonly<{ job: Job }>) {
 }
 
 /** When the job ended and why, with Run again, which reads Queued again or Running again while
- * the job it started is under way, and offers itself again once that job has ended; a press from
- * the keyboard moves the focus to those words, since the button leaves. */
+ * the job it started is under way, then how that job ended for as long as the list is held, whose
+ * row it holds back, and offers itself again after that; a press from the keyboard moves the focus
+ * to those words, and back to Run again when they leave. */
 function EndedJob({
   job,
+  listHeld,
   showsError,
-}: Readonly<{ job: Job; showsError: boolean }>) {
+}: Readonly<{ job: Job; listHeld: boolean; showsError: boolean }>) {
   const runAgain = useJobRunAgain()
   const jobs = useQuery(jobsQuery)
   const pressedByKey = useRef(false)
+  const wordsHeldFocus = useRef(false)
   const words = useRef<HTMLParagraphElement>(null)
+  const button = useRef<HTMLButtonElement>(null)
   const answered = runAgain.data
   const listed = jobs.data?.find((each) => each.id === answered?.id)
   const rerun = listed === undefined ? answered : listed
-  const again =
-    rerun !== undefined && isActive(rerun)
-      ? `${STATUS_LABELS[rerun.status]} again`
-      : null
+  const again = againWords(rerun, listHeld)
   useEffect(() => {
     if (again !== null && pressedByKey.current) {
       pressedByKey.current = false
+      wordsHeldFocus.current = true
       words.current?.focus()
+    } else if (again === null && wordsHeldFocus.current) {
+      wordsHeldFocus.current = false
+      if (document.activeElement === document.body) {
+        button.current?.focus()
+      }
     }
   }, [again])
   return (
@@ -144,6 +162,7 @@ function EndedJob({
         )}
         {runsAgain(job) && again === null && (
           <Button
+            ref={button}
             variant="ghost"
             size="sm"
             className="-ml-3"
@@ -179,4 +198,18 @@ function EndedJob({
       )}
     </>
   )
+}
+
+/** What stands in Run again's place once it was pressed: how far the job it started has come,
+ * then how that job ended while the list holds its new row back. */
+function againWords(rerun: Job | undefined, listHeld: boolean): string | null {
+  if (rerun === undefined) {
+    return null
+  }
+  if (isActive(rerun)) {
+    return `${STATUS_LABELS[rerun.status]} again`
+  }
+  return listHeld
+    ? `Ran again: ${STATUS_LABELS[rerun.status].toLowerCase()}`
+    : null
 }

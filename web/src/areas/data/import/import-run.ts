@@ -5,7 +5,13 @@ import {
   type ImportResult,
   useImportStart,
 } from "@/api/imports"
-import { isActive, type Job, jobsQuery, newestRunOf } from "@/api/jobs"
+import {
+  isActive,
+  type Job,
+  jobsQuery,
+  newestRunOf,
+  runsAgain,
+} from "@/api/jobs"
 import type { PreviewState } from "./import-preview"
 import type { Asks, ReviewAsked } from "./import-request"
 
@@ -32,9 +38,9 @@ export function useImportRun(ask: string | null, request: ImportAsked | null) {
       ? undefined
       : jobs.data?.find((each) => each.id === started.id)
   const job =
-    startedJob === undefined || jobs.data === undefined
-      ? startedJob
-      : newestRunOf(startedJob, jobs.data)
+    startedJob !== undefined && jobs.data !== undefined && runsAgain(startedJob)
+      ? newestRunOf(startedJob, jobs.data)
+      : startedJob
   const begun = startedAlready(started, ask, job)
   const shown = started?.ask === ask || (job !== undefined && isActive(job))
   return {

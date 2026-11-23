@@ -62,7 +62,9 @@ export async function followEventStream({
         }
       }
     } catch {
-      // A dropped connection waits below and connects again, unless it was aborted.
+      if (signal.aborted) {
+        return
+      }
     }
     if (signal.aborted) {
       return

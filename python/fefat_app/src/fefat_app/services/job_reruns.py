@@ -40,7 +40,10 @@ def run_again(job_id: str, jobs: Jobs, runs: Runs, catalog: MarketCatalog, impor
     `NoSuchJobError` for an unknown id and `JobNotRunAgainError` for a job that does not."""
     job = jobs.by_id(job_id)
     if job.status in (*ACTIVE, JobStatus.SUCCEEDED):
-        raise JobNotRunAgainError("Only a job that failed, was cancelled, or timed out runs again.")
+        raise JobNotRunAgainError(
+            "Only a job that failed, was cancelled, or timed out runs again; this one's status "
+            f"is {job.status.value}."
+        )
     try:
         if job.kind == JobKind.BACKTEST:
             with _BACKTEST_AGAIN:
@@ -57,12 +60,20 @@ def run_again(job_id: str, jobs: Jobs, runs: Runs, catalog: MarketCatalog, impor
         raise JobNotRunAgainError(
             "The file this import read is no longer kept. Import it again from the Data page."
         ) from gone
+    except PathRefusedError as moved:
+        raise JobNotRunAgainError(
+            "This import's file is no longer where it was, or its folder is no longer an "
+            "import root. Import it again from the Data page."
+        ) from moved
+    except NothingToSyncError as gone:
+        raise JobNotRunAgainError(
+            "FEAT no longer holds this data, so there is nothing to check. Import it again "
+            "from the Data page."
+        ) from gone
     except (
         CodeRefusedError,
         LibraryRefusedError,
         NoSuchStrategyError,
-        NothingToSyncError,
-        PathRefusedError,
         ProfileRefusedError,
     ) as refused:
         raise JobNotRunAgainError(str(refused)) from refused
@@ -83,7 +94,8 @@ def _backtest_again(job: Job, jobs: Jobs, runs: Runs) -> Job:
 
 def _import_again(job: Job, imports: Imports) -> Job:
     """The import of `job` queued again, unless it wrote its data and only its report failed:
-    importing the file again would find it imported, end green, and write no report."""
+    importing the file again would find it imported, end green, and write no report.
+    shortcut: read from the words of its error, until a job keeps a typed reason."""
     if job.error is not None and REPORT_FAILED in job.error:
         raise JobNotRunAgainError(
             "This import wrote its data and only its quality report failed. Press Check quality "

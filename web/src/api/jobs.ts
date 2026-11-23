@@ -53,20 +53,20 @@ const progressReport = z.object({
   message: z.string(),
 })
 
+/** A status event's data, which the OpenAPI document does not type either. */
+const statusChange = z.object({ job_id: z.string(), status: z.string() })
+
 /** The statuses of a job that has not ended. */
 const ACTIVE_STATUSES: ReadonlySet<string> = new Set(["queued", "running"])
 
-/** The key of the jobs in the cache. */
-const JOBS_KEY = ["jobs"]
-
 /** How many waits to reconnect before a row asks whether the server still runs: the pauses
  * double from a second, so about seven seconds. */
-const WAITS_BEFORE_ASKING = 3
+const WAITS_BEFORE_ASKING = 4
 
 /** The hundred newest jobs, newest first, then the running jobs older than them; read again
  * when a hidden tab is shown, since it followed no stream meanwhile. */
 export const jobsQuery = queryOptions({
-  queryKey: JOBS_KEY,
+  queryKey: ["jobs"],
   queryFn: async () => withReportsKept(answer(await api.GET("/v1/jobs"))),
   refetchOnWindowFocus: true,
 })
@@ -75,7 +75,7 @@ export const jobsQuery = queryOptions({
  * for the same attempt of a running job: the read may have left the server before a report the
  * stream has since applied, and would put the bar back. */
 export function withReportsKept(listed: Job[]): Job[] {
-  const cached = queryClient.getQueryData<Job[]>(JOBS_KEY)
+  const cached = queryClient.getQueryData(jobsQuery.queryKey)
   if (cached === undefined) {
     return listed
   }
@@ -241,6 +241,10 @@ function isShown(): boolean {
  * a change of status asks for the list. */
 export function applyJobEvent(event: StreamedEvent): void {
   if (event.event === "status") {
+    const change = statusChange.safeParse(parsedJson(event.data))
+    if (change.success && change.data.status === "queued") {
+      startedOver(change.data.job_id)
+    }
     readTheJobsAgain()
     return
   }
@@ -262,6 +266,18 @@ export function applyJobEvent(event: StreamedEvent): void {
           job.id === jobId && percent >= job.progress
             ? { ...job, progress: percent, message }
             : job
+        )
+  )
+}
+
+/** The job `jobId` from the start, as the server left it on queueing it again, so that a report
+ * of its earlier attempt that a reconnect replayed keeps no hold on its bar. */
+function startedOver(jobId: string): void {
+  queryClient.setQueryData(jobsQuery.queryKey, (jobs) =>
+    jobs === undefined
+      ? jobs
+      : jobs.map((job) =>
+          job.id === jobId ? { ...job, progress: 0, message: null } : job
         )
   )
 }

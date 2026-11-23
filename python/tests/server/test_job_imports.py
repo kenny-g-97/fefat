@@ -650,7 +650,7 @@ def test_a_round_of_which_no_file_was_imported_fails_with_the_first_reason_and_k
         )
 
     said = str(failed.value)
-    assert "2 of the 2 files not imported" in said
+    assert "2 of the 2 files were left out" in said
     assert said.endswith("bars.txt: Expected the contract of the records of bars.txt.")
     uploads_dir = resolve_paths(os.environ).uploads_dir
     assert all((uploads_dir / str(upload)).exists() for upload in uploads)
@@ -713,7 +713,11 @@ def test_a_file_whose_runner_runs_out_of_time_or_cannot_start_is_left_out_with_w
     result = the_import_jobs(runner).run(job.payload, JobProgress(job_records, job.id, WORKER))
 
     timed_out, unstarted, refused = (each["message"] for each in result["round"]["not_imported"])
-    assert timed_out == "This file's import ran past its limit of 6 hours and was stopped."
+    assert timed_out == (
+        "This file's import ran past its limit of 6 hours and was stopped. Split it, or "
+        "import a smaller one."
+    )
+    assert unstarted.startswith("This file's import could not start its process.")
     assert unstarted.endswith("No space left on device")
     assert refused.startswith(f"{STOPPED_WHILE_WRITING}Expected the partitions written")
     assert len(refused) == LINE_CHARS

@@ -32,10 +32,6 @@ NO_RESULT = (
     "the same way, read the log below."
 )
 """What a job's error says first where its runner ended without a result (step 5.19)."""
-CANNOT_START = (
-    "This job could not start its process. Free some disk space or memory and run it again:"
-)
-"""What a job's error says before the system's reason where its runner could not start."""
 
 
 class ExecutionTimedOutError(Exception):
@@ -73,7 +69,7 @@ def executed(
     try:
         result = executor.run(spec, report, check)
     except OSError as refused:
-        raise ExecutionFailedError(f"{CANNOT_START} {refused}") from refused
+        raise ExecutionFailedError(_cannot_start(spec, refused)) from refused
     if isinstance(result, ExecutionTimedOut):
         raise ExecutionTimedOutError(_past_its_limit(spec))
     if isinstance(result, ExecutionFailed):
@@ -82,9 +78,23 @@ def executed(
     return result
 
 
+def _cannot_start(spec: JobSpec, reason: OSError) -> str:
+    """What a job's error says where its runner could not start; an import's names its file,
+    since a round goes on with the others."""
+    if isinstance(spec, ImportSpec):
+        return (
+            "This file's import could not start its process. Free some disk space or "
+            f"memory and import it again: {reason}"
+        )
+    return (
+        "This job could not start its process. Free some disk space or memory and run it "
+        f"again: {reason}"
+    )
+
+
 def _past_its_limit(spec: JobSpec) -> str:
-    """What a job's error says where it ran out of time; an import's says no more, since what
-    repairs it depends on whether it wrote (`fefat_app.jobs.imports`)."""
+    """What a job's error says where it ran out of time; an import's leaves what to do to
+    `fefat_app.jobs.imports`, since that depends on whether it wrote."""
     limit = _duration(spec.limits.timeout_seconds)
     if isinstance(spec, ImportSpec):
         return f"This file's import ran past its limit of {limit} and was stopped."

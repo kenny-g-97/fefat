@@ -231,7 +231,8 @@ def test_run_again_is_refused_for_a_job_under_way_or_succeeded_or_unknown(
     assert [refused.status_code for refused in refusals] == [409, 409, 409]
     assert refusals[2].headers["content-type"] == PROBLEM
     assert refusals[2].json()["detail"] == (
-        "Only a job that failed, was cancelled, or timed out runs again."
+        "Only a job that failed, was cancelled, or timed out runs again; this one's status "
+        "is succeeded."
     )
     assert unknown.status_code == 404
     assert len(job_records.recent(10)) == 3
@@ -269,3 +270,19 @@ def test_run_again_of_an_import_that_wrote_points_to_its_quality_check(
         "its dataset's page, and import again any file it left out."
     )
     assert len(job_records.recent(10)) == 1
+
+
+def test_run_again_of_a_quality_check_whose_data_is_gone_says_so(
+    client: TestClient, container: Container, job_records: JobTables, clock: SettableClock
+) -> None:
+    csrf = logged_in(client, container)
+    ended = job_records.add(JobKind.CATALOG_SYNC, {"root": "ES"}, 3, clock())
+    job_records.cancel_queued(ended.id, clock())
+
+    refused = client.post(f"/v1/jobs/{ended.id}/run-again", headers=csrf)
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == (
+        "FEAT no longer holds this data, so there is nothing to check. Import it again from the "
+        "Data page."
+    )

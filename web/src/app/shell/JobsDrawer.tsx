@@ -101,6 +101,7 @@ function JobList({ streamNote, revealedJob }: JobsDrawerProps) {
           key={job.id}
           job={job}
           streamNote={streamNote}
+          listHeld={held !== null}
           errorHeld={held !== null && held.active.has(job.id)}
           revealed={job.id === revealedJob}
         />
