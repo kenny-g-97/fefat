@@ -28,13 +28,15 @@ export function barTime(time: Time): ChartTime {
 }
 
 /** The time the crosshair's label and the readout show: an open in this browser's time zone,
- * 2026-03-06 14:35, as every instant of the app; a trade date as it is. */
-export function crosshairTime(time: ChartTime): string {
+ * 2026-03-06 14:35, as every instant of the app, with its seconds where its series moves
+ * inside a minute; a trade date as it is. */
+export function crosshairTime(time: ChartTime, inSeconds = false): string {
   if (typeof time === "string") {
     return time
   }
   const instant = new Date(time * 1000)
-  return `${localDate(instant)} ${two(instant.getHours())}:${two(instant.getMinutes())}`
+  const minute = `${localDate(instant)} ${two(instant.getHours())}:${two(instant.getMinutes())}`
+  return inSeconds ? `${minute}:${two(instant.getSeconds())}` : minute
 }
 
 /** A tick mark's label: a time of day in this browser's time zone, where the chart's day,

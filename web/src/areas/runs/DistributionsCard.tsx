@@ -6,7 +6,7 @@ import {
 import { HistogramChart } from "@/charts/Histogram"
 import { counted } from "@/ui/figures"
 import { Panel } from "@/ui/panel"
-import { QueryBody } from "@/ui/query-body"
+import { ResultBody } from "./ResultBody"
 
 /** How a run's trades spread (web/DESIGN.md, Patterns, Histogram): net P&L and the R multiple
  * either side of zero, the excursions in ticks, and the minutes held, every bin the server's. */
@@ -17,9 +17,9 @@ export function DistributionsCard({
   const distributions = useQuery(runDistributionsQuery(runKey))
   return (
     <Panel title="Distributions">
-      <QueryBody query={distributions}>
+      <ResultBody query={distributions}>
         {(shown) => <Histograms shown={shown} currency={currency} />}
-      </QueryBody>
+      </ResultBody>
     </Panel>
   )
 }

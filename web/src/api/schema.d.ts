@@ -740,8 +740,8 @@ export interface paths {
         };
         /**
          * Run Statistics
-         * @description A saved run's metrics with their breakdowns, its currency, its capital, its net P&L as a
-         *     share of that capital, its fidelity eras, and its warnings, from the record in its folder;
+         * @description A saved run's metrics with their breakdowns, its currency, its net P&L as a share of its
+         *     capital, its fidelity eras, and its warnings, from the record in its folder;
          *     409 for a run not saved yet, a folder that is gone, or one this engine does not read.
          */
         get: operations["run_statistics_v1_runs__run__stats_get"];
@@ -3347,12 +3347,10 @@ export interface components {
         /**
          * RunStatistics
          * @description What a saved run's record says of how it went (step 5.7, D-116): its metrics, the currency
-         *     their money is in, its capital, its net P&L as a share of that capital, the fidelity era of
-         *     each trade date it filled on, and its warnings.
+         *     their money is in, its net P&L as a share of its capital, the fidelity era of each trade date
+         *     it filled on, and its warnings.
          */
         RunStatistics: {
-            /** Capital */
-            capital: string;
             currency: components["schemas"]["Currency"];
             /** Fidelity Eras */
             fidelity_eras: components["schemas"]["FidelityEra"][];

@@ -87,6 +87,25 @@ def test_fewer_points_than_a_bucket_needs_are_refused() -> None:
         downsampled_equity(decisions([1, 2, 3, 4, 5, 6]), 100, 4)
 
 
+def test_a_daily_strategys_run_gives_the_curve_of_its_decisions() -> None:
+    # The code review: `Run.equity("1d")` is the daily artifact, which holds no instants.
+    store_with("ohlcv-1m")
+    daily = ff.SignalStrategy(
+        instrument="ES",
+        timeframe="1d",
+        features={},
+        long_entry=pl.lit(False),
+        short_entry=pl.lit(False),
+        execution=breakout().execution,
+    )
+    run = ff.backtest.run(daily, *WINDOW)
+
+    curve = ff.backtest.equity_curve(run)
+
+    assert curve.columns == ["ts", "equity", "drawdown"]
+    assert curve.height == run.signals.height > 0
+
+
 def test_a_saved_run_gives_its_curve_with_the_engines_maximum_drawdown() -> None:
     store_with("ohlcv-1m")
     run = ff.backtest.run(breakout(), *WINDOW)

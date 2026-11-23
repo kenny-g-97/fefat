@@ -398,6 +398,6 @@ test("About shows the chart libraries' notices word for word, with their links",
   ).toHaveText([
     "Apache ECharts",
     "Copyright 2017-2026 The Apache Software Foundation",
-    "This product includes software developed at The Apache Software Foundation https://www.apache.org/",
+    "This product includes software developed at The Apache Software Foundation (https://www.apache.org/).",
   ])
 })

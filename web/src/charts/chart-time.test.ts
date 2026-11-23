@@ -28,6 +28,12 @@ describe("the labels", () => {
     expect(crosshairTime("2026-03-06")).toBe("2026-03-06")
   })
 
+  it("show the seconds of a series that moves inside a minute", () => {
+    expect(crosshairTime(FRIDAY_AT_NINE + 15, true)).toBe("2026-03-06 09:00:15")
+    expect(crosshairTime(FRIDAY_AT_NINE, true)).toBe("2026-03-06 09:00:00")
+    expect(crosshairTime("2026-03-06", true)).toBe("2026-03-06")
+  })
+
   it("mark times of day in the browser's zone and days by the UTC date they fall on", () => {
     const evening = Date.UTC(2026, 2, 6, 0) / 1000
 

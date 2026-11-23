@@ -119,6 +119,13 @@ export function fidelityLabel(fidelity: string): string {
   return `${parts[1]}-${UNITS[parts[2]]} bars`
 }
 
+/** A word of the API in sentence case, such as an exit reason, a weekday, or a template's name:
+ * `target_1` reads `Target 1`, `mean_reversion` `Mean reversion`. */
+export function sentenceCase(word: string): string {
+  const spaced = word.replaceAll("_", " ")
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
 /** A count with its thousands apart: 12,345. */
 export function formatCount(count: number): string {
   return count.toLocaleString("en-US")

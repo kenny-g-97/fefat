@@ -69,6 +69,7 @@ describe("the equity chart's options", () => {
 
   it("starts nothing by itself and offers no zoom", () => {
     expect(option.animation).toBe(false)
+    expect(option.tooltip).toMatchObject({ axisPointer: { animation: false } })
     expect(option).not.toHaveProperty("dataZoom")
   })
 

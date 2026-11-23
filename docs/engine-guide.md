@@ -534,7 +534,7 @@ ff.backtest.equity_curve(run, max_points=2000)  # ts, equity, drawdown, in the u
 ff.backtest.trade_distributions(run.trades).r_multiple  # lower, upper, and trades per bin
 ```
 
-`equity_curve` keeps every decision up to `max_points`; past it, each bucket of consecutive decisions keeps its lowest equity, its highest, and its deepest drawdown, so the curve's maximum drawdown is the run's. `trade_distributions` holds net P&L, the R multiple, MAE and MFE in ticks, and the minutes held, each in at most 40 bins of one width, with no bin across zero.
+`equity_curve` keeps every decision up to `max_points`; past it, each bucket of consecutive decisions keeps its lowest equity, its highest, and its deepest drawdown, so the `drawdown` column's maximum is the run's. `trade_distributions` holds net P&L, the R multiple, MAE and MFE in ticks, and the minutes held, each in at most 40 bins of one width, with no bin across zero.
 
 ### Trade paths
 

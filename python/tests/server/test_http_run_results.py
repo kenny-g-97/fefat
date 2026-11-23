@@ -6,10 +6,10 @@ cannot be read says why, while its row still answers."""
 import json
 import os
 import shutil
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import polars as pl
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text, update
@@ -20,7 +20,7 @@ from fefat.backtest import Run, TradeDistributions
 from fefat.backtest.artifacts import RECORD_FILE
 from fefat.backtest.metrics import Metrics
 from fefat.config import resolve_paths
-from fefat.market.engine_units import money_in_units
+from fefat.market.engine_units import micro_units, money_in_units
 from fefat.market.fidelity import FidelityEra
 from fefat_app.container import Container
 from fefat_app.database.models import RunRow
@@ -57,7 +57,6 @@ def test_the_statistics_are_the_sdks_for_the_same_run(client: TestClient, run: R
     assert Metrics.model_validate(body["metrics"]) == run.metrics
     assert body["pnl_share"] == run.pnl_share
     assert body["currency"] == run.record.instrument.currency
-    assert Decimal(body["capital"]) == run.config.capital
     eras = tuple(FidelityEra.model_validate(era) for era in body["fidelity_eras"])
     assert eras == run.record.fidelity_eras
     assert tuple(body["warnings"]) == run.record.warnings
@@ -86,15 +85,31 @@ def test_the_equity_is_the_sdks_in_the_currency_and_whole_seconds(
 def test_the_equity_keeps_the_true_maximum_drawdown_in_the_points_asked_for(
     client: TestClient, run: Run
 ) -> None:
-    # Done means 3: the engine's own figure, on a curve cut to a tenth of its decisions.
-    decisions = run.equity("5m").get_column("equity").drop_nulls().len()
-    assert decisions > 500
-
+    # Done means 3, on the run's own figure and on a curve that recovers: its deepest fall lies
+    # mid-bucket of a rising account, its trough neither the bucket's lowest nor its highest,
+    # where the seeded curve's deepest point is its last decision, which is always kept.
     body = client.get(f"/v1/runs/{run.hash}/equity", params={"max_points": 90}).json()
-
     assert len(body["time"]) <= 90
     assert len(body["time"]) == len(body["equity"]) == len(body["drawdown"])
     assert max(body["drawdown"]) == float(run.metrics.drawdown.max_drawdown)
+
+    decisions = run.equity("5m")
+    assert decisions.height > 500
+    capital = micro_units(run.config.capital)
+    rising = [capital + at * 1_000_000 for at in range(decisions.height)]
+    buckets = (90 - 2) // 3
+    trough = (15 * decisions.height // buckets + 16 * decisions.height // buckets) // 2
+    rising[trough] -= 5_000_000
+    written = decisions.with_columns(equity=pl.Series(rising, dtype=pl.Int64))
+    written.write_parquet(run.folder / "equity.parquet")
+    account = pl.Series("equity", [capital, *rising], dtype=pl.Int64)
+    deepest = ff.backtest.running_drawdown(account).max()
+    assert deepest == 4_000_000
+
+    recovered = client.get(f"/v1/runs/{run.hash}/equity", params={"max_points": 90}).json()
+
+    assert len(recovered["time"]) <= 90
+    assert max(recovered["drawdown"]) == 4.0
 
 
 @pytest.mark.parametrize("max_points", [4, 10_001])
@@ -136,6 +151,22 @@ def test_a_run_not_saved_yet_is_refused(
     assert "queued" in answer.json()["detail"]
 
 
+def test_a_run_whose_job_ended_is_told_to_run_it_again(
+    client: TestClient, container: Container, run: Run, engine: Engine
+) -> None:
+    # The reviews: a job that ended never saves, so its run has nothing to wait for.
+    records = RunTables(engine, resolve_paths(os.environ))
+    assert run.hash
+    submitted = records.submitted(a_submission(engine), 3, STARTED_AT).run
+    container.runs.cancel(submitted.id)
+
+    detail = client.get(f"/v1/runs/{submitted.id}/stats").json()["detail"]
+
+    assert "cancelled" in detail
+    assert "run the backtest again" in detail
+    assert "come once" not in detail
+
+
 @pytest.mark.parametrize("result", ["stats", "equity", "distribution"])
 def test_a_folder_that_is_gone_says_so(client: TestClient, run: Run, result: str) -> None:
     shutil.rmtree(run.folder)
@@ -159,6 +190,8 @@ def test_a_run_another_engine_saved_is_refused_in_the_engines_words(
     assert answer.status_code == 409
     assert f"got one of version {written_by}" in answer.json()["detail"]
     assert "run it again with this engine" in answer.json()["detail"]
+    assert str(run.folder) not in answer.json()["detail"]
+    assert f"run {run.hash[:12]}" in answer.json()["detail"]
 
 
 def test_a_folder_copied_by_hand_is_refused_in_the_sdks_words(client: TestClient, run: Run) -> None:
@@ -168,15 +201,33 @@ def test_a_folder_copied_by_hand_is_refused_in_the_sdks_words(client: TestClient
 
     assert answer.status_code == 409
     assert "copied or renamed by hand" in answer.json()["detail"]
+    assert str(run.folder) not in answer.json()["detail"]
 
 
-def test_an_artifact_that_is_gone_says_so(client: TestClient, run: Run) -> None:
+def test_a_folder_part_gone_says_to_delete_it_first(client: TestClient, run: Run) -> None:
+    # A new run of the same inputs opens a folder it finds saved, so it must go first.
     (run.folder / "trades.parquet").unlink()
 
     answer = client.get(f"/v1/runs/{run.hash}/distribution")
 
     assert answer.status_code == 409
-    assert "is gone" in answer.json()["detail"]
+    assert "incomplete or damaged" in answer.json()["detail"]
+    assert f"Delete workspaces/default/artifacts/runs/{run.hash}" in answer.json()["detail"]
+    assert str(run.folder) not in answer.json()["detail"]
+
+
+@pytest.mark.parametrize(("result", "artifact"), [("equity", "equity"), ("distribution", "trades")])
+def test_a_damaged_artifact_says_to_delete_the_folder(
+    client: TestClient, run: Run, result: str, artifact: str
+) -> None:
+    path = run.folder / f"{artifact}.parquet"
+    path.write_bytes(path.read_bytes()[:64])
+
+    answer = client.get(f"/v1/runs/{run.hash}/{result}")
+
+    assert answer.status_code == 409
+    assert "incomplete or damaged" in answer.json()["detail"]
+    assert str(run.folder) not in answer.json()["detail"]
 
 
 def test_a_row_whose_metrics_another_engine_shaped_keeps_its_page(

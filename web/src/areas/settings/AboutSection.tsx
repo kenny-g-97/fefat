@@ -33,10 +33,11 @@ export function AboutSection() {
         </p>
         <p>{EQUITY_CHART_NOTICE.copyright}</p>
         <p>
-          {EQUITY_CHART_NOTICE.credit}{" "}
+          {EQUITY_CHART_NOTICE.credit} (
           <ExternalLink href={EQUITY_CHART_NOTICE.page}>
             {EQUITY_CHART_NOTICE.page}
           </ExternalLink>
+          ).
         </p>
       </div>
     </Panel>

@@ -49,7 +49,6 @@ const fidelityCheck = z.discriminatedUnion("kind", [
 
 const statistics = z.looseObject({
   currency: z.string(),
-  capital: z.string(),
   pnl_share: z.number(),
   metrics: z.looseObject({
     pnl: z.string(),
@@ -164,6 +163,95 @@ function ratioText(value: number | null): string {
   return value === null ? "None" : figureText(value)
 }
 
+/** A count with its noun, as the page writes it. */
+function countText(count: number, noun: string, many = `${noun}s`): string {
+  return `${count} ${count === 1 ? noun : many}`
+}
+
+/** A word of the API in sentence case, written here apart from the app. */
+function wordText(word: string): string {
+  const spaced = word.replaceAll("_", " ")
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
+/** A fidelity as the page names it. */
+function levelText(level: string): string {
+  const named: Readonly<Record<string, string>> = {
+    trades: "Trades",
+    tbbo: "TBBO",
+    "1s": "1-second bars",
+    "1m": "1-minute bars",
+  }
+  return named[level]
+}
+
+/** A decision's instant in the browser's zone, as the readout writes it. */
+function instantText(second: number): string {
+  const at = new Date(second * 1000)
+  const two = (value: number) => String(value).padStart(2, "0")
+  const day = `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}`
+  return `${day} ${two(at.getHours())}:${two(at.getMinutes())}`
+}
+
+/** What each breakdown names its rows by, from the API's keys. */
+const ROW_NAMES: Readonly<Record<string, (key: string) => string>> = {
+  exit_reason: wordText,
+  weekday: wordText,
+  hour: (hour) => `${hour.padStart(2, "0")}:00`,
+  year: (year) => year,
+  fidelity: levelText,
+}
+
+/** What the chart's canvases hold now, to compare two moments of it. */
+function chartPictures(page: Page): Promise<readonly string[]> {
+  return page
+    .getByTestId("equity-chart")
+    .locator("canvas")
+    .evaluateAll((canvases) =>
+      canvases.map((canvas) =>
+        canvas instanceof HTMLCanvasElement ? canvas.toDataURL() : ""
+      )
+    )
+}
+
+/** More pixels than a repaint moves at the end of a line, fewer than a crosshair covers. */
+const FEW_PIXELS = 32
+
+/** How many pixels differ between two pictures of the chart's canvas. */
+function differingPixels(
+  page: Page,
+  one: readonly string[],
+  other: readonly string[]
+): Promise<number> {
+  return page.evaluate(
+    async ([first, second]) => {
+      const pixels = async (source: string) => {
+        const image = new Image()
+        image.src = source
+        await image.decode()
+        const canvas = document.createElement("canvas")
+        canvas.width = image.width
+        canvas.height = image.height
+        const context = canvas.getContext("2d")
+        if (context === null) {
+          throw new Error("Expected a 2D canvas to compare on, got none.")
+        }
+        context.drawImage(image, 0, 0)
+        return context.getImageData(0, 0, image.width, image.height).data
+      }
+      const [a, b] = [await pixels(first), await pixels(second)]
+      let differing = 0
+      for (let at = 0; at < a.length; at += 4) {
+        const same =
+          a[at] === b[at] && a[at + 1] === b[at + 1] && a[at + 2] === b[at + 2]
+        differing += same ? 0 : 1
+      }
+      return differing
+    },
+    [one[0], other[0]]
+  )
+}
+
 /** A change of a count, with its sign above zero. */
 function signedCount(change: number): string {
   return change > 0 ? `+${change}` : String(change)
@@ -250,12 +338,17 @@ test("every figure of a finished run's page is the API's", async ({
     `${shareText(drawdown.max_drawdown_share)} of the capital`
   )
   await expect(kpi("sharpe")).toContainText(ratioText(daily.sharpe))
+  await expect(kpi("sharpe")).toContainText(
+    `Over ${countText(daily.days, "day")}`
+  )
   await expect(kpi("trades")).toContainText(String(trades.trades))
-  await expect(kpi("trades")).toContainText(`${trades.wins} win`)
+  await expect(kpi("trades")).toContainText(
+    `${countText(trades.wins, "win")}, ${countText(trades.losses, "loss", "losses")}`
+  )
   for (const [level, group] of Object.entries(metrics.breakdowns.fidelity)) {
     await expect(
       kpi("fidelity").getByTestId(`kpi-fidelity-${level}`)
-    ).toHaveText(new RegExp(`${group.trades}$`))
+    ).toHaveText(`${levelText(level)}${group.trades}`)
   }
 
   const card = page.getByRole("region", { name: "Robustness" })
@@ -271,8 +364,18 @@ test("every figure of a finished run's page is the API's", async ({
   await expect(card.getByTestId("robustness-score")).toHaveText(
     robustness.dimensions.map((each) => `${each.score} of ${each.max_score}`)
   )
+  await expect(card.getByRole("meter")).toHaveCount(5)
+  for (const [at, each] of robustness.dimensions.entries()) {
+    await expect(card.getByRole("meter").nth(at)).toHaveAccessibleName(
+      wordText(each.name)
+    )
+    await expect(card.getByRole("meter").nth(at)).toHaveAttribute(
+      "aria-valuenow",
+      String(each.score)
+    )
+  }
   await expect(card.getByTestId("robustness-sample")).toContainText(
-    String(trades.trades)
+    countText(trades.trades, "trade")
   )
   await expect(card.getByTestId("robustness-plus-tick")).toContainText(
     moneyText(robustness.pnl_at_plus_one_tick)
@@ -289,14 +392,18 @@ test("every figure of a finished run's page is the API's", async ({
   await expect(page.getByTestId("equity-drawdown")).toHaveText(
     figureText(curve.drawdown[curve.drawdown.length - 1])
   )
+  await expect(page.getByTestId("equity-time")).toHaveText(
+    instantText(curve.time[curve.time.length - 1])
+  )
 
   for (const [table, groups] of Object.entries(metrics.breakdowns)) {
     const rows = page
       .getByTestId(`breakdown-${table}`)
       .getByTestId("breakdown-row")
     await expect(rows).toHaveCount(Object.keys(groups).length)
-    for (const [at, group] of Object.values(groups).entries()) {
+    for (const [at, [name, group]] of Object.entries(groups).entries()) {
       const cells = rows.nth(at).getByRole("cell")
+      await expect(cells.nth(0)).toHaveText(ROW_NAMES[table](name))
       await expect(cells.nth(1)).toHaveText(String(group.trades))
       await expect(cells.nth(2)).toHaveText(String(group.wins))
       await expect(cells.nth(3)).toHaveText(moneyText(group.pnl))
@@ -311,8 +418,14 @@ test("every figure of a finished run's page is the API's", async ({
   if (check?.kind !== "checked") {
     throw new Error("Expected the seeded run's fidelity check, got none.")
   }
+  await expect(
+    page.getByRole("region", { name: "Fidelity check" })
+  ).toContainText(`From ${check.first} to ${check.last}, each run from flat`)
   const checkRows = page.getByTestId("fidelity-check").getByRole("row")
   const baselineCells = checkRows.nth(1).getByRole("cell")
+  await expect(baselineCells.nth(0)).toHaveText(
+    `Baseline, ${levelText(check.baseline.fidelity)}`
+  )
   await expect(baselineCells.nth(1)).toHaveText(String(check.baseline.trades))
   await expect(baselineCells.nth(3)).toHaveText(moneyText(check.baseline.pnl))
   await expect(baselineCells.nth(5)).toHaveText(
@@ -324,6 +437,9 @@ test("every figure of a finished run's page is the API's", async ({
   await expect(checkRows).toHaveCount(2 + reruns.length)
   for (const [at, each] of reruns.entries()) {
     const cells = checkRows.nth(2 + at).getByRole("cell")
+    await expect(cells.nth(0)).toHaveText(
+      `At ${levelText(each.outcome.fidelity)}`
+    )
     await expect(cells.nth(1)).toHaveText(String(each.outcome.trades))
     await expect(cells.nth(2)).toHaveText(signedCount(each.trades_delta))
     await expect(cells.nth(3)).toHaveText(moneyText(each.outcome.pnl))
@@ -338,7 +454,17 @@ test("every figure of a finished run's page is the API's", async ({
       each.map((bar) => bar.getAttribute("aria-label"))
     )
     expect(words, name).toEqual(binWords(histograms[name]))
+    const { lower, upper } = histograms[name]
+    const axis = page.getByTestId(`histogram-${name}`).locator("p").last()
+    await expect(axis).toContainText(edgeText(lower[0]))
+    await expect(axis).toContainText(edgeText(upper[upper.length - 1]))
   }
+  const crossesZero =
+    histograms.pnl.lower[0] < 0 &&
+    histograms.pnl.upper[histograms.pnl.upper.length - 1] > 0
+  await expect(
+    page.getByTestId("histogram-pnl").getByTestId("histogram-zero")
+  ).toHaveCount(crossesZero ? 1 : 0)
   await expect(page.getByTestId("equity-chart")).toBeVisible()
   await expect(
     page.getByTestId("equity-chart").locator("canvas").first()
@@ -598,6 +724,9 @@ test("a run another engine saved keeps its page and says why it has no results",
   await expect(page.getByTestId("run-settings")).toBeVisible()
   await expect(page.getByTestId("key-figures")).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0)
+  await expect(
+    page.getByRole("link", { name: "Back to its version" })
+  ).toBeVisible()
   await page.mouse.move(700, 36)
   await screenshot(page, "run-results-refused")
   expect(errors.filter((each) => !each.includes("409"))).toEqual([])
@@ -681,4 +810,201 @@ test("a run with no trades says so in place of its figures", async ({
   await expect(page.getByTestId("breakdowns-empty")).toBeVisible()
   await expect(page.getByTestId("distributions-empty")).toBeVisible()
   expect(errors).toEqual([])
+})
+
+test("the readout holds between the chart's panes, where no decision lies", async ({
+  loggedIn: page,
+}) => {
+  // The design review: the band between the panes read as the pointer leaving.
+  const key = await theSeededKey(page)
+  const { curve } = await resultsOf(page, key)
+  await page.goto(`/runs/run?key=${key}`)
+  const chart = page.getByTestId("equity-chart")
+  await expect(chart.locator("canvas").first()).toBeVisible()
+  await chart.scrollIntoViewIfNeeded()
+  const box = await chart.boundingBox()
+  if (box === null) {
+    throw new Error("Expected the chart drawn, got no box.")
+  }
+  const figure = page.getByTestId("equity-figure")
+  const atRest = figureText(curve.equity[curve.equity.length - 1])
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.3)
+  await expect(figure).not.toHaveText(atRest)
+  const pointed = await figure.innerText()
+
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.66)
+
+  await expect(figure).toHaveText(pointed)
+})
+
+test("Escape and leaving the chart clear its crosshair and give the readout back", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  const { curve } = await resultsOf(page, key)
+  const last = figureText(curve.equity[curve.equity.length - 1])
+  await page.goto(`/runs/run?key=${key}`)
+  const chart = page.getByTestId("equity-chart")
+  const figure = page.getByTestId("equity-figure")
+  await expect(chart.locator("canvas").first()).toBeVisible()
+  await expect(figure).toHaveText(last)
+  await expect.poll(() => chartPictures(page)).not.toEqual([""])
+  const atRest = await chartPictures(page)
+  const moved = async () =>
+    differingPixels(page, atRest, await chartPictures(page))
+
+  await chart.focus()
+  await page.keyboard.press("Home")
+  await expect(figure).toHaveText(figureText(curve.equity[0]))
+  await expect.poll(moved).toBeGreaterThan(FEW_PIXELS)
+  await page.keyboard.press("Escape")
+  await expect(figure).toHaveText(last)
+  await expect.poll(moved).toBeLessThan(FEW_PIXELS)
+
+  await page.keyboard.press("Home")
+  await expect(figure).toHaveText(figureText(curve.equity[0]))
+  await expect.poll(moved).toBeGreaterThan(FEW_PIXELS)
+  await page.keyboard.press("Tab")
+  await expect(figure).toHaveText(last)
+  await expect.poll(moved).toBeLessThan(FEW_PIXELS)
+})
+
+test("the chart keeps its reading while the window is away", async ({
+  loggedIn: page,
+}) => {
+  // The design review: a trader who steps to a decision and switches to the charting platform to
+  // compare it comes back to that decision.
+  const key = await theSeededKey(page)
+  const { curve } = await resultsOf(page, key)
+  await page.goto(`/runs/run?key=${key}`)
+  const chart = page.getByTestId("equity-chart")
+  const figure = page.getByTestId("equity-figure")
+  await expect(chart.locator("canvas").first()).toBeVisible()
+  await chart.focus()
+  await page.keyboard.press("Home")
+  await expect(figure).toHaveText(figureText(curve.equity[0]))
+
+  await chart.evaluate((element) => {
+    document.hasFocus = () => false
+    element.dispatchEvent(new FocusEvent("focusout", { bubbles: true }))
+    Reflect.deleteProperty(document, "hasFocus")
+  })
+
+  await page.keyboard.press("ArrowRight")
+  await expect(figure).toHaveText(figureText(curve.equity[1]))
+})
+
+test("a key with Alt stays the browser's, and the chart repaints with the theme", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  const { curve } = await resultsOf(page, key)
+  const last = figureText(curve.equity[curve.equity.length - 1])
+  await page.goto(`/runs/run?key=${key}`)
+  const chart = page.getByTestId("equity-chart")
+  await expect(chart.locator("canvas").first()).toBeVisible()
+  await expect.poll(() => chartPictures(page)).not.toEqual([""])
+
+  const pressed = chart.evaluate((element) => {
+    const key = new KeyboardEvent("keydown", {
+      key: "ArrowLeft",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    element.dispatchEvent(key)
+    return key.defaultPrevented
+  })
+  expect(await pressed).toBe(false)
+  await expect(page.getByTestId("equity-figure")).toHaveText(last)
+
+  const dark = await chartPictures(page)
+  await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  await expect.poll(() => chartPictures(page)).not.toEqual(dark)
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
+  await expect.poll(() => chartPictures(page)).toEqual(dark)
+})
+
+test("a bar of one trade shows beside a tall one, and marks keep a colour in a contrast theme", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  await withAnswers(page, key, (body, result) => {
+    if (result === "distribution") {
+      body.pnl = { lower: [-2, -1, 0], upper: [-1, 0, 1], trades: [1, 0, 400] }
+    }
+  })
+  await page.emulateMedia({ forcedColors: "active" })
+
+  await page.goto(`/runs/run?key=${key}`)
+
+  const bars = page
+    .getByTestId("histogram-pnl")
+    .locator('[data-slot="chart-mark"]')
+  await expect(bars.first()).toBeVisible()
+  const box = await bars.first().boundingBox()
+  expect(box?.height).toBeGreaterThanOrEqual(2)
+  const [mark, highlight] = await bars.first().evaluate((bar) => {
+    const probe = document.createElement("span")
+    probe.style.backgroundColor = "Highlight"
+    document.body.append(probe)
+    const wanted = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return [getComputedStyle(bar).backgroundColor, wanted]
+  })
+  expect(mark).toBe(highlight)
+})
+
+test("a section the server refuses says why, with no Try again", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  const refusal =
+    "The folder of this run is incomplete. Delete it, then run the backtest again."
+  await page.route(`**/v1/runs/${key}/distribution`, (route) =>
+    route.fulfill(problemAnswer(409, refusal))
+  )
+
+  await page.goto(`/runs/run?key=${key}`)
+
+  const card = page.getByRole("region", { name: "Distributions" })
+  await expect(card.getByTestId("run-results-refused")).toHaveText(refusal)
+  await expect(card.getByRole("button", { name: "Try again" })).toHaveCount(0)
+  await expect(page.getByTestId("key-figures")).toBeVisible()
+})
+
+test("a run under way keeps its Status card and asks for no results", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  const saved = z
+    .looseObject({ strategy: z.looseObject({}) })
+    .parse(await (await page.request.get(`/v1/runs/${key}`)).json())
+  const asked: string[] = []
+  page.on("request", (request) => asked.push(new URL(request.url()).pathname))
+  await page.route("**/v1/runs/run-live", (route) =>
+    route.fulfill({
+      json: {
+        ...saved,
+        id: "run-live",
+        state: "submitted",
+        status: "running",
+        progress: 40,
+        message: "Running the engine",
+        error: null,
+        job_id: "job-live",
+        cancel_requested_at: null,
+      },
+    })
+  )
+
+  await page.goto("/runs/run?id=run-live&job=job-live")
+
+  await expect(page.getByRole("region", { name: "Status" })).toBeVisible()
+  await expect(page.getByTestId("run-page-status")).toHaveText("Running")
+  await expect(page.getByTestId("run-message")).toHaveText("Running the engine")
+  await expect(page.getByTestId("run-page-cancel")).toBeVisible()
+  await expect(page.getByTestId("run-settings")).toBeVisible()
+  await expect(page.getByTestId("key-figures")).toHaveCount(0)
+  expect(asked.filter((each) => each.endsWith("/stats"))).toEqual([])
 })

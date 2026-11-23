@@ -151,20 +151,9 @@ def _refusals() -> Generator[None]:
         raise CodeRefused(refused.line, str(refused)) from refused
     except EstimateRefusedError as refused:
         raise HTTPException(400, str(refused)) from refused
-    except NoSuchStrategyError as unknown:
+    except (NoSuchStrategyError, NoSuchRunError) as unknown:
         raise HTTPException(404, str(unknown)) from unknown
-    except LibraryRefusedError as refused:
-        raise HTTPException(409, str(refused)) from refused
-
-
-@contextmanager
-def _results_refusals() -> Generator[None]:
-    """What a saved run's results refuse, as the API answers it."""
-    try:
-        yield
-    except NoSuchRunError as unknown:
-        raise HTTPException(404, str(unknown)) from unknown
-    except ResultsRefusedError as refused:
+    except (LibraryRefusedError, ResultsRefusedError) as refused:
         raise HTTPException(409, str(refused)) from refused
 
 
@@ -258,10 +247,10 @@ def run_by_id(run: RunAddress, container: ContainerDependency) -> IndexedRun:
 
 @router.get("/runs/{run}/stats", responses=problem_responses(401, 404, 409, 422))
 def run_statistics(run: RunAddress, container: ContainerDependency) -> RunStatistics:
-    """A saved run's metrics with their breakdowns, its currency, its capital, its net P&L as a
-    share of that capital, its fidelity eras, and its warnings, from the record in its folder;
+    """A saved run's metrics with their breakdowns, its currency, its net P&L as a share of its
+    capital, its fidelity eras, and its warnings, from the record in its folder;
     409 for a run not saved yet, a folder that is gone, or one this engine does not read."""
-    with _results_refusals():
+    with _refusals():
         return container.runs.statistics(run)
 
 
@@ -281,7 +270,7 @@ def run_equity(
 ) -> EquityCurve:
     """A saved run's equity and its drawdown after each decision, in at most `max_points` points
     that keep its true maximum drawdown; 409 as `/stats` answers it."""
-    with _results_refusals():
+    with _refusals():
         return container.runs.equity_curve(run, max_points)
 
 
@@ -289,7 +278,7 @@ def run_equity(
 def run_distribution(run: RunAddress, container: ContainerDependency) -> TradeDistributions:
     """A saved run's trades as histograms of net P&L, R multiple, MAE and MFE in ticks, and
     minutes held; 409 as `/stats` answers it."""
-    with _results_refusals():
+    with _refusals():
         return container.runs.distributions(run)
 
 

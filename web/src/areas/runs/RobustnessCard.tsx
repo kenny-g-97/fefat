@@ -1,9 +1,9 @@
 import { cn } from "cn"
 import type { Robustness } from "@/api/run-results"
 import { VERDICT_LABELS } from "@/api/runs"
-import { formatMoney, moneySign } from "@/ui/figures"
+import { formatMoney, moneySign, sentenceCase } from "@/ui/figures"
 import { Panel } from "@/ui/panel"
-import { sampleSizeWords, sentenceCase } from "./result-words"
+import { sampleSizeWords } from "./result-words"
 
 const BADGE =
   "rounded-xl border border-transparent bg-accent px-2 py-0.5 text-xs font-semibold text-foreground"
@@ -81,6 +81,7 @@ export function RobustnessCard({ robustness, trades }: RobustnessCardProps) {
                   className="h-2 overflow-hidden rounded-xl bg-accent"
                 >
                   <div
+                    data-slot="chart-mark"
                     className="h-full rounded-xl bg-brand"
                     style={{
                       width: `${(dimension.score / dimension.max_score) * 100}%`,

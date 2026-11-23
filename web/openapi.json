@@ -5316,12 +5316,8 @@
         "type": "object"
       },
       "RunStatistics": {
-        "description": "What a saved run's record says of how it went (step 5.7, D-116): its metrics, the currency\ntheir money is in, its capital, its net P&L as a share of that capital, the fidelity era of\neach trade date it filled on, and its warnings.",
+        "description": "What a saved run's record says of how it went (step 5.7, D-116): its metrics, the currency\ntheir money is in, its net P&L as a share of its capital, the fidelity era of each trade date\nit filled on, and its warnings.",
         "properties": {
-          "capital": {
-            "title": "Capital",
-            "type": "string"
-          },
           "currency": {
             "$ref": "#/components/schemas/Currency"
           },
@@ -5349,7 +5345,6 @@
         },
         "required": [
           "currency",
-          "capital",
           "pnl_share",
           "metrics",
           "fidelity_eras",
@@ -10868,7 +10863,7 @@
     },
     "/v1/runs/{run}/stats": {
       "get": {
-        "description": "A saved run's metrics with their breakdowns, its currency, its capital, its net P&L as a\nshare of that capital, its fidelity eras, and its warnings, from the record in its folder;\n409 for a run not saved yet, a folder that is gone, or one this engine does not read.",
+        "description": "A saved run's metrics with their breakdowns, its currency, its net P&L as a share of its\ncapital, its fidelity eras, and its warnings, from the record in its folder;\n409 for a run not saved yet, a folder that is gone, or one this engine does not read.",
         "operationId": "run_statistics_v1_runs__run__stats_get",
         "parameters": [
           {

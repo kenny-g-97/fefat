@@ -1,3 +1,4 @@
+import { cn } from "cn"
 import type {
   FidelityCheck,
   FidelityRerun,
@@ -24,6 +25,16 @@ const FIGURE = "px-3 py-0 text-right text-foreground-secondary"
 
 function moneyChange(change: string): string {
   return signed(formatMoney(change), moneySign(change))
+}
+
+/** A net P&L in its sign's colour, as every P&L of the page. */
+function pnlCell(pnl: string): string {
+  const sign = moneySign(pnl)
+  return cn(
+    "px-3 py-0 text-right font-semibold text-foreground",
+    sign === "positive" && "text-positive",
+    sign === "negative" && "text-negative"
+  )
 }
 
 function countChange(change: number): string {
@@ -75,7 +86,7 @@ export function FidelityCheckCard({
                 {formatCount(baseline.trades)}
               </TableCell>
               <TableCell className={FIGURE} />
-              <TableCell className={FIGURE}>
+              <TableCell className={pnlCell(baseline.pnl)}>
                 {formatMoney(baseline.pnl)}
               </TableCell>
               <TableCell className={FIGURE} />
@@ -98,7 +109,7 @@ export function FidelityCheckCard({
                 <TableCell className={FIGURE}>
                   {countChange(rerun.trades_delta)}
                 </TableCell>
-                <TableCell className={FIGURE}>
+                <TableCell className={pnlCell(rerun.outcome.pnl)}>
                   {formatMoney(rerun.outcome.pnl)}
                 </TableCell>
                 <TableCell className={FIGURE}>

@@ -22,7 +22,7 @@ registerParts([
 ])
 
 /** What ECharts' `updateAxisPointer` event names of the decision under the pointer, which its
- * types leave open; none while the pointer stands on no decision. */
+ * types leave open; none in the band between the two panes, where the readout stays put. */
 const pointerEvent = z.looseObject({ dataIndex: z.number().int().optional() })
 
 type EquityChartProps = Readonly<{
@@ -34,8 +34,8 @@ type EquityChartProps = Readonly<{
 
 /** The equity curve over its drawdown (`README.md`), over ECharts 6, which only this file and
  * `equity-option.ts` import: it fills the box it is in and tells `onPointed` the decision under
- * the pointer, or null when it leaves. Focused, the arrows step a decision, Home and End go to
- * either end, and Escape gives the readout back to the last. */
+ * the pointer, or null once the pointer leaves it. Focused, the arrows step a decision, Home and
+ * End go to either end, and Escape or leaving it gives the readout back to the last. */
 export function EquityChart({
   label,
   curve,
@@ -54,8 +54,9 @@ export function EquityChart({
     chart.current = drawn
     drawn.on("updateAxisPointer", (event: unknown) => {
       const read = pointerEvent.safeParse(event)
-      const decision = read.success ? read.data.dataIndex : undefined
-      onPointed(decision === undefined ? null : decision)
+      if (read.success && read.data.dataIndex !== undefined) {
+        onPointed(read.data.dataIndex)
+      }
     })
     drawn.on("globalout", () => onPointed(null))
     const sized = new ResizeObserver(() => drawn.resize())
@@ -73,13 +74,23 @@ export function EquityChart({
     })
   }, [curve, theme])
 
+  const letGo = () => {
+    chart.current?.dispatchAction({
+      type: "updateAxisPointer",
+      currTrigger: "leave",
+    })
+    onPointed(null)
+  }
+
   const pressed = (event: KeyboardEvent<HTMLDivElement>) => {
-    const last = curve.time.length - 1
-    if (event.key === "Escape") {
-      chart.current?.dispatchAction({ type: "hideTip" })
-      onPointed(null)
+    if (event.altKey || event.ctrlKey || event.metaKey) {
       return
     }
+    if (event.key === "Escape") {
+      letGo()
+      return
+    }
+    const last = curve.time.length - 1
     const next = steppedTo(event.key, pointed === null ? last : pointed, last)
     if (next === null) {
       return
@@ -99,6 +110,12 @@ export function EquityChart({
       aria-label={label}
       tabIndex={0}
       onKeyDown={pressed}
+      onBlur={() => {
+        // The window going away keeps the reading, for a trader comparing it elsewhere.
+        if (document.hasFocus()) {
+          letGo()
+        }
+      }}
       data-testid="equity-chart"
       className="relative h-full min-w-0 rounded-xl"
     >

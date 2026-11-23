@@ -12,7 +12,9 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 
+from polars.exceptions import PolarsError
 from pydantic import JsonValue
 
 from fefat.backtest import Run, RunConfig, TradeDistributions, equity_curve, trade_distributions
@@ -23,7 +25,7 @@ from fefat.market.engine_units import money_in_units
 from fefat.market.schema import Timeframe
 from fefat.reference.settings import SlippageTicks
 from fefat_app.execution import BacktestSpec
-from fefat_app.job_models import JobStatus
+from fefat_app.job_models import ACTIVE, JobStatus
 from fefat_app.library import (
     IndexedStrategy,
     IndexedStrategyVersion,
@@ -191,7 +193,6 @@ class Runs:
         record = opened.record
         return RunStatistics(
             currency=record.instrument.currency,
-            capital=record.config.capital,
             pnl_share=opened.pnl_share,
             metrics=record.metrics,
             fidelity_eras=record.fidelity_eras,
@@ -202,7 +203,7 @@ class Runs:
         """The account of the saved run `run` in at most `max_points` points that keep its
         maximum drawdown (`ff.backtest.equity_curve`), refused as `_opened` refuses."""
         opened = self._opened(run)
-        with _results_read(opened.hash):
+        with _results_read(opened.hash, self.paths):
             curve = equity_curve(opened, max_points)
         return EquityCurve(
             capital=float(opened.config.capital),
@@ -215,7 +216,7 @@ class Runs:
         """The trades of the saved run `run` as histograms (`ff.backtest.trade_distributions`),
         refused as `_opened` refuses."""
         opened = self._opened(run)
-        with _results_read(opened.hash):
+        with _results_read(opened.hash, self.paths):
             trades = opened.trades
         return trade_distributions(trades)
 
@@ -225,11 +226,16 @@ class Runs:
         this engine does not read."""
         found = self.by_id(run)
         if isinstance(found, SubmittedRun):
+            what_next = (
+                "its results come once it is saved"
+                if found.status in ACTIVE
+                else "it saved no results, so run the backtest again"
+            )
             raise ResultsRefusedError(
                 f"Expected a saved run, got run {found.id}, whose backtest job is {found.status}: "
-                "its results come once it is saved."
+                f"{what_next}."
             )
-        with _results_read(found.run_key):
+        with _results_read(found.run_key, self.paths):
             return saved_run(self.paths.runs_dir, found.run_key)
 
     def estimate(
@@ -279,18 +285,33 @@ class Runs:
 
 
 @contextmanager
-def _results_read(run_key: str) -> Generator[None]:
-    """What reading the saved run `run_key`'s files refuses, as `ResultsRefusedError`: a file
-    that is gone, or the SDK's words for a folder this engine does not read."""
+def _results_read(run_key: str, paths: FefatPaths) -> Generator[None]:
+    """What reading the saved run `run_key`'s files refuses, as `ResultsRefusedError`, in words
+    that name no folder of this PC: a file gone or damaged (`_unreadable_folder`), or the SDK's
+    words for a folder this engine does not read."""
+    folder = paths.runs_dir / run_key
+    run = f"run {run_key[:12]}"
     try:
         yield
-    except FileNotFoundError as gone:
-        raise ResultsRefusedError(
-            f"The folder of run {run_key[:12]} is gone from FEAT's workspace, or part of it is, "
-            "so its results cannot be read. Run the backtest again."
-        ) from gone
-    except ValueError as unreadable:
-        raise ResultsRefusedError(str(unreadable)) from unreadable
+    except (FileNotFoundError, PolarsError) as unreadable:
+        raise ResultsRefusedError(_unreadable_folder(folder, paths.home, run)) from unreadable
+    except ValueError as refused:
+        raise ResultsRefusedError(str(refused).replace(str(folder), run)) from refused
+
+
+def _unreadable_folder(folder: Path, home: Path, run: str) -> str:
+    """What to do about the folder of `run`: a new run writes a folder that is gone, while it
+    opens one it finds saved, or cannot write over what is left of one, so that an incomplete or
+    damaged folder must be deleted first."""
+    if not folder.exists():
+        return (
+            f"The folder of {run} is gone from FEAT's workspace, so its results cannot be read. "
+            "Run the backtest again."
+        )
+    return (
+        f"The folder of {run} is incomplete or damaged, so its results cannot be read. Delete "
+        f"{folder.relative_to(home).as_posix()} in FEAT's home folder, then run the backtest again."
+    )
 
 
 def _at_slippage(asked: RunAsked, ticks: SlippageTicks) -> RunAsked:

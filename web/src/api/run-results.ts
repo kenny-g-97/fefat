@@ -49,7 +49,8 @@ export type TradeDistributions = Awaited<ReturnType<typeof readDistributions>>
 /** Trades counted in bins of one width, in columns. */
 export type Histogram = TradeDistributions["pnl"]
 
-/** A saved run's metrics, its capital, its fidelity eras, and its warnings. */
+/** A saved run's metrics, its currency, its net P&L as a share of its capital, its fidelity
+ * eras, and its warnings. */
 export function runStatisticsQuery(runKey: string) {
   return queryOptions({
     queryKey: ["run-results", runKey, "statistics"],

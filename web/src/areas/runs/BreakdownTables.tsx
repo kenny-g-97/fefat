@@ -5,6 +5,7 @@ import {
   formatCount,
   formatMoney,
   moneySign,
+  sentenceCase,
 } from "@/ui/figures"
 import { Panel } from "@/ui/panel"
 import {
@@ -15,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table"
-import { hourLabel, sentenceCase } from "./result-words"
+import { hourLabel } from "./result-words"
 
 type BreakdownTableProps = Readonly<{
   id: string

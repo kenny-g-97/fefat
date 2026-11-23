@@ -1,19 +1,7 @@
 import { describe, expect, it } from "vitest"
-import {
-  hourLabel,
-  sampleSizeWords,
-  sentenceCase,
-  signed,
-} from "./result-words"
+import { hourLabel, sampleSizeWords, signed } from "./result-words"
 
 describe("the words of a run's results", () => {
-  it("writes the API's words in sentence case", () => {
-    expect(sentenceCase("target_1")).toBe("Target 1")
-    expect(sentenceCase("risk_management")).toBe("Risk management")
-    expect(sentenceCase("monday")).toBe("Monday")
-    expect(sentenceCase("roll_open_interest")).toBe("Roll open interest")
-  })
-
   it("writes an hour of the day with its minutes", () => {
     expect(hourLabel("9")).toBe("09:00")
     expect(hourLabel("23")).toBe("23:00")

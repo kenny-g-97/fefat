@@ -12,6 +12,7 @@ import {
   formatPrice,
   formatShare,
   moneySign,
+  sentenceCase,
 } from "./figures"
 
 describe("the results' figures (step 5.7)", () => {
@@ -30,6 +31,13 @@ describe("the results' figures (step 5.7)", () => {
     expect(formatShare(0.025)).toBe("2.50%")
     expect(formatShare(0.5417)).toBe("54.17%")
     expect(formatShare(-0.0166)).toBe("-1.66%")
+  })
+
+  it("writes the API's words in sentence case", () => {
+    expect(sentenceCase("target_1")).toBe("Target 1")
+    expect(sentenceCase("risk_management")).toBe("Risk management")
+    expect(sentenceCase("monday")).toBe("Monday")
+    expect(sentenceCase("roll_open_interest")).toBe("Roll open interest")
   })
 
   it("writes a histogram's edge with the decimals it holds", () => {

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
-import { lazy, Suspense, useState } from "react"
+import { lazyRouteComponent } from "@tanstack/react-router"
+import { Suspense, useState } from "react"
 import {
   type EquityCurve,
   type RunMetrics,
@@ -8,13 +9,17 @@ import {
 import { crosshairTime } from "@/charts/chart-time"
 import { counted, formatFigure } from "@/ui/figures"
 import { Panel } from "@/ui/panel"
-import { QueryBody } from "@/ui/query-body"
+import { ResultBody } from "./ResultBody"
 
-// ECharts loads with the first finished run opened, out of the app's first bundle (D-93).
-const EquityChart = lazy(async () => {
-  const { EquityChart: chart } = await import("@/charts/EquityChart")
-  return { default: chart }
-})
+/** ECharts' chunk, loaded with the first finished run opened, out of the app's first bundle
+ * (D-93); a chunk a rebuild of the web app has replaced reloads the page once, where React's
+ * `lazy` would keep its first failure. */
+const EquityChart = lazyRouteComponent(
+  () => import("@/charts/EquityChart"),
+  "EquityChart"
+)
+
+const SECONDS_A_MINUTE = 60
 
 type EquityCardProps = Readonly<{
   runKey: string
@@ -27,9 +32,9 @@ export function EquityCard({ runKey, drawdown }: EquityCardProps) {
   const equity = useQuery(runEquityQuery(runKey))
   return (
     <Panel title="Equity">
-      <QueryBody query={equity}>
+      <ResultBody query={equity}>
         {(curve) => <ShownCurve curve={curve} drawdown={drawdown} />}
-      </QueryBody>
+      </ResultBody>
     </Panel>
   )
 }
@@ -48,6 +53,7 @@ function ShownCurve({
     )
   }
   const at = pointed === null ? last : pointed
+  const inSeconds = curve.time.some((time) => time % SECONDS_A_MINUTE !== 0)
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
@@ -58,7 +64,9 @@ function ShownCurve({
           {formatFigure(curve.equity[at])}
         </p>
         <p className="flex gap-4 text-foreground-secondary">
-          <span data-testid="equity-time">{crosshairTime(curve.time[at])}</span>
+          <span data-testid="equity-time">
+            {crosshairTime(curve.time[at], inSeconds)}
+          </span>
           <span>
             Drawdown{" "}
             <span
@@ -72,12 +80,22 @@ function ShownCurve({
       </div>
       <ul className="flex gap-5 text-xs text-foreground-secondary">
         <li className="flex items-center gap-2">
-          <span className="size-2.5 rounded-xl bg-brand" />
+          <span
+            data-slot="chart-mark"
+            className="size-2.5 rounded-xl bg-brand"
+          />
           Equity
         </li>
         <li className="flex items-center gap-2">
-          <span className="size-2.5 rounded-xl bg-input" />
+          <span
+            data-slot="chart-mark"
+            className="size-2.5 rounded-xl bg-input"
+          />
           Drawdown
+        </li>
+        <li className="flex items-center gap-2">
+          <span className="w-4 border-t border-dashed border-input" />
+          Capital
         </li>
       </ul>
       <div className="h-80">

@@ -65,7 +65,7 @@ def test_each_measure_is_counted_in_bins_on_multiples_of_one_width() -> None:
 
 
 def test_a_trade_without_a_stop_is_left_out_of_the_r_multiples_and_counted() -> None:
-    trades = trades_of(pnl=[USD, 2 * USD, 3 * USD], risk=[USD, None, 0])
+    trades = trades_of(pnl=[USD, 2 * USD, 3 * USD], risk=[USD, None, None])
 
     shown = trade_distributions(trades)
 

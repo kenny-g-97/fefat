@@ -155,7 +155,7 @@ function ShownRun({ run }: Readonly<{ run: ListedRun }>) {
       {shown.state === "saved" ? (
         <div className="flex flex-col gap-6">
           <RunStatusLine run={shown} cached={cached} found={found} />
-          <RunResults runKey={shown.run_key} />
+          <RunResults runKey={shown.run_key} strategy={shown.strategy} />
           <div className="grid grid-cols-[minmax(16rem,1fr)_auto] items-start gap-6">
             <RunParametersCard run={shown} />
             <RunSettingsCard run={shown} />

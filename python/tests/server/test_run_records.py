@@ -11,12 +11,16 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
+from sqlalchemy.orm import Session, undefer
 
 from fefat.backtest import Run, saved_runs_in
+from fefat.backtest.metrics import Metrics
 from fefat.config import resolve_paths
+from fefat.market.fidelity import FidelityEra
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
+from fefat_app.database.models import RunRow
 from fefat_app.database.run_records import RunTables
 from fefat_app.job_models import JobKind, JobStatus
 from fefat_app.runs import (
@@ -150,6 +154,16 @@ def test_a_saved_run_takes_its_key_and_the_columns_of_its_record(
         run.metrics.pnl,
         run.metrics.trades.trades,
     )
+    with Session(engine) as session:
+        row = session.scalars(
+            select(RunRow).where(RunRow.id == saved.id).options(undefer(RunRow.metrics_json))
+        ).one()
+    assert Metrics.model_validate(row.metrics_json) == run.metrics
+    assert row.fidelity_eras_json is not None
+    eras = tuple(FidelityEra.model_validate(era) for era in row.fidelity_eras_json)
+    assert eras == run.record.fidelity_eras
+    assert row.warnings_json is not None
+    assert tuple(row.warnings_json) == run.record.warnings
     assert records.saved(run.hash) == saved
 
 

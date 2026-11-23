@@ -13,8 +13,8 @@ import { Stat } from "@/ui/stat"
 const NONE = "None"
 
 /** A figure the engine worked out, or None where it could count nothing. */
-function figureOrNone(value: number | null | undefined): string {
-  return value === null || value === undefined ? NONE : formatFigure(value)
+function figureOrNone(value: number | null): string {
+  return value === null ? NONE : formatFigure(value)
 }
 
 /** The tone of money: its sign's colour, none for zero. */
@@ -32,7 +32,10 @@ export function KeyFigures({
   const { trades, drawdown, daily } = metrics
   const none = trades.trades === 0 ? "No trades" : null
   return (
-    <dl data-testid="key-figures" className="grid grid-cols-4 gap-4">
+    <dl
+      data-testid="key-figures"
+      className="grid grid-cols-2 gap-4 min-[75rem]:grid-cols-4"
+    >
       <Stat
         testId="kpi-pnl"
         label={`Net P&L, ${currency}`}
@@ -85,7 +88,7 @@ export function KeyFigures({
         value={figureOrNone(daily.sharpe)}
         detail={
           daily.sharpe === null
-            ? "Needs two days that differ"
+            ? "Needs 2 days that differ"
             : `Over ${counted(daily.days, "day")}`
         }
       />
@@ -119,6 +122,7 @@ function FidelitySplit({
     <Stat
       testId="kpi-fidelity"
       label="Fidelity split"
+      detail="Entries by fidelity"
       value={
         <span className="flex flex-col gap-0.5 text-sm font-semibold tracking-normal">
           {levels.map(([level, group]) => (

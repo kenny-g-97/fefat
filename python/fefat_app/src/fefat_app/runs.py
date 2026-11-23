@@ -180,13 +180,12 @@ IndexedRun = Annotated[SubmittedRun | SavedRun, Field(discriminator="state")]
 
 class RunStatistics(BaseModel):
     """What a saved run's record says of how it went (step 5.7, D-116): its metrics, the currency
-    their money is in, its capital, its net P&L as a share of that capital, the fidelity era of
-    each trade date it filled on, and its warnings."""
+    their money is in, its net P&L as a share of its capital, the fidelity era of each trade date
+    it filled on, and its warnings."""
 
     model_config = ConfigDict(frozen=True)
 
     currency: Currency
-    capital: Decimal
     pnl_share: float
     metrics: Metrics
     fidelity_eras: tuple[FidelityEra, ...]

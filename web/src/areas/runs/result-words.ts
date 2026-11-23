@@ -8,13 +8,6 @@ const SAMPLE_SIZES: Readonly<Record<SampleSize, string>> = {
   high_confidence: "past the 200 of high confidence",
 }
 
-/** A word of the API in sentence case, such as an exit reason, a weekday, or a dimension of the
- * robustness summary: `target_1` reads `Target 1`, `risk_management` `Risk management`. */
-export function sentenceCase(word: string): string {
-  const spaced = word.replaceAll("_", " ")
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
-
 /** An hour of a breakdown, as its key gives it, in the exchange's time zone: `9` is `09:00`. */
 export function hourLabel(hour: string): string {
   return `${hour.padStart(2, "0")}:00`
