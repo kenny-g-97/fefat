@@ -11,8 +11,10 @@ from fastapi.testclient import TestClient
 
 from fefat_app.container import Container
 from fefat_app.database.job_records import JobTables
-from fefat_app.job_models import Job, JobKind
+from fefat_app.imports import REPORT_FAILED
+from fefat_app.job_models import Job, JobKind, JobStatus
 from local_server import STARTED_AT, SettableClock, logged_in
+from notebook_runs import store_with
 
 PROBLEM = "application/problem+json"
 DEADLINE_SECONDS = 60
@@ -172,4 +174,115 @@ def test_a_demo_job_started_through_the_api_runs_in_the_pool_to_its_end(
         "succeeded",
         {"counted": 1},
         100.0,
+    )
+
+
+def test_run_again_of_a_cancelled_job_queues_its_inputs_once(
+    client: TestClient, container: Container, job_records: JobTables, clock: SettableClock
+) -> None:
+    # Step 5.19: a second press, or a second tab, finds the first one's job under way.
+    csrf = logged_in(client, container)
+    job = a_demo(job_records, clock)
+    client.post(f"/v1/jobs/{job.id}/cancel", headers=csrf)
+
+    first = client.post(f"/v1/jobs/{job.id}/run-again", headers=csrf)
+    second = client.post(f"/v1/jobs/{job.id}/run-again", headers=csrf)
+
+    assert (first.status_code, first.json()["status"]) == (202, "queued")
+    assert first.json()["id"] != job.id
+    assert (first.json()["kind"], first.json()["payload"]) == ("demo", {"seconds": 60})
+    assert second.json()["id"] == first.json()["id"]
+    client.post(f"/v1/jobs/{first.json()['id']}/cancel", headers=csrf)
+
+
+def test_run_again_of_a_quality_check_keeps_to_one_sync_of_a_product(
+    client: TestClient, container: Container, job_records: JobTables, clock: SettableClock
+) -> None:
+    # Two syncs of a product would write the same reports at once: one of every product under
+    # way covers it, though its payload differs.
+    store_with("ohlcv-1m")
+    csrf = logged_in(client, container)
+    ended = job_records.add(JobKind.CATALOG_SYNC, {"root": "ES"}, 3, clock())
+    job_records.cancel_queued(ended.id, clock())
+    of_every_product = job_records.add(JobKind.CATALOG_SYNC, {"root": None}, 3, clock())
+
+    again = client.post(f"/v1/jobs/{ended.id}/run-again", headers=csrf)
+
+    assert (again.status_code, again.json()["id"]) == (202, of_every_product.id)
+
+
+def test_run_again_is_refused_for_a_job_under_way_or_succeeded_or_unknown(
+    client: TestClient, container: Container, job_records: JobTables, clock: SettableClock
+) -> None:
+    csrf = logged_in(client, container)
+    queued = a_demo(job_records, clock)
+    running = a_demo(job_records, clock)
+    job_records.start(running.id, 4242, clock() + timedelta(seconds=15), clock())
+    succeeded = a_demo(job_records, clock)
+    job_records.start(succeeded.id, 4242, clock() + timedelta(seconds=15), clock())
+    job_records.finish(succeeded.id, 4242, JobStatus.SUCCEEDED, clock())
+
+    refusals = [
+        client.post(f"/v1/jobs/{job.id}/run-again", headers=csrf)
+        for job in (queued, running, succeeded)
+    ]
+    unknown = client.post("/v1/jobs/nope/run-again", headers=csrf)
+
+    assert [refused.status_code for refused in refusals] == [409, 409, 409]
+    assert refusals[2].headers["content-type"] == PROBLEM
+    assert refusals[2].json()["detail"] == (
+        "Only a job that failed, was cancelled, or timed out runs again; this one's status "
+        "is succeeded."
+    )
+    assert unknown.status_code == 404
+    assert len(job_records.recent(10)) == 3
+
+
+def test_run_again_needs_a_login_and_the_csrf_token(
+    client: TestClient, container: Container, job_records: JobTables, clock: SettableClock
+) -> None:
+    job = a_demo(job_records, clock)
+    job_records.cancel_queued(job.id, clock())
+    anonymous = client.post(f"/v1/jobs/{job.id}/run-again")
+    logged_in(client, container)
+
+    unsigned = client.post(f"/v1/jobs/{job.id}/run-again")
+
+    assert (anonymous.status_code, unsigned.status_code) == (401, 403)
+    assert len(job_records.recent(10)) == 1
+
+
+def test_run_again_of_an_import_that_wrote_points_to_its_quality_check(
+    client: TestClient, container: Container, job_records: JobTables, clock: SettableClock
+) -> None:
+    # Importing the file again would find it imported, end green, and write no report.
+    csrf = logged_in(client, container)
+    job = job_records.add(JobKind.IMPORT, {"spec": {}}, 3, clock())
+    job_records.start(job.id, 4242, clock() + timedelta(seconds=15), clock())
+    said = f"The file was imported, {REPORT_FAILED}: OSError: full."
+    job_records.finish(job.id, 4242, JobStatus.FAILED, clock(), error=said)
+
+    refused = client.post(f"/v1/jobs/{job.id}/run-again", headers=csrf)
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == (
+        "This import wrote its data and only its quality report failed. Press Check quality on "
+        "its dataset's page, and import again any file it left out."
+    )
+    assert len(job_records.recent(10)) == 1
+
+
+def test_run_again_of_a_quality_check_whose_data_is_gone_says_so(
+    client: TestClient, container: Container, job_records: JobTables, clock: SettableClock
+) -> None:
+    csrf = logged_in(client, container)
+    ended = job_records.add(JobKind.CATALOG_SYNC, {"root": "ES"}, 3, clock())
+    job_records.cancel_queued(ended.id, clock())
+
+    refused = client.post(f"/v1/jobs/{ended.id}/run-again", headers=csrf)
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == (
+        "FEAT no longer holds this data, so there is nothing to check. Import it again from the "
+        "Data page."
     )

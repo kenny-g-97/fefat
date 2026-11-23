@@ -40,6 +40,7 @@ from fefat_app.imports import (
     CHECKING_MESSAGE,
     CHECKING_PERCENT,
     LINE_CHARS,
+    REPORT_FAILED,
     WRITING_PERCENT,
     DatasetWritten,
     ImportAnswer,
@@ -68,6 +69,8 @@ STOPPED_WHILE_WRITING = (
     "The import stopped while it wrote, and importing the file again finishes it: "
 )
 """What a job's error says first where its import stopped once it wrote (ADR-0021)."""
+SMALLER_FILE = "Split it, or import a smaller one."
+"""What a file's timeout adds where it wrote nothing, which the same file would repeat."""
 
 type FileAnswer = ImportWrote | ImportedBefore | NotImported
 """What a round did with one of its files."""
@@ -153,7 +156,7 @@ class ImportJobs:
                 tried_while_busy(self.index_profiles)
         except Exception as failure:
             raise ExecutionFailedError(
-                f"{imported}, then its quality report failed: "
+                f"{imported}, {REPORT_FAILED}: "
                 f"{type(failure).__name__}: {failure}. Check quality on its dataset's page "
                 "writes the report again."
             ) from failure
@@ -178,7 +181,8 @@ class _Stages:
         except ExecutionFailedError as failed:
             raise ExecutionFailedError(_said(str(failed), self.writing)) from failed
         except ExecutionTimedOutError as timed_out:
-            raise ExecutionTimedOutError(_said(str(timed_out), self.writing)) from timed_out
+            said = _said(_timed_out_words(timed_out, self.writing), self.writing)
+            raise ExecutionTimedOutError(said) from timed_out
 
     def report(self, reported: ExecutionProgress) -> None:
         """The runner's report as the job's progress; the first that says the import writes
@@ -210,7 +214,9 @@ class _Round:
         self.progress.advance(self._percent(), f"Reading {self._file()}")
         try:
             answer = _answer(executor, spec, self.report, self.progress.check)
-        except (ExecutionFailedError, ExecutionTimedOutError, OSError) as failed:
+        except ExecutionTimedOutError as timed_out:
+            answer = RefusedImport(message=_timed_out_words(timed_out, self.writing))
+        except (ExecutionFailedError, OSError) as failed:
             answer = RefusedImport(message=_last_line(str(failed)))
         self.done += 1
         if not isinstance(answer, RefusedImport):
@@ -272,9 +278,15 @@ def _none_imported(left: list[NotImported], files: int) -> str:
     stopped = [each for each in left if each.message.startswith(STOPPED_WHILE_WRITING)]
     named = (stopped or left)[0]
     return (
-        f"Expected a file imported, got {len(left)} of the {files} files not imported. "
+        f"No file was imported: {len(left)} of the {files} files were left out. "
         f"{named.file_name}: {named.message}"
     )
+
+
+def _timed_out_words(timed_out: ExecutionTimedOutError, writing: bool) -> str:
+    """A file's timeout: importing it again finishes one that wrote, while one that did not
+    would spend the same hours."""
+    return str(timed_out) if writing else f"{timed_out} {SMALLER_FILE}"
 
 
 def _said(message: str, writing: bool) -> str:

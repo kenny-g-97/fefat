@@ -1,7 +1,7 @@
 import { useId } from "react"
 import { Button } from "@/ui/button"
 import { counted } from "@/ui/figures"
-import { firstClick } from "./first-click"
+import { firstClick } from "@/ui/first-click"
 import type { Draft } from "./import-draft"
 import type { ImportRun } from "./import-run"
 import type { Step } from "./import-search"

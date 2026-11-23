@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { Job } from "./jobs"
 import {
   endedBacktests,
+  listedBacktests,
   liveRun,
   resultRunKey,
   runAddress,
@@ -144,6 +145,19 @@ describe("resultRunKey", () => {
 
   it("finds none in a job that failed", () => {
     expect(resultRunKey(aJob("job-1", { status: "failed" }))).toBeNull()
+  })
+})
+
+describe("listedBacktests", () => {
+  it("lists every backtest, whichever way it stands, and no other job", () => {
+    // A run that Run again, another tab, or a script started shows in the Runs list at once.
+    const jobs = [
+      aJob("running"),
+      aJob("done", { status: "succeeded" }),
+      aJob("import", { kind: "import", status: "running" }),
+    ]
+
+    expect(listedBacktests(jobs)).toBe("running done")
   })
 })
 

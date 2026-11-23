@@ -10,10 +10,21 @@ import threading
 import time
 from datetime import UTC, datetime
 
+import pytest
+
 from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
-from fefat_app.execution import ExecutionLimits, PythonSnippetSpec
+from fefat_app.execution import (
+    ExecutionLimits,
+    ExecutionResult,
+    ExecutionSpec,
+    ProgressReport,
+    PythonSnippetSpec,
+    StopCheck,
+    keep_running,
+)
 from fefat_app.job_models import Job, JobKind, JobStatus, job_stream
+from fefat_app.jobs.executions import ExecutionFailedError, executed
 from fefat_app.jobs.worker import JobTimings, run_job
 from local_server import STARTED_AT, running_runners
 
@@ -43,7 +54,8 @@ def test_a_snippet_job_that_runs_out_of_time_ends_timed_out_after_its_progress(
 
     assert (ended.status, ended.result) == (JobStatus.TIMED_OUT, None)
     assert ended.error == (
-        "Expected the execution to end within 2 s, got it still running then: it was stopped."
+        "This job ran past its limit of 2 seconds and was stopped. Run again repeats the "
+        "same data, so start a new one on less data."
     )
     events = job_records.events_after(job_stream(ended.id), 0, 100)
     assert [(event.event_type, event.said) for event in events] == [
@@ -121,6 +133,27 @@ def test_a_preview_job_whose_code_defines_no_feature_fails_with_the_runner_s_err
     )
 
 
+def test_a_job_whose_runner_ends_without_a_result_says_what_to_do_above_its_log(
+    job_records: JobTables,
+) -> None:
+    # Step 5.19: what the executor writes for a developer stays, with its line breaks, under a
+    # sentence in the trader's words.
+    code = "import os, sys\nprint('from the runner', file=sys.stderr, flush=True)\nos._exit(3)\n"
+
+    ended = ran(job_records, JobKind.PYTHON_SNIPPET, snippet(code))
+
+    assert ended.status == JobStatus.FAILED
+    assert ended.error is not None
+    first, blank, *details = ended.error.split("\n")
+    assert first == (
+        "The process running this job ended before it gave a result. Run it again, and if it "
+        "ends the same way, read the log below."
+    )
+    assert blank == ""
+    assert "The runner ended with exit code" in details[0]
+    assert any(line.startswith("from the runner") for line in details[1:])
+
+
 def test_a_job_whose_payload_is_of_another_kind_fails_before_any_runner_starts(
     job_records: JobTables,
 ) -> None:
@@ -129,3 +162,28 @@ def test_a_job_whose_payload_is_of_another_kind_fails_before_any_runner_starts(
     assert ended.status == JobStatus.FAILED
     assert ended.error is not None
     assert ended.error.startswith("ValidationError: ")
+
+
+class CannotStart:
+    """An executor whose runner cannot start, as on a full disk."""
+
+    def run(
+        self, spec: ExecutionSpec, report: ProgressReport, check: StopCheck = keep_running
+    ) -> ExecutionResult:
+        raise OSError(28, "No space left on device")
+
+    def close(self) -> None:
+        """Nothing to end."""
+
+
+def test_a_job_whose_runner_cannot_start_says_what_to_do() -> None:
+    spec = PythonSnippetSpec.model_validate(snippet("print(1)\n"))
+
+    with pytest.raises(ExecutionFailedError) as failed:
+        executed(CannotStart(), spec, lambda _: None, keep_running)
+
+    said = str(failed.value)
+    assert said.startswith(
+        "This job could not start its process. Free some disk space or memory and run it again: "
+    )
+    assert said.endswith("No space left on device")

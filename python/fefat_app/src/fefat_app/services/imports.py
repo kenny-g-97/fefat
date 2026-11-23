@@ -29,7 +29,7 @@ from fefat_app.execution import (
     ExecutionTimedOut,
     keep_running,
 )
-from fefat_app.import_sources import confined_path
+from fefat_app.import_sources import confined_path, kept_path_confined
 from fefat_app.imports import (
     BatchImportAsked,
     BatchRequest,
@@ -121,6 +121,29 @@ class Imports:
             payload = ImportJobPayload(spec=spec, upload_id=_upload_id(asked.source))
         return self.jobs.start(JobKind.IMPORT, payload.model_dump(mode="json"))
 
+    def start_again(self, job: Job) -> Job:
+        """The import of `job`'s inputs queued again (step 5.19), or the same one under way,
+        checked as a new import is: each file an upload still kept or a path still under the
+        import roots, and a whole profile it would keep free of a saved one's name; refused
+        with `NoSuchUploadError`, `PathRefusedError`, or `ProfileRefusedError`."""
+        settings = self.settings
+        payload = ImportJobPayload.model_validate(job.payload)
+        request = payload.spec.request
+        if isinstance(request, FileRequest) and request.keep_profile:
+            self._is_saved(request.profile)
+        for spec, upload_id in payload.files():
+            if upload_id is not None:
+                self.uploads.path_of(upload_id)
+                continue
+            kept_path_confined(
+                spec.request.path,
+                spec.request.kind,
+                settings.import_roots,
+                self.paths,
+                settings.upload_suffixes,
+            )
+        return self.jobs.start_unless_under_way(job.kind, job.payload)
+
     def _round(self, asked: FilesImportAsked) -> ImportJobPayload:
         """A round's payload (D-102): the profile resolved once, the first file's import its
         spec, each other file's path and upload beside it."""
@@ -197,11 +220,15 @@ class Imports:
         given whole that is not saved as it is."""
         if isinstance(choice, NamedProfile):
             return self._named(choice.name), False
+        return choice.profile, not self._is_saved(choice.profile)
+
+    def _is_saved(self, profile: ImportProfile) -> bool:
+        """Whether `profile` is saved as it is; `ProfileRefusedError` for a name it may not
+        keep, such as a saved profile's that holds another."""
         try:
-            saved = profile_is_saved(choice.profile, self.paths.profiles_dir)
+            return profile_is_saved(profile, self.paths.profiles_dir)
         except ValueError as refused:
             raise ProfileRefusedError(str(refused)) from refused
-        return choice.profile, not saved
 
     def _named(self, name: str) -> ImportProfile:
         """The preset named `name`, else the saved profile, the saved profiles read only for a

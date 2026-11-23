@@ -10,6 +10,7 @@ import's (`fefat_app.jobs.imports`)."""
 from collections.abc import Mapping
 from typing import Any
 
+from fefat.market.calendar import counted
 from fefat_app.execution import (
     BacktestSpec,
     ExecutionFailed,
@@ -26,6 +27,11 @@ from fefat_app.ports import Executor
 
 type JobSpec = FeaturePreviewSpec | PythonSnippetSpec | BacktestSpec | ImportSpec
 """The spec of an execution a job runs."""
+NO_RESULT = (
+    "The process running this job ended before it gave a result. Run it again, and if it ends "
+    "the same way, read the log below."
+)
+"""What a job's error says first where its runner ended without a result (step 5.19)."""
 
 
 class ExecutionTimedOutError(Exception):
@@ -60,12 +66,47 @@ def executed(
     """The execution of `spec`, run to its end, its reports given to `report` and `check` asked
     each second without one; `ExecutionTimedOutError` or `ExecutionFailedError` where it did not
     end."""
-    result = executor.run(spec, report, check)
+    try:
+        result = executor.run(spec, report, check)
+    except OSError as refused:
+        raise ExecutionFailedError(_cannot_start(spec, refused)) from refused
     if isinstance(result, ExecutionTimedOut):
-        raise ExecutionTimedOutError(
-            f"Expected the execution to end within {spec.limits.timeout_seconds:g} s, got it "
-            "still running then: it was stopped."
-        )
+        raise ExecutionTimedOutError(_past_its_limit(spec))
     if isinstance(result, ExecutionFailed):
-        raise ExecutionFailedError(result.error)
+        said = f"{NO_RESULT}\n\n{result.error}" if result.gave_no_result else result.error
+        raise ExecutionFailedError(said)
     return result
+
+
+def _cannot_start(spec: JobSpec, reason: OSError) -> str:
+    """What a job's error says where its runner could not start; an import's names its file,
+    since a round goes on with the others."""
+    if isinstance(spec, ImportSpec):
+        return (
+            "This file's import could not start its process. Free some disk space or "
+            f"memory and import it again: {reason}"
+        )
+    return (
+        "This job could not start its process. Free some disk space or memory and run it "
+        f"again: {reason}"
+    )
+
+
+def _past_its_limit(spec: JobSpec) -> str:
+    """What a job's error says where it ran out of time; an import's leaves what to do to
+    `fefat_app.jobs.imports`, since that depends on whether it wrote."""
+    limit = _duration(spec.limits.timeout_seconds)
+    if isinstance(spec, ImportSpec):
+        return f"This file's import ran past its limit of {limit} and was stopped."
+    return (
+        f"This job ran past its limit of {limit} and was stopped. Run again repeats the same "
+        "data, so start a new one on less data."
+    )
+
+
+def _duration(seconds: float) -> str:
+    """`seconds` as a person says it: `6 hours`, `30 minutes`, `2 seconds`."""
+    for size, unit in ((3600, "hour"), (60, "minute")):
+        if seconds >= size and seconds % size == 0:
+            return counted(int(seconds // size), unit)
+    return f"{seconds:g} seconds"

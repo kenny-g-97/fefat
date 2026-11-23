@@ -10,6 +10,9 @@ type Following = {
   readonly url: string
   readonly signal: AbortSignal
   readonly onEvent: (event: StreamedEvent) => void
+  readonly onOpen?: () => void
+  readonly onWaiting?: () => void
+  readonly onRefused?: () => void
   readonly fetchStream?: typeof fetch
 }
 
@@ -27,12 +30,16 @@ const LINE_BREAK = /\r\n|\r|\n/
  * that doubles up to ten seconds, sending the id of the last whole event it handed on as
  * `Last-Event-ID`, so that the server sends the events after it, none twice and none missed. It
  * stops when `signal` aborts, and when the server refuses the stream with a 4xx, such as for a
- * session that ended; a failure of the server, such as a 502 while it restarts, counts as a
- * dropped connection. */
+ * session that ended, which `onRefused` hears; a failure of the server, such as a 502 while it
+ * restarts, counts as a dropped connection. `onOpen` hears each answer that opens the stream, and
+ * `onWaiting` each pause before it connects again. */
 export async function followEventStream({
   url,
   signal,
   onEvent,
+  onOpen,
+  onWaiting,
+  onRefused,
   fetchStream = fetch,
 }: Following): Promise<void> {
   let lastId: string | undefined
@@ -43,9 +50,11 @@ export async function followEventStream({
         lastId === undefined ? {} : { "Last-Event-ID": lastId }
       const response = await fetchStream(url, { signal, headers })
       if (response.status >= 400 && response.status < 500) {
+        onRefused?.()
         return
       }
       if (response.ok && response.body !== null) {
+        onOpen?.()
         for await (const event of eventsOf(response.body)) {
           lastId = event.id === undefined ? lastId : event.id
           pause = FIRST_PAUSE_MS
@@ -57,6 +66,10 @@ export async function followEventStream({
         return
       }
     }
+    if (signal.aborted) {
+      return
+    }
+    onWaiting?.()
     await paused(pause, signal)
     pause = Math.min(pause * 2, LONGEST_PAUSE_MS)
   }

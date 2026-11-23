@@ -593,6 +593,11 @@ class ListedProfile(FrozenModel):
     profile: ImportProfile
 
 
+REPORT_FAILED = "then its quality report failed"
+"""What an import's error says where it wrote its data and only its report failed, which importing
+the file again would not write (step 5.19)."""
+
+
 class NoSuchUploadError(ValueError):
     """An upload's id that no kept upload has."""
 

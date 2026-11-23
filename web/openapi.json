@@ -9457,6 +9457,100 @@
         ]
       }
     },
+    "/v1/jobs/{job_id}/run-again": {
+      "post": {
+        "description": "Run the job `job_id`, which failed, was cancelled, or timed out, again from the inputs it\nholds, a backtest through its run: the job that runs them, the one already queued or running\nwhere there is one. Refused with 404 where no job has the id, and with 409 for a job under\nway or succeeded, or whose inputs no longer run, as a strategy version since removed.",
+        "operationId": "run_job_again_v1_jobs__job_id__run_again_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run Job Again",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
     "/v1/market/bars": {
       "get": {
         "description": "A page of at most 20,000 of the instrument's bars on the trade dates from `from` to `to`,\nas `ff.market.load` gives them, column by column; `next_from` is the instant the next page\nopens at, to send as `from`, none on the last page. Refused with 404 for an instrument that\nnames no root and no contract of one, and with 400, in the SDK's words, for a window it\nrefuses, such as one a provider named does not hold.",
@@ -11787,9 +11881,95 @@
         ]
       }
     },
+    "/v1/streams/jobs": {
+      "get": {
+        "description": "Every job's events after `Last-Event-ID`, or those kept from now on, each saying what its\njob's stream says with its `job_id`, until the session or the token ends.",
+        "operationId": "stream_every_job_v1_streams_jobs_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "last-event-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "itemSchema": {
+                  "properties": {
+                    "data": {
+                      "type": "string"
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "retry": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Stream Every Job",
+        "tags": [
+          "streams"
+        ]
+      }
+    },
     "/v1/streams/{stream_id}": {
       "get": {
-        "description": "The events of the stream `stream_id`, such as `job:<id>`, after the event `Last-Event-ID`\nnames, or from the first, then each new one as it is kept; each event's `id` is what to send\nas `Last-Event-ID` on reconnecting, its `event` its type, and its `data` what it says.",
+        "description": "The events of the stream `stream_id`, such as `job:<id>`, after the event `Last-Event-ID`\nnames, or from the first, then each new one as it is kept, until the session or the token\nends or, for a job, after its last status; each event's `id` is what to send as\n`Last-Event-ID` on reconnecting, its `event` its type, and its `data` what it says.",
         "operationId": "stream_events_v1_streams__stream_id__get",
         "parameters": [
           {
@@ -11844,6 +12024,9 @@
             },
             "description": "Successful Response"
           },
+          "204": {
+            "description": "The job has ended and no event follows `Last-Event-ID`."
+          },
           "401": {
             "content": {
               "application/problem+json": {
@@ -11853,6 +12036,16 @@
               }
             },
             "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
           },
           "422": {
             "content": {

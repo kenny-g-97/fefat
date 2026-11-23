@@ -484,6 +484,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/jobs/{job_id}/run-again": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Job Again
+         * @description Run the job `job_id`, which failed, was cancelled, or timed out, again from the inputs it
+         *     holds, a backtest through its run: the job that runs them, the one already queued or running
+         *     where there is one. Refused with 404 where no job has the id, and with 409 for a job under
+         *     way or succeeded, or whose inputs no longer run, as a strategy version since removed.
+         */
+        post: operations["run_job_again_v1_jobs__job_id__run_again_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/market/bars": {
         parameters: {
             query?: never;
@@ -940,6 +963,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/streams/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Every Job
+         * @description Every job's events after `Last-Event-ID`, or those kept from now on, each saying what its
+         *     job's stream says with its `job_id`, until the session or the token ends.
+         */
+        get: operations["stream_every_job_v1_streams_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/streams/{stream_id}": {
         parameters: {
             query?: never;
@@ -950,8 +994,9 @@ export interface paths {
         /**
          * Stream Events
          * @description The events of the stream `stream_id`, such as `job:<id>`, after the event `Last-Event-ID`
-         *     names, or from the first, then each new one as it is kept; each event's `id` is what to send
-         *     as `Last-Event-ID` on reconnecting, its `event` its type, and its `data` what it says.
+         *     names, or from the first, then each new one as it is kept, until the session or the token
+         *     ends or, for a job, after its last status; each event's `id` is what to send as
+         *     `Last-Event-ID` on reconnecting, its `event` its type, and its `data` what it says.
          */
         get: operations["stream_events_v1_streams__stream_id__get"];
         put?: never;
@@ -5510,6 +5555,73 @@ export interface operations {
             };
         };
     };
+    run_job_again_v1_jobs__job_id__run_again_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     market_bars_v1_market_bars_get: {
         parameters: {
             query: {
@@ -6914,6 +7026,46 @@ export interface operations {
             };
         };
     };
+    stream_every_job_v1_streams_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "last-event-id"?: number | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     stream_events_v1_streams__stream_id__get: {
         parameters: {
             query?: never;
@@ -6936,8 +7088,24 @@ export interface operations {
                     "text/event-stream": unknown;
                 };
             };
+            /** @description The job has ended and no event follows `Last-Event-ID`. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -6,8 +6,11 @@ changes refused to any other worker, and the events read back in order after the
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import Engine
+from sqlalchemy.orm import Session
 
 from fefat_app.database.job_records import JobTables
+from fefat_app.database.models import EventRow
 from fefat_app.job_models import Job, JobKind, JobStatus, job_stream
 from local_server import STARTED_AT
 
@@ -205,6 +208,30 @@ def test_events_come_in_order_after_the_last_one_seen_up_to_a_limit(
     assert after_second == every[2:4]
     assert job_records.events_after(job_stream(job.id), every[-1].id, 100) == ()
     assert len(job_records.events_after(job_stream(other.id), 0, 100)) == 1
+
+
+def test_every_jobs_events_come_in_order_without_another_kind_of_stream(
+    job_records: JobTables, engine: Engine
+) -> None:
+    assert job_records.newest_event_id() == 0
+    first = a_demo(job_records)
+    second = a_demo(job_records)
+    started(job_records, first)
+    with Session(engine) as session, session.begin():
+        session.add(EventRow(stream_id="turn:1", event_type="status", data_json={}))
+    started(job_records, second)
+
+    every = job_records.job_events_after(0, 100)
+    after_first = job_records.job_events_after(every[0].id, 2)
+
+    assert [event.stream_id for event in every] == [
+        job_stream(first.id),
+        job_stream(second.id),
+        job_stream(first.id),
+        job_stream(second.id),
+    ]
+    assert after_first == every[1:3]
+    assert job_records.newest_event_id() == every[-1].id
 
 
 def test_recent_jobs_come_newest_first_and_jobs_by_status_oldest_first(

@@ -32,7 +32,8 @@ const EVERY_STATUS = [
     progress: 10,
     message: "Counted 6 of 60",
     finished_at: ENDED,
-    error: "The worker 4242 stopped answering after 3 attempts.",
+    error:
+      "This job stopped answering after 3 attempts. Run it again, and restart FEAT if it stops the same way.",
   }),
   aJob("cancelling", "running", {
     progress: 20,
@@ -161,69 +162,72 @@ test("a demo job's progress shows live, survives a reload, and stops on Cancel",
   expect(errors).toEqual([])
 })
 
-test("a hidden tab leaves its connections to the shown one", async ({
+test("a hidden tab closes its stream and opens it again once shown", async ({
   loggedIn: page,
 }) => {
-  // The Phase 4 exit's reviews: Chromium keeps six connections to one host for all the tabs
-  // of the browser, so two tabs that followed three jobs each held all six, and every other
-  // request of both waited until a reload; a hidden tab now follows no stream.
-  let streams = 0
-  page.context().on("request", (request: Request) => {
+  // The Phase 4 exit's reviews: Chromium keeps six connections to one host for all the tabs of
+  // the browser, so a hidden tab follows no stream, and one stream per tab leaves the rest free.
+  const opened: Request[] = []
+  const closed: Request[] = []
+  page.on("request", (request) => {
     if (request.url().includes("/v1/streams/")) {
-      streams += 1
+      opened.push(request)
+    }
+  })
+  page.on("requestfailed", (request) => {
+    if (request.url().includes("/v1/streams/")) {
+      closed.push(request)
     }
   })
   await startDemoJobs(page.request, 3)
-  const other = await page.context().newPage()
   await page.goto("/")
-  await other.goto("/")
-  await expect.poll(() => streams).toBeGreaterThanOrEqual(6)
+  await expect.poll(() => opened.length).toBe(1)
 
-  await other.evaluate(() => {
-    Object.defineProperty(document, "visibilityState", { value: "hidden" })
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    })
     document.dispatchEvent(new Event("visibilitychange"))
   })
-  const answered = await page.evaluate(() =>
-    Promise.race([
-      fetch("/v1/version").then((response) => String(response.status)),
-      new Promise<string>((resolve) =>
-        setTimeout(() => resolve("stalled"), 5_000)
-      ),
-    ])
-  )
+  await expect.poll(() => closed.length).toBe(1)
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    })
+    document.dispatchEvent(new Event("visibilitychange"))
+  })
 
-  expect(answered).toBe("200")
-  await other.close()
+  await expect.poll(() => opened.length).toBe(2)
 })
 
-test("the streams of jobs that ended close while every connection is taken", async ({
+test("each tab's one stream closes once no job is active", async ({
   loggedIn: page,
 }) => {
-  // Two shown tabs that follow three jobs each still hold all six connections: a stream closed
-  // only once a new list showed its job ended, and that list waited for a connection, so the
-  // tabs stayed stuck after the jobs had ended; a stream now closes at its job's end.
-  let streams = 0
-  page.context().on("request", (request: Request) => {
+  // Two tabs hold one connection each while jobs run, and none once the last job ended, even
+  // though a list that says so reads after the stream's own last status.
+  const streams = new Set<Request>()
+  const context = page.context()
+  context.on("request", (request: Request) => {
     if (request.url().includes("/v1/streams/")) {
-      streams += 1
+      streams.add(request)
     }
   })
+  context.on("requestfinished", (request: Request) => streams.delete(request))
+  context.on("requestfailed", (request: Request) => streams.delete(request))
   await startDemoJobs(page.request, 3)
-  const other = await page.context().newPage()
+  const other = await context.newPage()
   await page.goto("/")
   await other.goto("/")
-  await expect.poll(() => streams).toBeGreaterThanOrEqual(6)
+  await expect.poll(() => streams.size).toBe(2)
 
   await cancelActiveJobs(page.request)
-  const answered = await page.evaluate(() =>
-    Promise.race([
-      fetch("/v1/version").then((response) => String(response.status)),
-      new Promise<string>((resolve) =>
-        setTimeout(() => resolve("stalled"), 10_000)
-      ),
-    ])
-  )
 
+  await expect.poll(() => streams.size, { timeout: 15_000 }).toBe(0)
+  const answered = await page.evaluate(() =>
+    fetch("/v1/version").then((response) => String(response.status))
+  )
   expect(answered).toBe("200")
   await other.close()
 })

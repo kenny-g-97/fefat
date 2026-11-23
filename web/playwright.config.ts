@@ -48,7 +48,7 @@ export default defineConfig({
     },
     {
       name: "dev-proxy",
-      testMatch: ["login.spec.ts", "jobs.spec.ts"],
+      testMatch: ["login.spec.ts", "jobs.spec.ts", "jobs-feedback.spec.ts"],
       use: { ...desktop, baseURL: `http://localhost:${DEV_SERVER_PORT}` },
     },
     {

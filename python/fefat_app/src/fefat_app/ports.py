@@ -281,6 +281,15 @@ class JobRecords(Protocol):
         order they were kept."""
         ...
 
+    def job_events_after(self, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
+        """At most `limit` events of every job's stream after the event `after_id`, in the order
+        they were kept (step 5.19)."""
+        ...
+
+    def newest_event_id(self) -> int:
+        """The id of the newest event of any stream, 0 where none is kept (step 5.19)."""
+        ...
+
 
 class Dispatcher(Protocol):
     """Where the queued jobs run (`01-architecture.md` section 10): the local process pool, or

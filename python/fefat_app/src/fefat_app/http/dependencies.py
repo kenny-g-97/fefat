@@ -6,6 +6,7 @@ other site's page can read or send. The three are declared through `fastapi.secu
 the docs' Authorize dialog offers them."""
 
 import secrets
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
@@ -90,6 +91,22 @@ def the_session(identity: IdentityDependency) -> SessionIdentity:
             "managed from the app's settings page.",
         )
     return identity
+
+
+def the_login_check(
+    container: ContainerDependency,
+    bearer: Annotated[HTTPAuthorizationCredentials | None, Depends(api_token)],
+    cookie: Annotated[str | None, Depends(session_cookie)],
+) -> Callable[[], bool]:
+    """Whether the token or the session the request came with still holds, for a response that
+    outlives the request's own check, such as an event stream (step 5.19)."""
+    if bearer is not None:
+        token = bearer.credentials
+        return lambda: container.api_tokens.identity_of_token(token) is not None
+    return lambda: cookie is not None and container.logins.identity_of_session(cookie) is not None
+
+
+LoginCheckDependency = Annotated[Callable[[], bool], Depends(the_login_check)]
 
 
 def _identity_of_token(container: Container, token: str) -> ApiTokenIdentity:

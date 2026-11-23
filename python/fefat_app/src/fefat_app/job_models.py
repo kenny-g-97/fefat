@@ -60,9 +60,20 @@ class JobEventType(StrEnum):
     STATUS = "status"
 
 
+JOB_STREAM_PREFIX = "job:"
+"""What the id of every job's stream starts with."""
+
+
 def job_stream(job_id: str) -> str:
     """The stream of the job `job_id`'s events (`01-architecture.md` section 6)."""
-    return f"job:{job_id}"
+    return f"{JOB_STREAM_PREFIX}{job_id}"
+
+
+def job_of_stream(stream_id: str) -> str | None:
+    """The id of the job whose stream is `stream_id`, None for a stream that is no job's."""
+    if not stream_id.startswith(JOB_STREAM_PREFIX):
+        return None
+    return stream_id.removeprefix(JOB_STREAM_PREFIX)
 
 
 class Job(BaseModel):

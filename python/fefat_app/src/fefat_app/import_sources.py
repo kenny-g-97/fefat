@@ -31,8 +31,28 @@ def confined_path(
     written = Path(text)
     if not _written_under_a_root(written, roots):
         raise _refused(text, roots, suffixes)
+    return _resolved_and_readable(written, text, kind, roots, paths, suffixes)
+
+
+def kept_path_confined(
+    path: Path, kind: ReadKind, roots: Sequence[Path], paths: FefatPaths, suffixes: Sequence[str]
+) -> Path:
+    """`path`, which `confined_path` resolved for an earlier import, checked against the roots
+    as they are now, as Run again does (step 5.19): resolved alone, since a root that is a link
+    no longer shows in it as written; `PathRefusedError` otherwise."""
+    return _resolved_and_readable(path, str(path), kind, roots, paths, suffixes)
+
+
+def _resolved_and_readable(
+    path: Path,
+    text: str,
+    kind: ReadKind,
+    roots: Sequence[Path],
+    paths: FefatPaths,
+    suffixes: Sequence[str],
+) -> Path:
     try:
-        resolved = written.resolve(strict=True)
+        resolved = path.resolve(strict=True)
     except (OSError, RuntimeError) as missing:
         raise _refused(text, roots, suffixes) from missing
     if not _readable(resolved, kind, roots, paths, suffixes):

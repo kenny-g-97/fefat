@@ -165,7 +165,8 @@ class LocalDispatcher:
         if job.attempt < job.max_attempts:
             return self.records.requeue(job.id, worker_pid)
         reason = (
-            f"The worker {worker_pid} stopped answering after {counted(job.attempt, 'attempt')}."
+            f"This job stopped answering after {counted(job.attempt, 'attempt')}. Run it again, "
+            "and restart FEAT if it stops the same way."
         )
         return self.records.finish(job.id, worker_pid, JobStatus.FAILED, now, error=reason)
 

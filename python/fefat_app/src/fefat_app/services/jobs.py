@@ -67,6 +67,25 @@ class Jobs:
             self.dispatcher.submit(job.id)
         return job
 
+    def start_unless_under_way(self, kind: JobKind, payload: Mapping[str, Any]) -> Job:
+        """The job of `kind` with `payload` queued or running and not asked to stop, or else a
+        new one (`start_unless_covered`)."""
+        return self.start_unless_covered(kind, payload, lambda job: job.payload == payload)
+
+    def start_unless_covered(
+        self, kind: JobKind, payload: Mapping[str, Any], covers: Callable[[Job], bool]
+    ) -> Job:
+        """The job of `kind` queued or running and not asked to stop that `covers` says does
+        this work, or else a new one with `payload`, decided under the lock that starts jobs, so
+        that two requests at once queue one job."""
+        with self.starting:
+            for job in self.active(kind):
+                if job.cancel_requested_at is None and covers(job):
+                    return job
+            started = self.records.add(kind, payload, MAX_ATTEMPTS, self.clock())
+            self.dispatcher.submit(started.id)
+        return started
+
     def submit(self, job_id: str) -> None:
         """Give the dispatcher the queued job `job_id`, which another area's records queued, as
         the runs' records queue a run's job with its row (step 5.3), once no delete holds the
@@ -101,6 +120,13 @@ class Jobs:
     def active(self, kind: JobKind) -> tuple[Job, ...]:
         """The jobs of `kind` that are queued, then those that run, each oldest first."""
         return tuple(job for job in self.under_way() if job.kind == kind)
+
+    def under_way_with(self, kind: JobKind, payload: Mapping[str, Any]) -> Job | None:
+        """The job of `kind` with `payload` queued or running and not asked to stop, if any."""
+        for job in self.active(kind):
+            if job.payload == payload and job.cancel_requested_at is None:
+                return job
+        return None
 
     def recent(self) -> tuple[Job, ...]:
         """The newest jobs, newest first, then the running jobs older than them, which a queue
@@ -145,3 +171,17 @@ class Jobs:
     def events_after(self, stream_id: str, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
         """At most `limit` events of the stream `stream_id` after the event `after_id`."""
         return self.records.events_after(stream_id, after_id, limit)
+
+    def job_events_after(self, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
+        """At most `limit` events of every job's stream after the event `after_id`."""
+        return self.records.job_events_after(after_id, limit)
+
+    def newest_event_id(self) -> int:
+        """The id of the newest event kept, where a stream opened anew starts."""
+        return self.records.newest_event_id()
+
+    def has_ended(self, job_id: str) -> bool:
+        """Whether the job `job_id` reached one of its ends; `NoSuchJobError` where there is
+        none. Its last status event is kept in the same write, so that a read of the events
+        made after this says true holds that event."""
+        return self.by_id(job_id).status not in ACTIVE

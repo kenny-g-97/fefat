@@ -271,10 +271,11 @@ class MarketCatalog:
             reported_products(self.store, root)
         except NothingToReportError as refused:
             raise NothingToSyncError(str(refused)) from refused
-        for job in self.jobs.active(JobKind.CATALOG_SYNC):
-            if job.cancel_requested_at is None and job.payload["root"] in (None, root):
-                return job
-        return self.jobs.start(JobKind.CATALOG_SYNC, {"root": root})
+        return self.jobs.start_unless_covered(
+            JobKind.CATALOG_SYNC,
+            {"root": root},
+            lambda job: job.payload["root"] in (None, root),
+        )
 
 
 def dataset_id(provider: str, schema: str, root: str) -> str:

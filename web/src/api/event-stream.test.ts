@@ -188,4 +188,48 @@ describe("followEventStream", () => {
 
     expect(server.headers).toHaveLength(1)
   })
+
+  it("says when it opens and when it waits to connect again", async () => {
+    // Step 5.19: a row reads Reconnecting between the two, and the list is read at each open.
+    const server = serverOf([
+      streamOf([progress(1)], "drops"),
+      streamOf([progress(2)], "closes"),
+    ])
+    const stopped = new AbortController()
+    const said: string[] = []
+
+    await followEventStream({
+      url: STREAM,
+      signal: stopped.signal,
+      fetchStream: server.fetchStream,
+      onOpen: () => said.push("open"),
+      onWaiting: () => said.push("waiting"),
+      onEvent: (event) => {
+        said.push(`event ${event.id}`)
+        if (event.id === "2") {
+          stopped.abort()
+        }
+      },
+    })
+
+    expect(said).toEqual(["open", "event 1", "waiting", "open", "event 2"])
+  })
+
+  it("says when the server refuses the stream, and does not wait", async () => {
+    // A session that ended must not leave its rows reading Reconnecting for ever.
+    const server = serverOf([new Response(null, { status: 401 })])
+    const said: string[] = []
+
+    await followEventStream({
+      url: STREAM,
+      signal: new AbortController().signal,
+      fetchStream: server.fetchStream,
+      onOpen: () => said.push("open"),
+      onWaiting: () => said.push("waiting"),
+      onRefused: () => said.push("refused"),
+      onEvent: () => undefined,
+    })
+
+    expect(said).toEqual(["refused"])
+  })
 })

@@ -120,6 +120,20 @@ class Runs:
             self.jobs.submit(submitted.queued_job_id)
         return submitted.run
 
+    def submit_again(self, requested: RequestedRun) -> IndexedRun:
+        """The run `requested`, as its job's payload holds it, asked for again as `submit` asks
+        (step 5.19); `NoSuchStrategyError` where the library no longer holds that version as it
+        ran."""
+        return self.submit(
+            RunAsked(
+                strategy_version_id=self._version_as_it_ran(requested).id,
+                parameters=dict(requested.parameters),
+                start=requested.start,
+                end=requested.end,
+                settings=requested.settings,
+            )
+        )
+
     def stressed(self, asked: RunAsked) -> StressedRuns:
         """The run `asked` names, then the same at one and at two more ticks of slippage on
         market and stop orders, each a run of its own (D-29), each answered as `submit` answers;
@@ -196,6 +210,17 @@ class Runs:
                     return strategy, version
         raise NoSuchStrategyError(
             f"Expected the id of a saved strategy version, got {version_id!r}, which names none."
+        )
+
+    def _version_as_it_ran(self, requested: RequestedRun) -> IndexedStrategyVersion:
+        ran = (requested.strategy, requested.version, requested.hash)
+        for strategy in self.index.strategies():
+            for version in strategy.versions:
+                if (strategy.name, version.version, version.hash) == ran:
+                    return version
+        raise NoSuchStrategyError(
+            f"Version {requested.version} of the strategy {requested.strategy} is no longer held "
+            "as it ran: its file was removed or changed. Run the strategy from its page."
         )
 
 
