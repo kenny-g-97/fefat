@@ -20,11 +20,9 @@ from sqlalchemy import ColumnElement, Engine, Row, Select, and_, func, or_, sele
 from sqlalchemy.orm import Session, undefer
 
 from fefat.backtest import Run
-from fefat.backtest.metrics import Metrics
 from fefat.backtest.run_config import AppliedRunConfig
 from fefat.backtest.saved_runs import saved_run
 from fefat.config import FefatPaths
-from fefat.market.fidelity import FidelityEra
 from fefat.strategy import StrategyPin
 from fefat_app.database.job_records import queued_job
 from fefat_app.database.models import JobRow, RunRow, StrategyRow, StrategyVersionRow
@@ -39,7 +37,6 @@ from fefat_app.runs import (
     RunPage,
     RunStrategy,
     SavedRun,
-    SavedRunWithMetrics,
     Submitted,
     SubmittedRun,
 )
@@ -111,7 +108,7 @@ class RunTables:
             session.flush()
             return _saved_row(session, taker)
 
-    def by_id(self, run: str) -> SubmittedRun | SavedRunWithMetrics | None:
+    def by_id(self, run: str) -> SubmittedRun | SavedRun | None:
         named = RunRow.run_key == run if _RUN_KEY.fullmatch(run) else RunRow.id == run
         with Session(reading(self.engine)) as session:
             row = session.scalars(
@@ -121,14 +118,7 @@ class RunTables:
                 return None
             if row.run_key is None:
                 return _submitted_row(session, row)
-            saved = _saved_row(session, row)
-            eras = () if row.fidelity_eras_json is None else row.fidelity_eras_json
-            return SavedRunWithMetrics(
-                **dict(saved),
-                metrics=Metrics.model_validate(row.metrics_json),
-                fidelity_eras=tuple(FidelityEra.model_validate(era) for era in eras),
-                warnings=() if row.warnings_json is None else tuple(row.warnings_json),
-            )
+            return _saved_row(session, row)
 
     def page(
         self,

@@ -85,7 +85,7 @@ def test_a_run_asked_for_twice_is_one_run_whose_stages_reach_its_stream(
     jobs = [job for job in client.get("/v1/jobs").json() if job["kind"] == "backtest"]
     assert [job["id"] for job in jobs] == [run["job_id"]]
     assert (run["status"], run["settings"]["provider"]) == ("succeeded", "synthetic")
-    assert run["metrics"]["trades"]["trades"] > 0
+    assert run["key_metrics"]["trades"] > 0
     folder = resolve_paths(os.environ).runs_dir / run["run_key"]
     assert sorted(path.name for path in folder.iterdir()) == ARTIFACTS
     # Done means 3: the stages of the run, in order, between its job's start and its end.

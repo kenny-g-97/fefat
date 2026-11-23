@@ -31,7 +31,6 @@ from fefat_app.runs import (
     IndexedRun,
     RunCursorError,
     SavedRun,
-    SavedRunWithMetrics,
     SubmittedRun,
 )
 from local_server import STARTED_AT, logged_in
@@ -211,9 +210,9 @@ def test_a_run_is_read_by_its_id_or_its_key(records: RunTables) -> None:
 
     by_id, by_key = records.by_id(saved.id), records.by_id(run.hash)
 
-    assert isinstance(by_id, SavedRunWithMetrics)
+    assert isinstance(by_id, SavedRun)
     assert by_id == by_key
-    assert by_id.metrics == run.metrics
+    assert by_id.key_metrics.pnl == run.metrics.pnl
     assert records.by_id(KEY_OF_NO_RUN) is None
 
 
@@ -486,6 +485,6 @@ def test_the_document_tells_a_runs_states_apart_by_state() -> None:
 
     assert schema["discriminator"]["propertyName"] == "state"
     assert sorted(each["$ref"].rsplit("/", 1)[1] for each in schema["oneOf"]) == [
-        "SavedRunWithMetrics",
+        "SavedRun",
         "SubmittedRun",
     ]

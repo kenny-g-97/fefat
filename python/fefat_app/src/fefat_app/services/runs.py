@@ -8,14 +8,18 @@ the executor (`fefat_app.services.code_runs`), which builds the strategy from th
 there, never in the server; the run's row and its queued job are made in one transaction by the
 runs' records, which the dispatcher then runs."""
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date
 
 from pydantic import JsonValue
 
-from fefat.backtest import RunConfig
+from fefat.backtest import Run, RunConfig, TradeDistributions, equity_curve, trade_distributions
 from fefat.backtest.estimates import estimated, held_instruments
+from fefat.backtest.saved_runs import saved_run
 from fefat.config import FefatPaths
+from fefat.market.engine_units import money_in_units
 from fefat.market.schema import Timeframe
 from fefat.reference.settings import SlippageTicks
 from fefat_app.execution import BacktestSpec
@@ -26,16 +30,18 @@ from fefat_app.library import (
 )
 from fefat_app.ports import Clock, Executor, LibraryIndex, RunRecords
 from fefat_app.runs import (
+    EquityCurve,
     EstimateRefusedError,
     IndexedRun,
     NewRun,
     NoDataToEstimate,
     NoSuchRunError,
     RequestedRun,
+    ResultsRefusedError,
     RunEstimate,
     RunEstimated,
     RunPage,
-    RunWithMetrics,
+    RunStatistics,
     SavedRunFound,
     StressedRuns,
     SubmittedRun,
@@ -46,6 +52,7 @@ from fefat_app.services.strategies import NoSuchStrategyError, read_as_indexed
 
 RUNS_PER_PAGE = 50
 """How many runs a page of the list holds unless it asks for fewer."""
+_NANOSECONDS_A_SECOND = 1_000_000_000
 
 
 @dataclass(frozen=True)
@@ -162,21 +169,68 @@ class Runs:
             limit=asked.limit,
         )
 
-    def by_id(self, run: str) -> RunWithMetrics:
-        """The run of the id or the run key `run` with its metrics once saved;
-        `NoSuchRunError` where there is none."""
+    def by_id(self, run: str) -> IndexedRun:
+        """The run of the id or the run key `run`; `NoSuchRunError` where there is none."""
         found = self.records.by_id(run)
         if found is None:
             raise NoSuchRunError(run)
         return found
 
-    def cancel(self, run: str) -> RunWithMetrics:
+    def cancel(self, run: str) -> IndexedRun:
         """Cancel the job of the run `run`, at once while queued, asked while it runs
         (`Jobs.cancel`); a saved run, or one whose job has ended, is given as it is."""
         found = self.by_id(run)
         if isinstance(found, SubmittedRun):
             self.jobs.cancel(found.job_id)
         return self.by_id(run)
+
+    def statistics(self, run: str) -> RunStatistics:
+        """What the record of the saved run `run` says of how it went (step 5.7), refused as
+        `_opened` refuses."""
+        opened = self._opened(run)
+        record = opened.record
+        return RunStatistics(
+            currency=record.instrument.currency,
+            capital=record.config.capital,
+            pnl_share=opened.pnl_share,
+            metrics=record.metrics,
+            fidelity_eras=record.fidelity_eras,
+            warnings=record.warnings,
+        )
+
+    def equity_curve(self, run: str, max_points: int) -> EquityCurve:
+        """The account of the saved run `run` in at most `max_points` points that keep its
+        maximum drawdown (`ff.backtest.equity_curve`), refused as `_opened` refuses."""
+        opened = self._opened(run)
+        with _results_read(opened.hash):
+            curve = equity_curve(opened, max_points)
+        return EquityCurve(
+            capital=float(opened.config.capital),
+            time=tuple((curve.get_column("ts") // _NANOSECONDS_A_SECOND).to_list()),
+            equity=money_in_units(curve.get_column("equity")),
+            drawdown=money_in_units(curve.get_column("drawdown")),
+        )
+
+    def distributions(self, run: str) -> TradeDistributions:
+        """The trades of the saved run `run` as histograms (`ff.backtest.trade_distributions`),
+        refused as `_opened` refuses."""
+        opened = self._opened(run)
+        with _results_read(opened.hash):
+            trades = opened.trades
+        return trade_distributions(trades)
+
+    def _opened(self, run: str) -> Run:
+        """The folder of the saved run `run`: `NoSuchRunError` where no run has that id or key,
+        and `ResultsRefusedError` for a run not saved yet, a folder that is gone, and a folder
+        this engine does not read."""
+        found = self.by_id(run)
+        if isinstance(found, SubmittedRun):
+            raise ResultsRefusedError(
+                f"Expected a saved run, got run {found.id}, whose backtest job is {found.status}: "
+                "its results come once it is saved."
+            )
+        with _results_read(found.run_key):
+            return saved_run(self.paths.runs_dir, found.run_key)
 
     def estimate(
         self, version_id: str, start: date | None, end: date | None, settings: RunConfig
@@ -222,6 +276,21 @@ class Runs:
             f"Version {requested.version} of the strategy {requested.strategy} is no longer held "
             "as it ran: its file was removed or changed. Run the strategy from its page."
         )
+
+
+@contextmanager
+def _results_read(run_key: str) -> Generator[None]:
+    """What reading the saved run `run_key`'s files refuses, as `ResultsRefusedError`: a file
+    that is gone, or the SDK's words for a folder this engine does not read."""
+    try:
+        yield
+    except FileNotFoundError as gone:
+        raise ResultsRefusedError(
+            f"The folder of run {run_key[:12]} is gone from FEAT's workspace, or part of it is, "
+            "so its results cannot be read. Run the backtest again."
+        ) from gone
+    except ValueError as unreadable:
+        raise ResultsRefusedError(str(unreadable)) from unreadable
 
 
 def _at_slippage(asked: RunAsked, ticks: SlippageTicks) -> RunAsked:

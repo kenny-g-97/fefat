@@ -24,7 +24,7 @@ from fefat_app.runs import (
     NewRun,
     RunOrigin,
     RunState,
-    SavedRunWithMetrics,
+    SavedRun,
 )
 from local_server import STARTED_AT
 
@@ -144,10 +144,12 @@ def test_a_saved_run_takes_its_key_and_the_columns_of_its_record(
     assert (saved.start, saved.end) == (run.record.window.start, run.record.window.end)
     assert saved.settings == run.config
     assert saved.parameters == {"lookback": 12, "stop_atr": 1.5}
-    assert isinstance(read, SavedRunWithMetrics)
-    assert read.metrics == run.metrics
-    assert read.fidelity_eras == run.record.fidelity_eras
-    assert read.warnings == run.record.warnings
+    assert isinstance(read, SavedRun)
+    assert read == saved
+    assert (read.key_metrics.pnl, read.key_metrics.trades) == (
+        run.metrics.pnl,
+        run.metrics.trades.trades,
+    )
     assert records.saved(run.hash) == saved
 
 

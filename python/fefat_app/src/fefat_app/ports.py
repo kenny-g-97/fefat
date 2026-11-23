@@ -36,7 +36,6 @@ from fefat_app.runs import (
     NewRun,
     RunPage,
     SavedRun,
-    SavedRunWithMetrics,
     Submitted,
     SubmittedRun,
 )
@@ -377,8 +376,8 @@ class RunRecords(Protocol):
         and the record's columns; else a new row from the record."""
         ...
 
-    def by_id(self, run: str) -> SubmittedRun | SavedRunWithMetrics | None:
-        """The run of the id or the run key `run`, with its metrics once saved, or None."""
+    def by_id(self, run: str) -> SubmittedRun | SavedRun | None:
+        """The run of the id or the run key `run`, or None."""
         ...
 
     def page(
