@@ -120,8 +120,11 @@ async def _followed(
     has_ended: Callable[[], bool],
     said: Callable[[StreamEvent], Mapping[str, Any]],
 ) -> AsyncIterator[ServerSentEvent]:
-    """The events `read_after` gives after `start`, read while the login holds, until a read made
-    after `has_ended` said true has sent all there was: an end's status event is kept with it."""
+    """A comment at once, since a proxy such as the dev server's holds the headers until the first
+    bytes and the web app reads the list when they arrive; then the events `read_after` gives
+    after `start`, read while the login holds, until a read made after `has_ended` said true has
+    sent all there was: an end's status event is kept with it."""
+    yield ServerSentEvent(comment="open")
     after = start
     while await run_in_threadpool(still_logged_in):
         ended = await run_in_threadpool(has_ended)

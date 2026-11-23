@@ -1,7 +1,7 @@
 import type { Dispatch } from "react"
 import { Button } from "@/ui/button"
 import { Decision, Options } from "./Decision"
-import { firstClick } from "./first-click"
+import { firstClick } from "@/ui/first-click"
 import { useFocusAfterPress } from "./focus-after-press"
 import {
   decisionWords,

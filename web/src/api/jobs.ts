@@ -1,5 +1,5 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
-import { useEffect, useRef, useSyncExternalStore } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { z } from "zod"
 import { api, queryClient } from "./client"
 import { followEventStream, type StreamedEvent } from "./event-stream"
@@ -13,10 +13,9 @@ export type Job = components["schemas"]["Job"]
 /** How long the settings page's demo job counts, as the builder's check asks. */
 const DEMO_SECONDS = 60
 
-/** How many jobs' streams the shown tab follows at once: Chromium keeps six connections to one
- * host over HTTP/1.1 for all the tabs of the browser, so four leave two for the app's own
- * requests, and a hidden tab follows none (`useLiveJobs`). */
-const STREAMS_AT_MOST = 4
+/** The stream of every job's events, one per shown tab (`useLiveJobs`): Chromium keeps six
+ * connections to one host over HTTP/1.1 for all the tabs of the browser. */
+const JOBS_STREAM = "/v1/streams/jobs"
 
 /** What the jobs drawer and the home page call each kind of job. */
 export const KIND_LABELS: Readonly<Record<Job["kind"], string>> = {
@@ -48,10 +47,11 @@ export const STATUS_LABELS: Readonly<Record<Job["status"], string>> = {
 }
 
 /** A progress event's data, which the OpenAPI document does not type. */
-const progressReport = z.object({ percent: z.number(), message: z.string() })
-
-/** A status event's data, which the OpenAPI document does not type either. */
-const statusChange = z.object({ status: z.string() })
+const progressReport = z.object({
+  job_id: z.string(),
+  percent: z.number(),
+  message: z.string(),
+})
 
 /** The statuses of a job that has not ended. */
 const ACTIVE_STATUSES: ReadonlySet<string> = new Set(["queued", "running"])
@@ -75,13 +75,14 @@ export function isCancelling(job: Job): boolean {
   return job.status === "running" && job.cancel_requested_at !== null
 }
 
-/** The ids of the jobs whose streams the shell follows: the running ones first, then the
- * queued, four at most; the others' figures come with the list, which each status event of a
- * followed job asks for again, so that a queued job is followed once it runs. */
-export function followedJobIds(jobs: readonly Job[]): readonly string[] {
-  const running = jobs.filter((job) => job.status === "running")
-  const queued = jobs.filter((job) => job.status === "queued")
-  return [...running, ...queued].slice(0, STREAMS_AT_MOST).map((job) => job.id)
+/** Whether `job` ended without doing its work: a cancelled one was stopped on purpose. */
+export function hasFailed(job: Readonly<Pick<Job, "status">>): boolean {
+  return job.status === "failed" || job.status === "timed_out"
+}
+
+/** Whether Run again applies to `job`: it ended and did not succeed. */
+export function runsAgain(job: Readonly<Pick<Job, "status">>): boolean {
+  return !isActive(job) && job.status !== "succeeded"
 }
 
 /** Start a demo job that counts for a minute. */
@@ -115,71 +116,69 @@ export function useJobCancellation() {
   })
 }
 
-/** The jobs, with the progress of the queued and running jobs followed through their streams
- * (`followedJobIds`): a progress event moves a bar, and a status event asks for the list again.
- * The shell's top bar calls it once; the drawer and the home page read the same cache. A stream
- * is open only while its job is active and the tab is shown, and every stream closes when the
- * shell does, as on logging out. */
-export function useLiveJobs() {
+/** Run an ended job again from the inputs its row holds, a backtest through its run; its answer
+ * is the job that runs them, the one already under way where there is one. */
+export function useJobRunAgain() {
+  return useMutation({
+    mutationFn: async (jobId: string) =>
+      answer(
+        await api.POST("/v1/jobs/{job_id}/run-again", {
+          params: { path: { job_id: jobId } },
+        })
+      ),
+    onSuccess: readTheJobsAgain,
+  })
+}
+
+/** The jobs, with their progress followed through one stream of every job's events, open while
+ * this tab is shown and a job is queued or running: a progress event moves a bar, and a status
+ * event asks for the list again, as does each opening of the stream, whose start the server fixes
+ * first, so that what the list holds and what the stream sends leave nothing out. `reconnecting`
+ * says that the stream waits to connect again. `onLoginEnded` hears a stream the server refused,
+ * as once the session ended. The list is also asked again when the window gets the focus, for a
+ * job a notebook or another tab started. The shell's top bar calls it once; the drawer and the
+ * home page read the same cache. */
+export function useLiveJobs(onLoginEnded: () => void) {
   const jobs = useQuery(jobsQuery)
   const shown = useSyncExternalStore(onVisibilityChange, isShown)
-  const followed = useRef(new Map<string, AbortController>())
-  const followedIds =
-    !shown || jobs.data === undefined ? "" : followedJobIds(jobs.data).join(" ")
+  const [reconnecting, setReconnecting] = useState(false)
+  const follows = shown && jobs.data !== undefined && jobs.data.some(isActive)
 
   useEffect(() => {
-    const active = new Set(followedIds === "" ? [] : followedIds.split(" "))
-    const streams = followed.current
-    for (const [jobId, stop] of streams) {
-      if (!active.has(jobId)) {
-        stop.abort()
-        streams.delete(jobId)
-      }
+    if (!follows) {
+      return
     }
-    for (const jobId of active) {
-      if (!streams.has(jobId)) {
-        streams.set(jobId, followedJob(jobId))
-      }
-    }
-  }, [followedIds])
-
-  useEffect(() => {
-    const streams = followed.current
+    const stop = new AbortController()
+    void followEventStream({
+      url: JOBS_STREAM,
+      signal: stop.signal,
+      onEvent: applyJobEvent,
+      onOpen: () => {
+        setReconnecting(false)
+        readTheJobsAgain()
+      },
+      onWaiting: () => setReconnecting(true),
+      onRefused: () => {
+        setReconnecting(false)
+        onLoginEnded()
+      },
+    })
     return () => {
-      for (const stop of streams.values()) {
-        stop.abort()
-      }
-      streams.clear()
+      stop.abort()
+      setReconnecting(false)
     }
+  }, [follows, onLoginEnded])
+
+  useEffect(() => {
+    window.addEventListener("focus", readTheJobsAgain)
+    return () => window.removeEventListener("focus", readTheJobsAgain)
   }, [])
 
-  return jobs
+  return { jobs, reconnecting }
 }
 
-/** Follow the stream of the job `jobId` until its job ends, even while the list that would
- * say so waits for a connection. */
-function followedJob(jobId: string): AbortController {
-  const stop = new AbortController()
-  void followEventStream({
-    url: `/v1/streams/job:${jobId}`,
-    signal: stop.signal,
-    onEvent: (event) => {
-      applyJobEvent(jobId, event)
-      if (endsTheJob(event)) {
-        stop.abort()
-      }
-    },
-  })
-  return stop
-}
-
-/** Whether `event` is a change of status to one of a job's ends. */
-function endsTheJob(event: StreamedEvent): boolean {
-  if (event.event !== "status") {
-    return false
-  }
-  const change = statusChange.safeParse(parsedJson(event.data))
-  return change.success && !ACTIVE_STATUSES.has(change.data.status)
+function readTheJobsAgain(): void {
+  void queryClient.invalidateQueries({ queryKey: jobsQuery.queryKey })
 }
 
 function onVisibilityChange(changed: () => void): () => void {
@@ -191,11 +190,13 @@ function isShown(): boolean {
   return document.visibilityState === "visible"
 }
 
-/** A job's event in the cache: a report moves its progress, never backwards, since a stream
- * opened anew sends its job's events from the first; a change of status asks for the list. */
-export function applyJobEvent(jobId: string, event: StreamedEvent): void {
+/** A job's event in the cache: a report moves the progress of the job it names, never backwards,
+ * and a read of the list under way when it lands is followed by one more, since it may have left
+ * the server before the report and would put the bar back; a change of status asks for the
+ * list. */
+export function applyJobEvent(event: StreamedEvent): void {
   if (event.event === "status") {
-    void queryClient.invalidateQueries({ queryKey: jobsQuery.queryKey })
+    readTheJobsAgain()
     return
   }
   if (event.event !== "progress") {
@@ -204,23 +205,42 @@ export function applyJobEvent(jobId: string, event: StreamedEvent): void {
   const report = progressReport.safeParse(parsedJson(event.data))
   if (!report.success) {
     console.error(
-      `Expected a progress report of the job ${jobId} with a percent and a message, got ${event.data}.`
+      `Expected a progress report with its job, a percent, and a message, got ${event.data}.`
     )
     return
   }
+  const { job_id: jobId, percent, message } = report.data
   queryClient.setQueryData(jobsQuery.queryKey, (jobs) =>
     jobs === undefined
       ? jobs
       : jobs.map((job) =>
-          job.id === jobId && report.data.percent >= job.progress
-            ? {
-                ...job,
-                progress: report.data.percent,
-                message: report.data.message,
-              }
+          job.id === jobId && percent >= job.progress
+            ? { ...job, progress: percent, message }
             : job
         )
   )
+  if (queryClient.isFetching({ queryKey: jobsQuery.queryKey }) > 0) {
+    readOnceTheReadEnds()
+  }
+}
+
+/** Whether a read of the list is already due once the one under way ends. */
+let readIsDue = false
+
+/** One more read of the list once the one under way ends, whatever it answers; never a cancel of
+ * it, since reports that keep landing would then stop every read from finishing. */
+function readOnceTheReadEnds(): void {
+  if (readIsDue) {
+    return
+  }
+  readIsDue = true
+  void queryClient
+    .fetchQuery(jobsQuery)
+    .catch(() => undefined)
+    .finally(() => {
+      readIsDue = false
+      readTheJobsAgain()
+    })
 }
 
 function parsedJson(text: string): unknown {
@@ -229,4 +249,64 @@ function parsedJson(text: string): unknown {
   } catch {
     return undefined
   }
+}
+
+/** The jobs among `jobs` that have ended and whose ids `earlier`, the ended jobs of the read
+ * before, does not hold. */
+export function endedSince(
+  earlier: ReadonlySet<string>,
+  jobs: readonly Job[]
+): readonly Job[] {
+  return jobs.filter((job) => !isActive(job) && !earlier.has(job.id))
+}
+
+/** A job's end in words, as `Backtest failed`. */
+export function endWords(job: Job): string {
+  return `${KIND_LABELS[job.kind]} ${STATUS_LABELS[job.status].toLowerCase()}`
+}
+
+/** What the jobs button says of the failures not yet seen: the one, or how many. */
+export function failureWords(failures: readonly Job[]): string {
+  const [first] = failures
+  return failures.length === 1
+    ? endWords(first)
+    : `${failures.length} jobs failed`
+}
+
+/** What this tab has seen end, by comparing each read of the list with the one before, the first
+ * read saying nothing: `said`, the latest ends in words for a polite live region, and `failures`,
+ * those that failed or timed out while the drawer was closed, which `clearFailures` forgets. They
+ * live in the open tab alone. */
+export function useJobEnds(
+  jobs: readonly Job[] | undefined,
+  drawerOpen: boolean
+) {
+  const known = useRef<ReadonlySet<string> | null>(null)
+  const [failures, setFailures] = useState<readonly Job[]>([])
+  const [said, setSaid] = useState("")
+
+  useEffect(() => {
+    if (jobs === undefined) {
+      return
+    }
+    const earlier = known.current
+    known.current = new Set(
+      jobs.filter((job) => !isActive(job)).map((job) => job.id)
+    )
+    if (earlier === null) {
+      return
+    }
+    const ended = endedSince(earlier, jobs)
+    if (ended.length === 0) {
+      return
+    }
+    const words = ended.map(endWords).join(". ")
+    // A live region reads a change alone, so the same words again differ by a space.
+    setSaid((before) => (before === words ? `${words} ` : words))
+    if (!drawerOpen) {
+      setFailures((before) => [...before, ...ended.filter(hasFailed)])
+    }
+  }, [jobs, drawerOpen])
+
+  return { failures, said, clearFailures: () => setFailures([]) }
 }

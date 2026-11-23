@@ -198,14 +198,28 @@ export function endedBacktests(jobs: readonly Job[]): string {
     .join(" ")
 }
 
+/** The ids of the backtests among `jobs`, as one text a hook's dependency can compare from one
+ * read of the jobs to the next. */
+export function listedBacktests(jobs: readonly Job[]): string {
+  return jobs
+    .filter((job) => job.kind === "backtest")
+    .map((job) => job.id)
+    .join(" ")
+}
+
 /** Read again, on every page, the runs and the strategies' last runs once a backtest among
- * `jobs` ends: one a later read of the jobs lists as ended for the first time. The shell's top
- * bar calls it once. */
+ * `jobs` ends, one a later read of the jobs lists as ended for the first time, and once a read
+ * lists a new backtest, as one Run again, another tab, or a script started. The shell's top bar
+ * calls it once. */
 export function useRunsReadAfterBacktests(
   jobs: readonly Job[] | undefined
 ): void {
   useReadOnceEnded(
     jobs === undefined ? undefined : endedBacktests(jobs),
+    readRunsAndStrategiesAgain
+  )
+  useReadOnceEnded(
+    jobs === undefined ? undefined : listedBacktests(jobs),
     readRunsAndStrategiesAgain
   )
 }

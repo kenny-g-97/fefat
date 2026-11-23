@@ -92,10 +92,13 @@ def test_a_stream_of_every_job_opened_anew_replays_no_event(
 
     with client.stream("GET", EVERY_JOB) as opened:
         lines = opened.iter_lines()
+        opening = next_message(lines)
         quiet = next_message(lines)
         job_records.advance(job.id, WORKER, 10.0, "Counted 1 of 10", {})
         first = next_events(lines, 1)[0]
 
+    # The first bytes go out at once, since a proxy holds the headers until it has some.
+    assert opening == {"comment": "open"}
     assert quiet == {"comment": "ping"}
     assert first["event"] == "progress"
     assert json.loads(first["data"]) == {

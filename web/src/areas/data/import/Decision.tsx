@@ -2,7 +2,7 @@ import { cn } from "cn"
 import { createContext, type ReactNode, useContext, useId } from "react"
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group"
 import { picked } from "@/ui/choices"
-import { stopLaterClick } from "./first-click"
+import { stopLaterClick } from "@/ui/first-click"
 import type { DecisionOption } from "./import-decisions"
 
 /** The ids of a `Decision` box's title and message, which name and describe its radio list. */
