@@ -71,20 +71,22 @@ export function RobustnessCard({ robustness, trades }: RobustnessCardProps) {
               <dt className="text-foreground-secondary">
                 {sentenceCase(dimension.name)}
               </dt>
-              <dd
-                role="meter"
-                aria-label={sentenceCase(dimension.name)}
-                aria-valuemin={0}
-                aria-valuemax={dimension.max_score}
-                aria-valuenow={dimension.score}
-                className="h-2 overflow-hidden rounded-xl bg-accent"
-              >
+              <dd className="min-w-0">
                 <div
-                  className="h-full rounded-xl bg-brand"
-                  style={{
-                    width: `${(dimension.score / dimension.max_score) * 100}%`,
-                  }}
-                />
+                  role="meter"
+                  aria-label={sentenceCase(dimension.name)}
+                  aria-valuemin={0}
+                  aria-valuemax={dimension.max_score}
+                  aria-valuenow={dimension.score}
+                  className="h-2 overflow-hidden rounded-xl bg-accent"
+                >
+                  <div
+                    className="h-full rounded-xl bg-brand"
+                    style={{
+                      width: `${(dimension.score / dimension.max_score) * 100}%`,
+                    }}
+                  />
+                </div>
               </dd>
               <dd
                 data-testid="robustness-score"
