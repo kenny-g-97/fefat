@@ -15,6 +15,8 @@ from fefat.market.fees import (
     lookup,
 )
 from fefat.market.instruments import STATIC_TABLE
+from fefat.reference.costs import RunFees
+from fefat.reference.units import day_number
 
 RATE_CARD = "https://www.example.com/rate-card"
 
@@ -128,6 +130,29 @@ def test_the_fee_in_force_is_what_a_run_pays_on_the_date(
     assert fee_in_force("retail-default", "MCL", on) == FuturesFee(
         per_contract_side=Decimal(per_contract_side)
     )
+
+
+@pytest.mark.parametrize(
+    "on",
+    [
+        date(2026, 3, 9),
+        date(2026, 7, 19),
+        date(2026, 7, 20),
+        date(2026, 9, 30),
+        date(2026, 10, 1),
+        date(2027, 6, 30),
+        date(2027, 7, 1),
+    ],
+)
+@pytest.mark.parametrize(("table", "root"), [("retail-default", "MCL"), ("prop-topstep", "ES")])
+def test_the_fee_in_force_is_the_reference_engines_on_every_schedules_edge(
+    table: str, root: str, on: date
+) -> None:
+    # The review of D-117: the rule of a date before the first schedule lives in the reference
+    # engine too (F-FEE-01), so the two are held to one answer across the schedules' boundaries.
+    charged, _ = RunFees.of_table(TABLES[table], root).in_force(day_number(on))
+
+    assert fee_in_force(table, root, on) == charged
 
 
 def test_the_fee_in_force_of_a_root_no_schedule_prices_is_refused_as_lookup_refuses() -> None:

@@ -48,11 +48,11 @@ class WindowEstimate(FrozenModel):
     """What a run of a window would read (module docstring): its `settings`, every default
     applied; the `providers` that hold its root, the provider's `contracts` in time order, none
     for a series of one contract, its `levels`, finest first, and the `fee_tables` that price the
-    root, each with the fee it would pay on the window's last day, or from the newest schedule
-    where there is no window (D-117); the `currency` its money counts in; `held`, the trade dates
-    its series holds, none while it holds none; `window`, the dates asked for cut to them, none
-    where they do not meet; and the `sessions`, `bars`, and `ticks` the engine would replay on
-    it."""
+    root, each with the fee it would pay on the window's last day, or on the last day asked where
+    the window meets no data, the newest schedule's where none was asked (D-117); the `currency`
+    its money counts in; `held`, the trade dates its series holds, none while it holds none;
+    `window`, the dates asked for cut to them, none where they do not meet; and the `sessions`,
+    `bars`, and `ticks` the engine would replay on it."""
 
     settings: AppliedRunConfig
     providers: tuple[str, ...]
@@ -98,7 +98,7 @@ def estimated(
     sessions, bars, ticks = (
         (0, 0, 0) if window is None else _read(source, ranked, timeframe, window, settings.fidelity)
     )
-    last_day = None if window is None else window.end
+    last_day = end if window is None else window.end
     return WindowEstimate(
         settings=settings,
         providers=providers,

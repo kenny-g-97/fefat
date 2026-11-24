@@ -312,15 +312,20 @@ def test_each_fee_table_names_its_charge_on_the_windows_last_day_in_the_currency
 
     inside = estimate_of()
     outside = estimate_of(start=date(2026, 3, 16), end=date(2026, 3, 18))
+    open_ended = estimate_of(start=date(2026, 3, 16), end=None)
 
     assert inside.currency == Currency.USD
     assert inside.fee_tables == (
         FeeChoice(name="retail-default", fee=FuturesFee(per_contract_side=Decimal("2.87"))),
         FeeChoice(name="prop-topstep", fee=FuturesFee(per_contract_side=Decimal("1.89"))),
     )
-    # A window the data does not meet quotes each table's newest schedule, NFA's fee doubled.
-    assert outside.window is None
+    # A window the data does not meet quotes each table on the last day asked, and its newest
+    # schedule where none was asked, NFA's fee doubled from 2027-07-01.
+    assert (outside.window, open_ended.window) == (None, None)
     assert outside.fee_tables[0] == FeeChoice(
+        name="retail-default", fee=FuturesFee(per_contract_side=Decimal("2.87"))
+    )
+    assert open_ended.fee_tables[0] == FeeChoice(
         name="retail-default", fee=FuturesFee(per_contract_side=Decimal("2.88"))
     )
 
