@@ -137,7 +137,8 @@ class _Run(BaseModel):
     bars' once saved; its settings, every default applied; and, worked out at each read from the
     instrument it trades (D-117), the currency its money counts in and the fee its table charges
     on its last day, both None where its row names no instrument, as one indexed before D-114 for
-    a strategy built in a notebook."""
+    a strategy built in a notebook, or one this store no longer defines, and the fee None where
+    the table does not price the instrument, as a submission refused since."""
 
     model_config = ConfigDict(frozen=True)
 

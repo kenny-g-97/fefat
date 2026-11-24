@@ -173,9 +173,8 @@ def test_a_run_names_the_instrument_it_trades_or_else_its_versions(
     # D-114: a list and a run's page name what it trades in its settings, beside the instrument
     # its version's code names; a row written before the setting shows its version's.
     applied = the_run().config
-    perpetual = {"instrument": "BTCUSDT-PERP", "fee_table": "binance-default"}
     moved = a_submission(engine, "d" * 64).model_copy(
-        update={"settings": applied.model_copy(update=perpetual)}
+        update={"settings": applied.model_copy(update={"instrument": "BTCUSDT-PERP"})}
     )
     older = a_submission(engine, "e" * 64).model_copy(
         update={"settings": applied.model_copy(update={"instrument": None})}
@@ -218,6 +217,26 @@ def test_a_run_names_its_currency_and_what_its_fee_table_charges_on_its_last_day
         CryptoFee(maker_bps=Decimal(2), taker_bps=Decimal(5)),
     )
     assert listed[moved.id] == moved
+
+
+def test_a_row_the_store_cannot_price_is_listed_without_its_fee_or_its_currency(
+    records: RunTables, engine: Engine
+) -> None:
+    # The reviews of D-117: a submission whose table does not price its instrument, which the
+    # lookup refuses since, and an instrument this store no longer defines must not fail the list.
+    asked = a_submission(engine, "d" * 64)
+    unpriced = asked.settings.model_copy(update={"instrument": "BTCUSDT-PERP"})
+    undefined = asked.settings.model_copy(update={"instrument": "XES"})
+    first = records.submitted(asked.model_copy(update={"settings": unpriced}), 3, STARTED_AT).run
+    second = records.submitted(
+        a_submission(engine, "e" * 64).model_copy(update={"settings": undefined}), 3, STARTED_AT
+    ).run
+
+    listed = {run.id: run for run in page_of(records)}
+
+    assert (listed[first.id].currency, listed[first.id].fee) == (Currency.USDT, None)
+    assert (listed[second.id].currency, listed[second.id].fee) == (None, None)
+    assert records.by_id(second.id) == listed[second.id]
 
 
 def test_a_record_written_before_the_setting_names_the_root_it_traded(records: RunTables) -> None:

@@ -23,7 +23,7 @@ from fefat.backtest import Run
 from fefat.backtest.run_config import AppliedRunConfig
 from fefat.backtest.saved_runs import saved_run
 from fefat.config import FefatPaths
-from fefat.market.fees import CryptoFee, FuturesFee, fee_in_force
+from fefat.market.fees import CryptoFee, FuturesFee, fee_in_force, tables_pricing
 from fefat.market.instruments import Currency, InstrumentTable
 from fefat.market.saved_instruments import instrument_table
 from fefat.strategy import StrategyPin
@@ -344,12 +344,18 @@ def _charges(
     settings: AppliedRunConfig, last_day: date, instruments: InstrumentTable
 ) -> tuple[Currency | None, FuturesFee | CryptoFee | None]:
     """The currency the money of a run under `settings` counts in, and the fee its table charges
-    the instrument it trades on `last_day`, as the engines charge it (D-117); neither where the
-    settings name no instrument."""
+    the instrument it trades on `last_day`, as the engines charge it (D-117): neither where the
+    settings name no instrument or one this store no longer defines, and no fee where the table
+    does not price it, as a submission the lookup refuses since, so that no row fails a list."""
     root = settings.instrument
-    if root is None:
+    if root is None or root not in instruments.roots():
         return None, None
-    return instruments.get(root).currency, fee_in_force(settings.fee_table, root, last_day)
+    currency = instruments.get(root).currency
+    if settings.fee_table not in tables_pricing(root):
+        return currency, None
+    # shortcut: a saved run's fee comes from today's tables, not its record's schedules; read the
+    # record's once a table's figure is ever corrected in place (BACKLOG.md).
+    return currency, fee_in_force(settings.fee_table, root, last_day)
 
 
 def _submitted(
