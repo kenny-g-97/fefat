@@ -526,15 +526,16 @@ The units are the store's: prices in billionths of a point, money in millionths 
 
 `python/fefat/src/fefat/backtest/schemas.py` lists every column of every file. Polars reads any of them without FEFAT, for example `pl.read_parquet(folder / "trades.parquet")`.
 
-The run page's figures come from three functions a notebook can call too:
+The run page's figures come from four functions a notebook can call too:
 
 ```python
 run.pnl_share                               # the net P&L over the capital: 0.025 is 2.5 %
 ff.backtest.equity_curve(run, max_points=2000)  # ts, equity, drawdown, in the units above
 ff.backtest.trade_distributions(run.trades).r_multiple  # lower, upper, and trades per bin
+ff.backtest.monte_carlo(run).max_drawdown.p95  # the run's trades drawn again, 1,000 paths from seed 0
 ```
 
-`equity_curve` keeps every decision up to `max_points`; past it, each bucket of consecutive decisions keeps its lowest equity, its highest, and its deepest drawdown, so the `drawdown` column's maximum is the run's. `trade_distributions` holds net P&L, the R multiple, MAE and MFE in ticks, and the minutes held, each in at most 40 bins of one width, with no bin across zero.
+`equity_curve` keeps every decision up to `max_points`; past it, each bucket of consecutive decisions keeps its lowest equity, its highest, and its deepest drawdown, so the `drawdown` column's maximum is the run's. `trade_distributions` holds net P&L, the R multiple, MAE and MFE in ticks, and the minutes held, each in at most 40 bins of one width, with no bin across zero. `monte_carlo(run, paths=1000, seed=0, max_points=3000)` draws as many of the run's trades as it made, with replacement, for each path, and walks the capital through them: its net P&L and maximum drawdown at five percentiles, the chance of a net loss, the run's own trades walked in their order beside them (`own_max_drawdown`, of closed trades, where the metrics' drawdown marks open trades), and the paths' equity fan; the same seed gives the same report, and a run of fewer than two trades gives `TooFewTrades` with why.
 
 ### Trade paths
 
