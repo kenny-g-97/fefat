@@ -485,7 +485,7 @@ A specification is refused before it runs when a breakeven, a trailing stop, a t
 
 Every run is also rerun at one more tick of slippage, which `run.metrics.pnl_at_plus_one_tick` reports, and, where its trade dates are finer than a minute, at one second and at one minute: `run.metrics.fidelity_check`, or `ff.backtest.fidelity_check(run)`, compares those reruns with the run.
 
-`ff.backtest.held_instruments(paths)` names the roots the store holds trades, TBBO, or bars of, and `ff.backtest.estimated(root, timeframe, start, end, config, paths)` tells what a run of a window would read before anything runs, on `config.instrument` where it names one, as the app's Run backtest dialog shows it: the settings it would apply, the providers, contracts, levels, and fee tables to choose among, the trade dates held, and the sessions, bars, and ticks the engine would replay, each session on the level it fills on. It builds no strategy and loads no bar, answers None where the store holds none of the root, zero counts for a window without data, and no dates for a series the provider's data cannot make, naming what can be chosen instead, and leaves out the rerun at one more tick.
+`ff.backtest.held_instruments(paths)` names the roots the store holds trades, TBBO, or bars of, and `ff.backtest.estimated(root, timeframe, start, end, config, paths)` tells what a run of a window would read before anything runs, on `config.instrument` where it names one, as the app's Run backtest dialog shows it: the settings it would apply, the providers, contracts, levels, and fee tables to choose among, each with the fee the run would pay on the window's last day, the currency its money counts in, the trade dates held, and the sessions, bars, and ticks the engine would replay, each session on the level it fills on. It builds no strategy and loads no bar, answers None where the store holds none of the root, zero counts for a window without data, and no dates for a series the provider's data cannot make, naming what can be chosen instead, and leaves out the rerun at one more tick. `ff.fees.fee_in_force(table, root, on)` is the fee a run pays on a trade date, the first schedule's before its date, as the engine charges it.
 
 ## The fill rules in brief
 
@@ -525,6 +525,16 @@ The units are the store's: prices in billionths of a point, money in millionths 
 | `signals.parquet` | the signal frame the engine read, the features among its columns | `run.signals` |
 
 `python/fefat/src/fefat/backtest/schemas.py` lists every column of every file. Polars reads any of them without FEFAT, for example `pl.read_parquet(folder / "trades.parquet")`.
+
+The run page's figures come from three functions a notebook can call too:
+
+```python
+run.pnl_share                               # the net P&L over the capital: 0.025 is 2.5 %
+ff.backtest.equity_curve(run, max_points=2000)  # ts, equity, drawdown, in the units above
+ff.backtest.trade_distributions(run.trades).r_multiple  # lower, upper, and trades per bin
+```
+
+`equity_curve` keeps every decision up to `max_points`; past it, each bucket of consecutive decisions keeps its lowest equity, its highest, and its deepest drawdown, so the `drawdown` column's maximum is the run's. `trade_distributions` holds net P&L, the R multiple, MAE and MFE in ticks, and the minutes held, each in at most 40 bins of one width, with no bin across zero.
 
 ### Trade paths
 

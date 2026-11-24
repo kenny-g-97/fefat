@@ -13,6 +13,7 @@ from fefat.market.engine_units import (
     InstrumentParameters,
     instrument_parameters,
     micro_units,
+    money_in_units,
     money_text,
     price_in_units,
     price_text,
@@ -48,6 +49,16 @@ def test_a_price_column_reads_in_the_instruments_units_as_the_float_nearest_its_
 
     assert prices == [float(price_text(units)) for units in held]
     assert prices[:3] == [4990.25, -0.25, 76.43]
+
+
+def test_money_reads_in_the_currency_as_the_float_nearest_its_decimal() -> None:
+    # Step 5.7: the points a chart draws go out as numbers, which no client scales again.
+    held = [51_250_500_000, -84_514, 1, 0]
+
+    amounts = money_in_units(pl.Series("equity", held, dtype=pl.Int64))
+
+    assert list(amounts) == [float(money_text(units)) for units in held]
+    assert amounts[:2] == (51250.5, -0.084514)
 
 
 def test_an_amount_finer_than_a_micro_unit_is_refused() -> None:

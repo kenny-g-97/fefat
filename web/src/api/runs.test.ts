@@ -33,6 +33,8 @@ const HEAD = {
   start: "2026-03-06",
   end: "2026-03-09",
   settings: SETTINGS,
+  currency: "USD",
+  fee: { kind: "futures", per_contract_side: "2.87" },
 } as const
 
 const STRATEGY: NonNullable<SubmittedRun["strategy"]> = {

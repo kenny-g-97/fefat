@@ -16,6 +16,7 @@ import pytest
 import fefat as ff
 from fefat.backtest import Run, saved_runs_in
 from fefat.config import resolve_paths
+from fefat.market.engine_units import micro_units
 from notebook_runs import breakout, store_with
 
 WINDOW = ("2026-03-05", "2026-03-09")
@@ -89,3 +90,11 @@ def test_a_saved_run_says_when_it_was_saved() -> None:
     run = ff.backtest.run(breakout(), *WINDOW)
 
     assert before <= Run.open(run.folder).saved_at <= datetime.now(UTC)
+
+
+def test_a_runs_net_pnl_reads_as_a_share_of_its_capital() -> None:
+    # Step 5.7, from `BACKLOG.md`: the share a notebook and the API give, as the drawdown's is.
+    store_with("ohlcv-1m")
+    run = ff.backtest.run(breakout(), *WINDOW)
+
+    assert run.pnl_share == micro_units(run.metrics.pnl) / micro_units(run.config.capital)

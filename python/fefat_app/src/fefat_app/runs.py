@@ -28,7 +28,9 @@ from fefat.backtest.estimates import WindowEstimate
 from fefat.backtest.metrics import Metrics, Verdict
 from fefat.backtest.record import Hash
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
+from fefat.market.fees import Fee
 from fefat.market.fidelity import FidelityEra
+from fefat.market.instruments import Currency
 from fefat.market.schema import frozen
 from fefat.market.snapshot import Sha256
 from fefat_app.job_models import JobStatus
@@ -132,7 +134,11 @@ class KeyMetrics(BaseModel):
 class _Run(BaseModel):
     """What every run's row holds: its id; when it was asked for, or saved where the index found
     it saved; its origin; its parameters as bound; the trade dates its window spans, its signal
-    bars' once saved; and its settings, every default applied."""
+    bars' once saved; its settings, every default applied; and, worked out at each read from the
+    instrument it trades (D-117), the currency its money counts in and the fee its table charges
+    on its last day, both None where its row names no instrument, as one indexed before D-114 for
+    a strategy built in a notebook, or one this store no longer defines, and the fee None where
+    the table does not price the instrument, as a submission refused since."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -143,6 +149,8 @@ class _Run(BaseModel):
     start: date
     end: date
     settings: AppliedRunConfig
+    currency: Currency | None
+    fee: Fee | None
 
 
 class SubmittedRun(_Run):
@@ -173,20 +181,35 @@ class SavedRun(_Run):
     key_metrics: KeyMetrics
 
 
-class SavedRunWithMetrics(SavedRun):
-    """A saved run with what its record says of how it went: its metrics, the fidelity era of
-    each trade date it filled on, and its warnings."""
+IndexedRun = Annotated[SubmittedRun | SavedRun, Field(discriminator="state")]
+"""A run as the lists and its page hold it, in either state."""
 
+
+class RunStatistics(BaseModel):
+    """What a saved run's record says of how it went (step 5.7, D-116): its metrics, the currency
+    their money is in, its net P&L as a share of its capital, the fidelity era of each trade date
+    it filled on, and its warnings."""
+
+    model_config = ConfigDict(frozen=True)
+
+    currency: Currency
+    pnl_share: float
     metrics: Metrics
     fidelity_eras: tuple[FidelityEra, ...]
     warnings: tuple[str, ...]
 
 
-IndexedRun = Annotated[SubmittedRun | SavedRun, Field(discriminator="state")]
-"""A run as the lists hold it, in either state."""
+class EquityCurve(BaseModel):
+    """A saved run's account for a chart (step 5.7, D-116): its capital, and for each decision
+    kept, one entry a column: its close in whole seconds since the epoch, the equity, and how far
+    the equity lies below its peak, each in the instrument's currency."""
 
-RunWithMetrics = Annotated[SubmittedRun | SavedRunWithMetrics, Field(discriminator="state")]
-"""A run as its page reads it: a saved one with its metrics."""
+    model_config = ConfigDict(frozen=True)
+
+    capital: float
+    time: tuple[int, ...]
+    equity: tuple[float, ...]
+    drawdown: tuple[float, ...]
 
 
 class RunPage(BaseModel):
@@ -271,6 +294,11 @@ class NoSuchRunError(ValueError):
 
     def __init__(self, run: str) -> None:
         super().__init__(f"Expected the id or the run key of a run, got {run!r}, which names none.")
+
+
+class ResultsRefusedError(ValueError):
+    """A run whose results cannot be read, in words that say what to do: not saved yet, its
+    folder gone, or a folder this engine does not read (step 5.7)."""
 
 
 class RunCursorError(ValueError):

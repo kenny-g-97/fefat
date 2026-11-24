@@ -1,15 +1,57 @@
 import { describe, expect, it } from "vitest"
 import {
   counted,
+  currencyApart,
   decimalsOf,
+  feeWords,
   fidelityLabel,
   formatAligned,
   formatCount,
   formatDecimal,
+  formatEdge,
+  formatFigure,
   formatMoney,
   formatPrice,
+  formatShare,
+  moneyEdge,
+  moneyFigure,
   moneySign,
+  NO_BREAK_SPACE,
+  sentenceCase,
 } from "./figures"
+
+describe("the results' figures (step 5.7)", () => {
+  it("writes a ratio or an amount at two decimals with its thousands apart", () => {
+    expect(formatFigure(1.8391)).toBe("1.84")
+    expect(formatFigure(-0.314)).toBe("-0.31")
+    expect(formatFigure(51250.5)).toBe("51,250.50")
+  })
+
+  it("writes no sign on a value that rounds to zero", () => {
+    expect(formatFigure(-0.001)).toBe("0.00")
+    expect(formatShare(-0.00001)).toBe("0.00%")
+  })
+
+  it("writes a share in percent", () => {
+    expect(formatShare(0.025)).toBe("2.50%")
+    expect(formatShare(0.5417)).toBe("54.17%")
+    expect(formatShare(-0.0166)).toBe("-1.66%")
+  })
+
+  it("writes the API's words in sentence case", () => {
+    expect(sentenceCase("target_1")).toBe("Target 1")
+    expect(sentenceCase("risk_management")).toBe("Risk management")
+    expect(sentenceCase("monday")).toBe("Monday")
+    expect(sentenceCase("roll_open_interest")).toBe("Roll open interest")
+  })
+
+  it("writes a histogram's edge with the decimals it holds", () => {
+    expect(formatEdge(-1.5)).toBe("-1.5")
+    expect(formatEdge(0.29)).toBe("0.29")
+    expect(formatEdge(12500)).toBe("12,500")
+    expect(formatEdge(0)).toBe("0")
+  })
+})
 
 describe("formatAligned", () => {
   it("lines up a column's decimal points with spaces, adding no digit", () => {
@@ -74,13 +116,33 @@ describe("the formats", () => {
 })
 
 describe("formatMoney", () => {
-  it("writes the API's decimal text with its thousands apart and no float between", () => {
-    expect(formatMoney("-2721.560000")).toBe("-2,721.56")
-    expect(formatMoney("1250")).toBe("1,250.00")
-    expect(formatMoney("0.000000")).toBe("0.00")
-    expect(formatMoney("999.5")).toBe("999.50")
+  it("writes the API's decimal text after its currency's sign, the minus first, no float between", () => {
+    // D-117: a cash value reads as one, $76,612.02 or -$76,612.02.
+    expect(formatMoney("-2721.560000", "USD")).toBe("-$2,721.56")
+    expect(formatMoney("1250", "USD")).toBe("$1,250.00")
+    expect(formatMoney("999.5", "EUR")).toBe("€999.50")
+    expect(formatMoney("0.010000", "GBP")).toBe("£0.01")
     // A float would round this one; the text keeps every digit the API sends.
-    expect(formatMoney("12345678901234.125000")).toBe("12,345,678,901,234.125")
+    expect(formatMoney("12345678901234.125000", "USD")).toBe(
+      "$12,345,678,901,234.125"
+    )
+  })
+
+  it("writes zero without a minus, whatever sign its text carries", () => {
+    expect(formatMoney("0.000000", "USD")).toBe("$0.00")
+    expect(formatMoney("-0.000000", "USD")).toBe("$0.00")
+  })
+
+  it("writes a currency without a sign as its code after the figure, and plain figures for none", () => {
+    // The design review of D-117: a space no line breaks at keeps the code with its figure.
+    expect(formatMoney("-1250", "USDT")).toBe(`-1,250.00${NO_BREAK_SPACE}USDT`)
+    expect(formatMoney("1250", "CHF")).toBe(`1,250.00${NO_BREAK_SPACE}CHF`)
+    expect(formatMoney("-1250", null)).toBe("-1,250.00")
+  })
+
+  it("sets a currency's sign or code apart for a stat card's figure", () => {
+    expect(currencyApart("USD")).toEqual({ figure: "USD", code: null })
+    expect(currencyApart("USDT")).toEqual({ figure: null, code: "USDT" })
   })
 
   it("reads a sum's sign from its text", () => {
@@ -90,9 +152,36 @@ describe("formatMoney", () => {
   })
 
   it("refuses what is no decimal", () => {
-    expect(() => formatMoney("twelve")).toThrow(
+    expect(() => formatMoney("twelve", "USD")).toThrow(
       'Expected money as decimal text, got "twelve".'
     )
+  })
+})
+
+describe("money from a float", () => {
+  it("writes a figure at two decimals after its currency's sign, a value rounding to zero unsigned", () => {
+    expect(moneyFigure(51250.5, "USD")).toBe("$51,250.50")
+    expect(moneyFigure(-52.084, "USD")).toBe("-$52.08")
+    expect(moneyFigure(-0.001, "USD")).toBe("$0.00")
+    expect(moneyFigure(-3.5, "USDT")).toBe(`-3.50${NO_BREAK_SPACE}USDT`)
+  })
+
+  it("writes an axis's or a histogram's edge with the decimals it holds", () => {
+    expect(moneyEdge(-150, "USD")).toBe("-$150")
+    expect(moneyEdge(50000, "USD")).toBe("$50,000")
+    expect(moneyEdge(0, "USD")).toBe("$0")
+    expect(moneyEdge(12.5, "USDT")).toBe(`12.5${NO_BREAK_SPACE}USDT`)
+  })
+})
+
+describe("feeWords", () => {
+  it("writes a fee table's charge per contract per side, or a crypto fee in basis points", () => {
+    expect(
+      feeWords({ kind: "futures", per_contract_side: "2.87" }, "USD")
+    ).toBe("$2.87 per contract per side")
+    expect(
+      feeWords({ kind: "crypto", maker_bps: "2", taker_bps: "5" }, "USDT")
+    ).toBe("maker 2 bps, taker 5 bps")
   })
 })
 

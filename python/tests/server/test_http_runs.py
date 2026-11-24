@@ -85,7 +85,7 @@ def test_a_run_asked_for_twice_is_one_run_whose_stages_reach_its_stream(
     jobs = [job for job in client.get("/v1/jobs").json() if job["kind"] == "backtest"]
     assert [job["id"] for job in jobs] == [run["job_id"]]
     assert (run["status"], run["settings"]["provider"]) == ("succeeded", "synthetic")
-    assert run["metrics"]["trades"]["trades"] > 0
+    assert run["key_metrics"]["trades"] > 0
     folder = resolve_paths(os.environ).runs_dir / run["run_key"]
     assert sorted(path.name for path in folder.iterdir()) == ARTIFACTS
     # Done means 3: the stages of the run, in order, between its job's start and its end.
@@ -138,6 +138,32 @@ def test_a_run_trades_the_instrument_its_settings_name(
         (resolve_paths(os.environ).runs_dir / run["run_key"] / "run.json").read_text()
     )
     assert (record["instrument"]["root"], record["strategy"]["spec"]["instrument"]) == ("ES", "ES")
+
+
+def test_a_fee_table_that_does_not_price_the_instrument_is_refused_before_a_job_is_queued(
+    client: TestClient, container: Container
+) -> None:
+    # D-117: a list names every run's fee, and the run itself refused such a table only once its
+    # signals were computed; the lookup refuses it first, in the run's words.
+    store_with("ohlcv-1m", "funding")
+    csrf = logged_in(client, container)
+    saved = client.post(
+        "/v1/strategies",
+        json={"name": "breakout", "code": ES_BREAKOUT, "hypothesis": HYPOTHESIS},
+        headers=csrf,
+    )
+    body = {
+        "strategy_version_id": saved.json()["id"],
+        **WINDOW,
+        "settings": {"instrument": "BTCUSDT-PERP", "fee_table": "retail-default"},
+    }
+
+    refused = client.post("/v1/runs", json=body, headers=csrf)
+
+    assert refused.status_code == 400
+    assert "Expected retail-default to price BTCUSDT-PERP" in refused.json()["detail"]
+    assert client.get("/v1/runs").json() == {"runs": [], "next_cursor": None}
+    assert [job for job in client.get("/v1/jobs").json() if job["kind"] == "backtest"] == []
 
 
 def test_an_unknown_version_and_a_window_ending_before_it_starts_are_refused(

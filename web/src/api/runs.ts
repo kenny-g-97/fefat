@@ -27,6 +27,12 @@ export type RunEstimateAnswer = RunEstimated | NoDataToEstimate
 export type RunSubmission = components["schemas"]["RunSubmission"]
 /** What `POST /v1/runs/estimate` takes. */
 export type RunEstimateRequest = components["schemas"]["RunEstimateRequest"]
+/** A currency the API counts money in. */
+export type Currency = components["schemas"]["Currency"]
+/** What a fee table charges an instrument: per contract per side, or in basis points. */
+export type Fee =
+  | components["schemas"]["FuturesFee"]
+  | components["schemas"]["CryptoFee"]
 
 /** What the Runs page's filters ask of the list. */
 export type RunFilters = Readonly<{

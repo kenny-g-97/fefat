@@ -28,9 +28,3 @@ export function versionNumbered(
 ): IndexedStrategyVersion | undefined {
   return strategy.versions.find((version) => version.version === number)
 }
-
-/** A template's name as words, its first letter capital: `mean_reversion` reads Mean reversion. */
-export function templateLabel(name: string): string {
-  const words = name.replaceAll("_", " ")
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}

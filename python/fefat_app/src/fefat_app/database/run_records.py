@@ -13,18 +13,19 @@ import re
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import ColumnElement, Engine, Row, Select, and_, func, or_, select
 from sqlalchemy.orm import Session, undefer
 
 from fefat.backtest import Run
-from fefat.backtest.metrics import Metrics
 from fefat.backtest.run_config import AppliedRunConfig
 from fefat.backtest.saved_runs import saved_run
 from fefat.config import FefatPaths
-from fefat.market.fidelity import FidelityEra
+from fefat.market.fees import CryptoFee, FuturesFee, fee_in_force, tables_pricing
+from fefat.market.instruments import Currency, InstrumentTable
+from fefat.market.saved_instruments import instrument_table
 from fefat.strategy import StrategyPin
 from fefat_app.database.job_records import queued_job
 from fefat_app.database.models import JobRow, RunRow, StrategyRow, StrategyVersionRow
@@ -39,7 +40,6 @@ from fefat_app.runs import (
     RunPage,
     RunStrategy,
     SavedRun,
-    SavedRunWithMetrics,
     Submitted,
     SubmittedRun,
 )
@@ -65,10 +65,13 @@ class RunTables:
     paths: FefatPaths
 
     def submitted(self, new: NewRun, max_attempts: int, now: datetime) -> Submitted:
+        instruments = self._instruments()
         with Session(self.engine) as session, session.begin():
             waiting = None if new.request_key is None else _waiting_on(session, new.request_key)
             if waiting is not None:
-                return Submitted(run=_submitted_row(session, waiting), queued_job_id=None)
+                return Submitted(
+                    run=_submitted_row(session, waiting, instruments), queued_job_id=None
+                )
             job = queued_job(session, JobKind.BACKTEST, new.payload, max_attempts, now)
             row = RunRow(
                 origin=RunOrigin.MANUAL,
@@ -83,19 +86,20 @@ class RunTables:
             )
             session.add(row)
             session.flush()
-            return Submitted(run=_submitted_row(session, row), queued_job_id=job.id)
+            return Submitted(run=_submitted_row(session, row, instruments), queued_job_id=job.id)
 
     def saved(
         self, run_key: str, *, job_id: str | None = None, request_key: str | None = None
     ) -> SavedRun:
         run = saved_run(self.paths.runs_dir, run_key)
+        instruments = self._instruments()
         with Session(self.engine) as session, session.begin():
             held = session.scalars(select(RunRow).where(RunRow.run_key == run_key)).one_or_none()
             own = None if job_id is None else _unsaved_of_job(session, job_id)
             if held is not None:
                 if own is not None:
                     session.delete(own)
-                return _saved_row(session, held)
+                return _saved_row(session, held, instruments)
             taker = own
             if taker is None and request_key is not None:
                 taker = _waiting_on(session, request_key)
@@ -109,10 +113,11 @@ class RunTables:
             _hold_the_record(session, taker, run)
             session.add(taker)
             session.flush()
-            return _saved_row(session, taker)
+            return _saved_row(session, taker, instruments)
 
-    def by_id(self, run: str) -> SubmittedRun | SavedRunWithMetrics | None:
+    def by_id(self, run: str) -> SubmittedRun | SavedRun | None:
         named = RunRow.run_key == run if _RUN_KEY.fullmatch(run) else RunRow.id == run
+        instruments = self._instruments()
         with Session(reading(self.engine)) as session:
             row = session.scalars(
                 select(RunRow).where(named).options(undefer(RunRow.metrics_json))
@@ -120,15 +125,8 @@ class RunTables:
             if row is None:
                 return None
             if row.run_key is None:
-                return _submitted_row(session, row)
-            saved = _saved_row(session, row)
-            eras = () if row.fidelity_eras_json is None else row.fidelity_eras_json
-            return SavedRunWithMetrics(
-                **dict(saved),
-                metrics=Metrics.model_validate(row.metrics_json),
-                fidelity_eras=tuple(FidelityEra.model_validate(era) for era in eras),
-                warnings=() if row.warnings_json is None else tuple(row.warnings_json),
-            )
+                return _submitted_row(session, row, instruments)
+            return _saved_row(session, row, instruments)
 
     def page(
         self,
@@ -141,15 +139,21 @@ class RunTables:
     ) -> RunPage:
         after = None if cursor is None else _parsed_cursor(cursor)
         query = _page_query(strategy, versioned, status, after).limit(limit + 1)
+        instruments = self._instruments()
         with Session(reading(self.engine)) as session:
             rows = session.execute(query).all()
             shown = rows[:limit]
             more = len(rows) > limit
             last: RunRow | None = shown[-1][0] if more else None
             return RunPage(
-                runs=tuple(_listed(row) for row in shown),
+                runs=tuple(_listed(row, instruments) for row in shown),
                 next_cursor=None if last is None else _cursor_of(last),
             )
+
+    def _instruments(self) -> InstrumentTable:
+        """The instruments a run's row may trade, read once a call: the static table's and those
+        saved in the data folder."""
+        return instrument_table(self.paths.data_dir)
 
 
 def index_runs(session: Session, runs: Sequence[Run]) -> int:
@@ -229,14 +233,14 @@ def _parsed_cursor(cursor: str) -> tuple[datetime, str]:
     return in_utc, run_id
 
 
-def _listed(row: _PageRow) -> IndexedRun:
+def _listed(row: _PageRow, instruments: InstrumentTable) -> IndexedRun:
     """A run of a page, from the page query's joined columns."""
     run = row[0]
     named = _named(row[2], row[3])
     if run.run_key is None:
-        return _submitted(run, row[1], named)
+        return _submitted(run, row[1], named, instruments)
     metrics = KeyMetrics(pnl=row[4], trades=row[5], max_drawdown=row[6], verdict=row[7])
-    return _saved(run, named, metrics)
+    return _saved(run, named, metrics, instruments)
 
 
 def _named(version: StrategyVersionRow | None, strategy: StrategyRow | None) -> RunStrategy | None:
@@ -302,21 +306,26 @@ def _version_id(session: Session, pin: StrategyPin | None) -> str | None:
     ).one_or_none()
 
 
-def _submitted_row(session: Session, row: RunRow) -> SubmittedRun:
+def _submitted_row(session: Session, row: RunRow, instruments: InstrumentTable) -> SubmittedRun:
     job = None if row.job_id is None else session.get(JobRow, row.job_id)
-    return _submitted(row, job, _run_strategy(session, row.strategy_version_id))
+    return _submitted(row, job, _run_strategy(session, row.strategy_version_id), instruments)
 
 
-def _saved_row(session: Session, row: RunRow) -> SavedRun:
-    return _saved(row, _run_strategy(session, row.strategy_version_id), _key_metrics(row))
+def _saved_row(session: Session, row: RunRow, instruments: InstrumentTable) -> SavedRun:
+    strategy = _run_strategy(session, row.strategy_version_id)
+    return _saved(row, strategy, _key_metrics(row), instruments)
 
 
-def _head(row: RunRow, strategy: RunStrategy | None) -> dict[str, Any]:
+def _head(
+    row: RunRow, strategy: RunStrategy | None, instruments: InstrumentTable
+) -> dict[str, Any]:
     """What a run's row holds in either state, its settings naming the instrument it trades: its
-    own, or its version's for a row written before D-114."""
+    own, or its version's for a row written before D-114; with the currency and the fee of that
+    instrument (`_charges`)."""
     settings = AppliedRunConfig.model_validate(row.settings_json)
     if strategy is not None and settings.instrument is None:
         settings = settings.model_copy(update={"instrument": strategy.instrument})
+    currency, fee = _charges(settings, row.window_end, instruments)
     return {
         "id": row.id,
         "created_at": row.created_at,
@@ -325,18 +334,40 @@ def _head(row: RunRow, strategy: RunStrategy | None) -> dict[str, Any]:
         "start": row.window_start,
         "end": row.window_end,
         "settings": settings,
+        "currency": currency,
+        "fee": fee,
         "strategy": strategy,
     }
 
 
-def _submitted(row: RunRow, job: JobRow | None, strategy: RunStrategy | None) -> SubmittedRun:
+def _charges(
+    settings: AppliedRunConfig, last_day: date, instruments: InstrumentTable
+) -> tuple[Currency | None, FuturesFee | CryptoFee | None]:
+    """The currency the money of a run under `settings` counts in, and the fee its table charges
+    the instrument it trades on `last_day`, as the engines charge it (D-117): neither where the
+    settings name no instrument or one this store no longer defines, and no fee where the table
+    does not price it, as a submission the lookup refuses since, so that no row fails a list."""
+    root = settings.instrument
+    if root is None or root not in instruments.roots():
+        return None, None
+    currency = instruments.get(root).currency
+    if settings.fee_table not in tables_pricing(root):
+        return currency, None
+    # shortcut: a saved run's fee comes from today's tables, not its record's schedules; read the
+    # record's once a table's figure is ever corrected in place (BACKLOG.md).
+    return currency, fee_in_force(settings.fee_table, root, last_day)
+
+
+def _submitted(
+    row: RunRow, job: JobRow | None, strategy: RunStrategy | None, instruments: InstrumentTable
+) -> SubmittedRun:
     """The unsaved run `row`, its status its job's (`fefat_app.runs`)."""
     if job is None:
         raise ValueError(f"Expected the job of the unsaved run {row.id}, got none.")
     if strategy is None:
         raise ValueError(f"Expected the strategy version of the unsaved run {row.id}, got none.")
     return SubmittedRun(
-        **_head(row, strategy),
+        **_head(row, strategy, instruments),
         status=job.status,
         progress=job.progress,
         message=job.message,
@@ -346,12 +377,14 @@ def _submitted(row: RunRow, job: JobRow | None, strategy: RunStrategy | None) ->
     )
 
 
-def _saved(row: RunRow, strategy: RunStrategy | None, metrics: KeyMetrics) -> SavedRun:
+def _saved(
+    row: RunRow, strategy: RunStrategy | None, metrics: KeyMetrics, instruments: InstrumentTable
+) -> SavedRun:
     """The saved run `row`, with what a list shows of how it went."""
     if row.run_key is None:
         raise ValueError(f"Expected the run key of the saved run {row.id}, got none.")
     return SavedRun(
-        **_head(row, strategy),
+        **_head(row, strategy, instruments),
         job_id=row.job_id,
         run_key=row.run_key,
         key_metrics=metrics,

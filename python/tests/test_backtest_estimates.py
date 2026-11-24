@@ -6,6 +6,7 @@ record; and a window without data, which answers zero rather than refuses."""
 import os
 import shutil
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import polars as pl
@@ -17,7 +18,9 @@ from fefat.backtest import RunConfig, estimates
 from fefat.backtest.estimates import WindowEstimate, estimated, held_instruments
 from fefat.backtest.record import Window
 from fefat.config import resolve_paths
+from fefat.market.fees import CryptoFee, FeeChoice, FuturesFee
 from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
+from fefat.market.instruments import Currency
 from fefat.market.layout import Dataset, Partition, PartitionRequest
 from fefat.market.schema import Timeframe, parse_schema_name
 from fefat.market.series_source import SeriesSource, series_source_in
@@ -47,6 +50,10 @@ def estimate_of(
 
 def counts(estimate: WindowEstimate) -> tuple[int, int, int]:
     return estimate.sessions, estimate.bars, estimate.ticks
+
+
+def table_names(estimate: WindowEstimate) -> tuple[str, ...]:
+    return tuple(choice.name for choice in estimate.fee_tables)
 
 
 def stored(schema: str, contract: str, first: date, last: date) -> int:
@@ -89,7 +96,7 @@ def test_an_estimate_counts_each_sessions_front_under_the_fidelity() -> None:
     assert finest.levels == ("trades", "1s", "1m")
     assert finest.contracts == ("ESH2026", "ESM2026")
     assert finest.providers == ("synthetic",)
-    assert finest.fee_tables == ("retail-default", "prop-topstep")
+    assert table_names(finest) == ("retail-default", "prop-topstep")
 
 
 def test_an_estimate_splits_bars_and_ticks_as_a_saved_runs_fidelity_eras() -> None:
@@ -294,8 +301,33 @@ def test_a_fee_table_that_prices_the_root_in_every_schedule_is_offered() -> None
 
     estimate = estimate_of()
 
-    assert "binance-default" not in estimate.fee_tables
-    assert estimate.settings.fee_table in estimate.fee_tables
+    assert "binance-default" not in table_names(estimate)
+    assert estimate.settings.fee_table in table_names(estimate)
+
+
+def test_each_fee_table_names_its_charge_on_the_windows_last_day_in_the_currency() -> None:
+    # D-117: the dialog shows what each table charges, in force on the run's last day; March
+    # 2026 comes before the tables' first schedule, whose fees the engines charge then (F-FEE-01).
+    store_with("ohlcv-1m")
+
+    inside = estimate_of()
+    outside = estimate_of(start=date(2026, 3, 16), end=date(2026, 3, 18))
+    open_ended = estimate_of(start=date(2026, 3, 16), end=None)
+
+    assert inside.currency == Currency.USD
+    assert inside.fee_tables == (
+        FeeChoice(name="retail-default", fee=FuturesFee(per_contract_side=Decimal("2.87"))),
+        FeeChoice(name="prop-topstep", fee=FuturesFee(per_contract_side=Decimal("1.89"))),
+    )
+    # A window the data does not meet quotes each table on the last day asked, and its newest
+    # schedule where none was asked, NFA's fee doubled from 2027-07-01.
+    assert (outside.window, open_ended.window) == (None, None)
+    assert outside.fee_tables[0] == FeeChoice(
+        name="retail-default", fee=FuturesFee(per_contract_side=Decimal("2.87"))
+    )
+    assert open_ended.fee_tables[0] == FeeChoice(
+        name="retail-default", fee=FuturesFee(per_contract_side=Decimal("2.88"))
+    )
 
 
 def test_an_estimate_reads_the_instrument_its_settings_name() -> None:
@@ -306,8 +338,14 @@ def test_an_estimate_reads_the_instrument_its_settings_name() -> None:
 
     assert found.settings.instrument == "BTCUSDT-PERP"
     assert found.contracts == ()
+    assert found.currency == Currency.USDT
     assert (found.fee_tables, found.settings.fee_table) == (
-        ("binance-default",),
+        (
+            FeeChoice(
+                name="binance-default",
+                fee=CryptoFee(maker_bps=Decimal(2), taker_bps=Decimal(5)),
+            ),
+        ),
         "binance-default",
     )
     assert found.sessions > 0

@@ -2,6 +2,7 @@
 @import "@fontsource/geist-mono/latin-400.css";
 @import "@fontsource/geist-mono/latin-500.css";
 @import "@fontsource/geist-mono/latin-600.css";
+@import "@fontsource/geist-mono/latin-700.css";
 
 /* The tokens of web/DESIGN.md, the Contemporary skill applied to FEAT (D-88, D-89), under
    shadcn/ui's names; a test holds the two files equal. */
@@ -594,9 +595,16 @@ a[data-slot="row-link"]:active {
     outline-offset: 2px;
   }
 
-  /* The jobs button's failure dot keeps a mark there, its fill and its ring forced away. */
-  [data-slot="jobs-failure-dot"] {
+  /* The jobs button's failure dot keeps a mark there, its fill and its ring forced away, and so
+     do a run's bars and meters and the dots of its chart's legend, drawn as backgrounds. */
+  [data-slot="jobs-failure-dot"],
+  [data-slot="chart-mark"] {
     background-color: Highlight;
+  }
+
+  /* A histogram's mark at zero stands apart from the bars beside it. */
+  [data-slot="chart-zero"] {
+    background-color: CanvasText;
   }
 
   /* A frame's edge keeps its focus on its line there too. */

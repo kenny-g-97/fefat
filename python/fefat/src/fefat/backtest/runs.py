@@ -103,6 +103,12 @@ class Run:
         """The run's metrics (`02` §7), as its record holds them."""
         return self.record.metrics
 
+    @property
+    def pnl_share(self) -> float:
+        """The net profit and loss as a share of the run's capital (D-51, step 5.7), a fraction
+        as `metrics.drawdown.max_drawdown_share` is: 0.025 is 2.5 %."""
+        return micro_units(self.metrics.pnl) / micro_units(self.config.capital)
+
     def explain(self, trade_id: int) -> Explanation:
         """Trade `trade_id`, the id of its entry order, replayed through the reference engine on
         the run's own records (`fefat.backtest.explain`): prints each event with its rule and

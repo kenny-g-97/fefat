@@ -11,12 +11,16 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
+from sqlalchemy.orm import Session, undefer
 
 from fefat.backtest import Run, saved_runs_in
+from fefat.backtest.metrics import Metrics
 from fefat.config import resolve_paths
+from fefat.market.fidelity import FidelityEra
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
+from fefat_app.database.models import RunRow
 from fefat_app.database.run_records import RunTables
 from fefat_app.job_models import JobKind, JobStatus
 from fefat_app.runs import (
@@ -24,7 +28,7 @@ from fefat_app.runs import (
     NewRun,
     RunOrigin,
     RunState,
-    SavedRunWithMetrics,
+    SavedRun,
 )
 from local_server import STARTED_AT
 
@@ -144,10 +148,22 @@ def test_a_saved_run_takes_its_key_and_the_columns_of_its_record(
     assert (saved.start, saved.end) == (run.record.window.start, run.record.window.end)
     assert saved.settings == run.config
     assert saved.parameters == {"lookback": 12, "stop_atr": 1.5}
-    assert isinstance(read, SavedRunWithMetrics)
-    assert read.metrics == run.metrics
-    assert read.fidelity_eras == run.record.fidelity_eras
-    assert read.warnings == run.record.warnings
+    assert isinstance(read, SavedRun)
+    assert read == saved
+    assert (read.key_metrics.pnl, read.key_metrics.trades) == (
+        run.metrics.pnl,
+        run.metrics.trades.trades,
+    )
+    with Session(engine) as session:
+        row = session.scalars(
+            select(RunRow).where(RunRow.id == saved.id).options(undefer(RunRow.metrics_json))
+        ).one()
+    assert Metrics.model_validate(row.metrics_json) == run.metrics
+    assert row.fidelity_eras_json is not None
+    eras = tuple(FidelityEra.model_validate(era) for era in row.fidelity_eras_json)
+    assert eras == run.record.fidelity_eras
+    assert row.warnings_json is not None
+    assert tuple(row.warnings_json) == run.record.warnings
     assert records.saved(run.hash) == saved
 
 
@@ -201,6 +217,36 @@ def test_a_run_key_that_names_no_run_of_its_own_folder_is_refused(records: RunTa
         records.saved("../" + run.hash)
     with pytest.raises(ValueError, match=f"Expected the run of key {'e' * 64}"):
         records.saved("e" * 64)
+
+
+def test_a_row_naming_no_instrument_counts_in_no_currency_and_names_no_fee(
+    records: RunTables, engine: Engine
+) -> None:
+    # D-117: a run of a strategy built in a notebook, indexed before D-114, names no instrument,
+    # so the page writes its money without a currency's sign and its fee table by name alone.
+    run = the_run()
+    settings = run.config.model_dump(mode="json")
+    settings.pop("instrument", None)
+    with Session(engine) as session, session.begin():
+        row = RunRow(
+            origin=RunOrigin.MANUAL,
+            parameters_json={},
+            window_start=run.record.window.start,
+            window_end=run.record.window.end,
+            settings_json=settings,
+            run_key=run.hash,
+            metrics_json=run.metrics.model_dump(mode="json"),
+            created_at=run.saved_at,
+        )
+        session.add(row)
+        session.flush()
+        row_id = row.id
+
+    read = records.by_id(row_id)
+
+    assert isinstance(read, SavedRun)
+    assert (read.strategy, read.settings.instrument) == (None, None)
+    assert (read.currency, read.fee) == (None, None)
 
 
 def test_a_saved_runs_settings_read_back_whole(records: RunTables) -> None:

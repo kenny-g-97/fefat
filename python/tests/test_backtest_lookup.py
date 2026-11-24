@@ -352,3 +352,16 @@ def test_a_lookup_refuses_a_contract_of_another_root_for_every_strategy() -> Non
 
     with pytest.raises(ValueError, match="Expected a contract of ES, the root the run trades"):
         looked_up(calling, *WINDOW, RunConfig(contract="BTCH2026"), resolve_paths(os.environ))
+
+
+def test_a_lookup_refuses_a_fee_table_that_does_not_price_the_instrument() -> None:
+    # D-117: the run itself refuses such a table only once its signals are computed, and a list
+    # names each run's fee; the lookup refuses it before a job is queued, in the run's words.
+    store_with("ohlcv-1m", "funding")
+    paths = resolve_paths(os.environ)
+    priced = looked_up(breakout(), *WINDOW, RunConfig(instrument="BTCUSDT-PERP"), paths)
+    perpetual = RunConfig(instrument="BTCUSDT-PERP", fee_table="retail-default")
+
+    assert priced.config.fee_table == "binance-default"
+    with pytest.raises(ValueError, match="Expected retail-default to price BTCUSDT-PERP in every"):
+        looked_up(breakout(), *WINDOW, perpetual, paths)

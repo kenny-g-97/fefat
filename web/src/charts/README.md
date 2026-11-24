@@ -61,3 +61,46 @@ The chart takes the focus on a click or Tab, and then: the arrows pan a tenth of
 ## Tests
 
 The pure parts have vitest's tests beside them: the look, the labels in a zone with daylight saving (`vite.config.ts` runs vitest in America/Chicago), the keys, the sessions' shading, the roll marks, and this file naming every prop and field (Done means 3 of step 5.4). The drawing itself runs in a browser alone: `web/e2e/chart.spec.ts` reads the canvas's pixels, the readout, and the requests.
+
+# The results' charts
+
+`EquityChart` and `HistogramChart` draw a finished run's results (step 5.7, D-116) from columns the server worked out; neither computes a figure.
+
+## EquityChart
+
+`EquityChart` draws the equity curve over its drawdown with [Apache ECharts](https://echarts.apache.org/) 6.1.0 (Apache 2.0, D-93), which only it and `equity-option.ts` import, part by part: the line chart, the grid, the tooltip with its axis pointer, the mark line, and the canvas renderer. It loads with the first finished run opened (`lazyRouteComponent` in the run page's equity card, which reloads the page once when a rebuild replaced its chunk), out of the app's first bundle, and the settings' About carries the library's notice (`EQUITY_CHART_NOTICE`, which a test holds to the installed package's NOTICE file).
+
+```tsx
+<div className="h-80">
+  <EquityChart
+    label="Equity and drawdown of this run"
+    curve={curve}
+    currency={statistics.currency}
+    pointed={pointed}
+    onPointed={setPointed}
+  />
+</div>
+```
+
+| Prop | What it is |
+| --- | --- |
+| `label` | The chart's name for a screen reader. |
+| `curve` | `GET /v1/runs/{run}/equity`: the `capital`, and one entry a decision in `time` (whole seconds), `equity`, and `drawdown`, a depth below the peak. |
+| `currency` | The run's currency, from `GET /v1/runs/{run}/stats`, which both value axes' labels write their money in, `$50,000` (D-117). |
+| `pointed` | The decision the readout shows, from `onPointed`, which the keys step from. |
+| `onPointed` | Told the index of the decision under the pointer or the keys, or null when the pointer leaves the chart, Escape is pressed, or the focus moves off it within the page: the caller's readout then shows the last decision. Between the two panes, where no decision lies, it is told nothing, so that the readout holds. |
+
+Give it a parent that sets its height; it fills that box and redraws when it resizes. `equityOption` in `equity-option.ts` turns the columns and the theme's tokens into the library's options, as a pure function that vitest reads: the equity in the accent over a dashed line at the capital, and under it, on one time axis, the drawdown in grey, its axis inverted so that the depth hangs from zero with no figure negated. Nothing animates, its axis pointer included, and it offers no zoom, so the wheel scrolls the page. The chart takes the focus on a click or Tab, and then Left and Right step a decision, Home and End go to either end, and Escape or moving the focus off it gives the readout back to the last, while the window going away keeps the reading; a key with Alt, Ctrl, or Command stays the browser's.
+
+## HistogramChart
+
+`HistogramChart` draws one of `GET /v1/runs/{run}/distribution`'s histograms as bars in the page, so that each names its range and its count to a pointer and a screen reader (`-150 to -140: 3 trades`), and a test reads them.
+
+| Prop | What it is |
+| --- | --- |
+| `testId` | Its `data-testid`. |
+| `label` | The measure and its unit, over the bars. |
+| `note` | Optional, a few words beside the label, such as how many trades have no stop. |
+| `bins` | The server's `lower`, `upper`, and `trades`, one entry a bin. |
+| `signed` | For a measure either side of zero: its bins in the sign colours with a mark at zero, the others in grey. |
+| `edge` | Optional, how an edge is written, such as money in the run's currency, `-$150` (D-117); the decimals it holds by default, `-1.5`. |

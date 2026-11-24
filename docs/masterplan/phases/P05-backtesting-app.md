@@ -19,7 +19,7 @@
 - "Playwright passes on both projects" reads as the desktop project at 1280 by 800, with the dev-proxy project keeping its own specs; no step has a phone layout (D-54); screenshots are copied to `docs/validation/screenshots/<step>/`.
 - The harness's seed (`scripts/e2e_server.py`) grows with the steps: step 5.3 adds the demo strategy and its first run, which later specs call `demo-run-01`.
 
-**Skills.** `software-design-principles` for every step; `designing-architecture` for each new seam: the catalog service (5.1), the strategy library and its index (5.2), the backtest job, the runs' index, and the executor's backtest kind (5.3), and uploads with the import job (5.12); `backtest-expert` for 5.3 and 5.7 to 5.10; `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` with `web/DESIGN.md` for the steps that build screens, 5.4 to 5.10, 5.12, 5.13, 5.17 (D-105), and 5.19 (D-112), each ending with unslop's audit and the Contemporary skill's checklist (D-77, D-88).
+**Skills.** `software-design-principles` for every step; `designing-architecture` for each new seam: the catalog service (5.1), the strategy library and its index (5.2), the backtest job, the runs' index, and the executor's backtest kind (5.3), and uploads with the import job (5.12); `backtest-expert` for 5.3, 5.7 to 5.10, and 5.20 (D-117); `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` with `web/DESIGN.md` for the steps that build screens, 5.4 to 5.10, 5.12, 5.13, 5.17 (D-105), 5.19 (D-112), and 5.20 (D-117), each ending with unslop's audit and the Contemporary skill's checklist (D-77, D-88).
 
 **Open decisions for the kickoff** (settled 2026-11-10, D-93)**.** Which of your real strategies to seed as the demo (a simple one you understand well); the metrics you want on the KPI cards first.
 
@@ -321,6 +321,8 @@ Not in this step: results views.
 
 2026-11-22 (your request, D-114): a run chooses the instrument it trades. The dialog's first field is Instrument, the instruments the store holds with the one the code names, which stays the default; the run then behaves as if the code named the one chosen, its bars, sessions, contracts, ticks, fees, and fills that instrument's, while a feature keeps reading an instrument it declares as an input, so that signals from one instrument and trades on another are written in the features, the run's record warning where a feature declares the very instrument the run trades, whose own bars it then reads. It is a setting of the run, `RunConfig.instrument`, which the run's record and its row name with every default applied; the run stays its saved version's, and a saved run keeps its key. A parameter of the code that moves its root to another than the one named is refused before anything runs. The timeframe stays the strategy's. This takes back, for the instrument, the kickoff's "rather than picking them" above.
 
+2026-11-24 (your review of step 5.7's pull request, D-117): the dialog's Fee table reads Commissions and fees, each table shown with its all-in charge for the instrument, in force on the run's last day, `retail-default, $2.87 per contract per side`, from the estimate, which now names each table's fee and the instrument's currency, with one line under the field saying what the charge sums; the run's Settings card says the same.
+
 ### 5.7 Results: metrics, equity, distributions
 
 Depends on: 5.6 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
@@ -362,6 +364,10 @@ Not in this step: trades table, chart with trades.
 #### Amendment
 
 2026-11-10 (Phase 5 kickoff, D-93): the KPI cards are the eight as written (your answer), in `web/DESIGN.md`'s stat sizes at weight 700, which ships with them. Under them stands the robustness summary (D-29, from `BACKLOG.md`): its five scores of 20, their total, the verdict, the red flags that fired, which of 30, 100, and 200 trades the run reaches, and `fragile_to_slippage` beside the verdict, all of which `Metrics.robustness` holds. ECharts 6.1.0 lives in `web/src/charts/`, loaded lazily and coloured from the tokens, and every figure comes from the API through one shared formatter. The equity downsampling and the distributions are functions of `fefat.backtest` over a run's equity and trades, which the API serves, each bucket keeping its lowest and highest so that the drawdown's trough survives. Your checks' run id is the row's `run_key`, which names the folder a notebook opens with `Run.open`. Dependencies: `echarts` 6.1.0.
+
+2026-11-23 (the step's plan, D-116): your answers. A finished run's page puts its results first: one line under its title holds its status, Cached, when it was asked for, and its run key, then the eight KPI cards, the robustness summary, the equity chart, the breakdowns, the fidelity check where the run has one, and the distributions, with Parameters and Settings at the foot; a run under way keeps its Status card. The MAE and MFE histograms count ticks. A run an older engine saved stays listed where the list holds it, and its page says which engine saved it where its results would stand; counting the folders the list never held waits in `BACKLOG.md`. The plan's calls: a bucket keeps the decisions of its lowest equity, its highest equity, and its deepest drawdown, measured on every decision before bucketing, the capital first, and the first and the last decision are always kept, since the lowest and the highest alone can lose the maximum drawdown where its peak and its trough share a bucket; the daily series is not served, nothing drawing it; a figure stays decimal text and a series a chart draws goes out as numbers; `/stats` reads the run's record in its folder, with its currency and its net P&L as a share of its capital (`Run.pnl_share`), and `GET /v1/runs/{run}` keeps a saved run's four key figures alone; and the histograms are drawn in the page, ECharts drawing the equity chart alone. Done means 2's two projects read as the phase's header says.
+
+2026-11-24 (your review of the pull request, D-117): every cash value carries its currency's sign, `$76,612.02` and `-$76,612.02`, on the KPI cards, the equity readout and its axes, the tables, the fidelity check, the histogram of net P&L, the Runs list, Home's recent runs, and the Settings card's capital, so that no label names the currency; a currency without a sign follows its figure as its code, `1,250.00 USDT`. A run's row carries its currency and the charge of its fee table, worked out at each read, neither for a row written before D-114 for a strategy built in a notebook or one whose instrument the store no longer defines, and no charge where the table does not price the instrument, so that no row fails a list; and the lookup before a job refuses a fee table that does not price the instrument, which the run refused only once its signals were computed. The Run backtest dialog's fee table reads Commissions and fees, with each table's charge (the Amendment under step 5.6). A Monte Carlo over the run's trades is a new step 5.20, which runs right after this one.
 
 ### 5.8 Trade table
 
@@ -943,6 +949,44 @@ Not in this step: notifications outside the app (5.11), older jobs in pages.
 #### If it fails
 
 - A bar that jumps back after a reload means the stream started from its first event: fix where the stream starts, not the bar.
+
+### 5.20 Monte Carlo on the run page
+
+Depends on: 5.7 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
+
+#### Purpose
+
+A finished run's page says how its outcome could have varied: its net P&L and maximum drawdown as distributions over resampled trades, and the chance of a net loss, every number served by the API.
+
+#### Prerequisites
+
+- Step 5.7 merged: its results page and its money format (D-117).
+
+#### Prompt
+
+```text
+Masterplan step 5.20 — Monte Carlo on the run page.
+
+Read docs/masterplan/03-prop-simulator.md §6, docs/masterplan/02-engine-and-data.md §7, and web/DESIGN.md (Run page, Stat card, Equity chart). Your review of step 5.7 asked for it (D-117). Implement `ff.backtest.monte_carlo(run, paths=1000, seed=0, max_points=3000)` in `fefat.backtest`: each path draws the run's trades with replacement, as many as the run made, from one seed, and walks the capital through their net P&L in the order drawn, so that a path's drawdown is of its closed trades; beside the paths stand the run's own trades walked the same way in the order it made them, whose closed-trade drawdown the paths compare with, since the metrics' maximum drawdown marks open trades to market and is not of the same kind. Report the net P&L and the maximum drawdown at the 5th, 25th, 50th, 75th, and 95th percentiles, the share of paths that end below the capital, the share whose maximum drawdown exceeds the run's own closed-trade drawdown, and the equity fan, the same five percentiles of the paths' equity at no more than `max_points` trade counts spread evenly, worked out a block of paths at a time, so that 10,000 paths of a run's 50,000 trades never hold every path's equity at once. A run of fewer than two trades answers why instead. Serve it as `GET /v1/runs/{id}/monte-carlo?paths&seed&max_points`, paths from 100 to 10,000, 1,000 by default, seed 0 by default, the same answer for the same seed. Build the Monte Carlo card on the run page after Distributions: its figures as stat cards (the median and the 95th percentile of the maximum drawdown beside the run's own closed-trade drawdown, the median net P&L, and the chance of a net loss), the fan over ECharts in the equity chart's idiom (the median line, the 25th to 75th and the 5th to 95th percentiles as bands), and one line saying how many paths of how many trades were drawn from which seed, that its drawdowns are of closed trades, and that a path keeps no streak across days. Money as the page writes it (D-117).
+
+Contract tests: the API equals `ff.backtest.monte_carlo` for the same run, seed, and paths (pytest), and the page's figures equal the API's (Playwright). Tests: the same seed gives the same report and another seed another; where every trade's P&L is the same, every percentile is the run's own closed-trade figure; the run's own net P&L lies within the paths' range; a run of one trade answers why; the fan of the most paths over the most trades the route allows stays within a stated memory.
+
+Not in this step: the day-block bootstrap, stress (slippage, skipped trades, cost multipliers), parameter reruns, and prop rules, which steps 7.7 and 11.6 keep, their kickoffs deciding whether they share or replace this module.
+```
+
+#### Done means
+
+1. Contract tests pass (API equals SDK; DOM equals API).
+2. Playwright passes on both projects with screenshots.
+3. The same seed reproduces the report, and a run of fewer than two trades says why (tests).
+
+#### Your checks
+
+- Open a real run: the card's median net P&L and 95th-percentile maximum drawdown equal `ff.backtest.monte_carlo(run)` in a notebook for the same run key and seed, and the run's own closed-trade drawdown stands beside them.
+
+#### If it fails
+
+- Two reads that differ mean an unseeded draw: seed every draw from the request's seed, never from the clock or a thread.
 
 ## Phase exit
 

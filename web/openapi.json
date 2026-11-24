@@ -1439,6 +1439,32 @@
         "title": "CoveringDataset",
         "type": "object"
       },
+      "CryptoFee": {
+        "additionalProperties": false,
+        "description": "What a crypto trade costs, in basis points of its value: `maker_bps` for an order that\nrests on the book, `taker_bps` for one that takes liquidity (negative for a rebate).",
+        "properties": {
+          "kind": {
+            "const": "crypto",
+            "default": "crypto",
+            "title": "Kind",
+            "type": "string"
+          },
+          "maker_bps": {
+            "title": "Maker Bps",
+            "type": "string"
+          },
+          "taker_bps": {
+            "title": "Taker Bps",
+            "type": "string"
+          }
+        },
+        "required": [
+          "maker_bps",
+          "taker_bps"
+        ],
+        "title": "CryptoFee",
+        "type": "object"
+      },
       "Currency": {
         "description": "The currency of an instrument's prices and of what a point is worth.",
         "enum": [
@@ -1881,6 +1907,44 @@
         "title": "DrawdownStatistics",
         "type": "object"
       },
+      "EquityCurve": {
+        "description": "A saved run's account for a chart (step 5.7, D-116): its capital, and for each decision\nkept, one entry a column: its close in whole seconds since the epoch, the equity, and how far\nthe equity lies below its peak, each in the instrument's currency.",
+        "properties": {
+          "capital": {
+            "title": "Capital",
+            "type": "number"
+          },
+          "drawdown": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Drawdown",
+            "type": "array"
+          },
+          "equity": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Equity",
+            "type": "array"
+          },
+          "time": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Time",
+            "type": "array"
+          }
+        },
+        "required": [
+          "capital",
+          "time",
+          "equity",
+          "drawdown"
+        ],
+        "title": "EquityCurve",
+        "type": "object"
+      },
       "EstimateSettings": {
         "additionalProperties": false,
         "description": "The settings that change what a run reads, each left out taking the run's default: the\nfinest data it fills on, the provider whose data it reads, the one contract it reads in\nplace of the roll calendar's fronts, and the instrument it trades in place of the one its\nstrategy names (D-114).",
@@ -2043,6 +2107,40 @@
           "output"
         ],
         "title": "FeatureOutput",
+        "type": "object"
+      },
+      "FeeChoice": {
+        "additionalProperties": false,
+        "description": "A fee table a run can name, with the fee of the run's root it would pay (D-117).",
+        "properties": {
+          "fee": {
+            "discriminator": {
+              "mapping": {
+                "crypto": "#/components/schemas/CryptoFee",
+                "futures": "#/components/schemas/FuturesFee"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FuturesFee"
+              },
+              {
+                "$ref": "#/components/schemas/CryptoFee"
+              }
+            ],
+            "title": "Fee"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fee"
+        ],
+        "title": "FeeChoice",
         "type": "object"
       },
       "FidelityCheck": {
@@ -2660,6 +2758,27 @@
         "title": "FirstPrints",
         "type": "object"
       },
+      "FuturesFee": {
+        "additionalProperties": false,
+        "description": "What one futures contract costs per side, in US dollars: exchange and clearing,\nregulatory, and broker charges, summed.",
+        "properties": {
+          "kind": {
+            "const": "futures",
+            "default": "futures",
+            "title": "Kind",
+            "type": "string"
+          },
+          "per_contract_side": {
+            "title": "Per Contract Side",
+            "type": "string"
+          }
+        },
+        "required": [
+          "per_contract_side"
+        ],
+        "title": "FuturesFee",
+        "type": "object"
+      },
       "GivenProfile": {
         "additionalProperties": false,
         "description": "A profile given whole, as the wizard builds a new one; it is kept under `profiles/`\nonce an import with it has written.",
@@ -2712,6 +2831,40 @@
           "last"
         ],
         "title": "HeldDates",
+        "type": "object"
+      },
+      "Histogram": {
+        "additionalProperties": false,
+        "description": "Trades counted in bins of one width, one entry a bin in each column, in order: each bin\nfrom `lower` up to but not including `upper`, holding `trades` trades, none where a measure\nhas no value.",
+        "properties": {
+          "lower": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Lower",
+            "type": "array"
+          },
+          "trades": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Trades",
+            "type": "array"
+          },
+          "upper": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Upper",
+            "type": "array"
+          }
+        },
+        "required": [
+          "lower",
+          "upper",
+          "trades"
+        ],
+        "title": "Histogram",
         "type": "object"
       },
       "ImportPreviewAnswer": {
@@ -5098,9 +5251,12 @@
             "title": "Contracts",
             "type": "array"
           },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
           "fee_tables": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/FeeChoice"
             },
             "title": "Fee Tables",
             "type": "array"
@@ -5180,6 +5336,7 @@
           "contracts",
           "levels",
           "fee_tables",
+          "currency",
           "held",
           "window",
           "sessions",
@@ -5241,6 +5398,44 @@
           "next_cursor"
         ],
         "title": "RunPage",
+        "type": "object"
+      },
+      "RunStatistics": {
+        "description": "What a saved run's record says of how it went (step 5.7, D-116): its metrics, the currency\ntheir money is in, its net P&L as a share of its capital, the fidelity era of each trade date\nit filled on, and its warnings.",
+        "properties": {
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "fidelity_eras": {
+            "items": {
+              "$ref": "#/components/schemas/FidelityEra"
+            },
+            "title": "Fidelity Eras",
+            "type": "array"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/Metrics"
+          },
+          "pnl_share": {
+            "title": "Pnl Share",
+            "type": "number"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "currency",
+          "pnl_share",
+          "metrics",
+          "fidelity_eras",
+          "warnings"
+        ],
+        "title": "RunStatistics",
         "type": "object"
       },
       "RunStrategy": {
@@ -5519,10 +5714,45 @@
             "title": "Created At",
             "type": "string"
           },
+          "currency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Currency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "end": {
             "format": "date",
             "title": "End",
             "type": "string"
+          },
+          "fee": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "crypto": "#/components/schemas/CryptoFee",
+                    "futures": "#/components/schemas/FuturesFee"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/FuturesFee"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CryptoFee"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fee"
           },
           "id": {
             "title": "Id",
@@ -5602,131 +5832,14 @@
           "start",
           "end",
           "settings",
+          "currency",
+          "fee",
           "strategy",
           "job_id",
           "run_key",
           "key_metrics"
         ],
         "title": "SavedRun",
-        "type": "object"
-      },
-      "SavedRunWithMetrics": {
-        "description": "A saved run with what its record says of how it went: its metrics, the fidelity era of\neach trade date it filled on, and its warnings.",
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "end": {
-            "format": "date",
-            "title": "End",
-            "type": "string"
-          },
-          "fidelity_eras": {
-            "items": {
-              "$ref": "#/components/schemas/FidelityEra"
-            },
-            "title": "Fidelity Eras",
-            "type": "array"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "job_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Job Id"
-          },
-          "key_metrics": {
-            "$ref": "#/components/schemas/KeyMetrics"
-          },
-          "metrics": {
-            "$ref": "#/components/schemas/Metrics"
-          },
-          "origin": {
-            "$ref": "#/components/schemas/RunOrigin"
-          },
-          "parameters": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Parameters",
-            "type": "object"
-          },
-          "progress": {
-            "const": 100,
-            "default": 100,
-            "title": "Progress",
-            "type": "integer"
-          },
-          "run_key": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Run Key",
-            "type": "string"
-          },
-          "settings": {
-            "$ref": "#/components/schemas/AppliedRunConfig"
-          },
-          "start": {
-            "format": "date",
-            "title": "Start",
-            "type": "string"
-          },
-          "state": {
-            "const": "saved",
-            "default": "saved",
-            "title": "State",
-            "type": "string"
-          },
-          "status": {
-            "const": "succeeded",
-            "default": "succeeded",
-            "title": "Status",
-            "type": "string"
-          },
-          "strategy": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunStrategy"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "warnings": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Warnings",
-            "type": "array"
-          }
-        },
-        "required": [
-          "id",
-          "created_at",
-          "origin",
-          "parameters",
-          "start",
-          "end",
-          "settings",
-          "strategy",
-          "job_id",
-          "run_key",
-          "key_metrics",
-          "metrics",
-          "fidelity_eras",
-          "warnings"
-        ],
-        "title": "SavedRunWithMetrics",
         "type": "object"
       },
       "SavedStrategyVersion": {
@@ -6596,6 +6709,16 @@
             "title": "Created At",
             "type": "string"
           },
+          "currency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Currency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "end": {
             "format": "date",
             "title": "End",
@@ -6611,6 +6734,31 @@
               }
             ],
             "title": "Error"
+          },
+          "fee": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "crypto": "#/components/schemas/CryptoFee",
+                    "futures": "#/components/schemas/FuturesFee"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/FuturesFee"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CryptoFee"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fee"
           },
           "id": {
             "title": "Id",
@@ -6674,6 +6822,8 @@
           "start",
           "end",
           "settings",
+          "currency",
+          "fee",
           "strategy",
           "status",
           "progress",
@@ -7072,6 +7222,42 @@
           "time_zone"
         ],
         "title": "TimestampRule",
+        "type": "object"
+      },
+      "TradeDistributions": {
+        "additionalProperties": false,
+        "description": "A run's trades by net P&L in the currency, R multiple, MAE and MFE in ticks, and minutes\nheld, with how many trades have no R multiple, having no stop.",
+        "properties": {
+          "holding_minutes": {
+            "$ref": "#/components/schemas/Histogram"
+          },
+          "mae_ticks": {
+            "$ref": "#/components/schemas/Histogram"
+          },
+          "mfe_ticks": {
+            "$ref": "#/components/schemas/Histogram"
+          },
+          "pnl": {
+            "$ref": "#/components/schemas/Histogram"
+          },
+          "r_multiple": {
+            "$ref": "#/components/schemas/Histogram"
+          },
+          "trades_without_r_multiple": {
+            "minimum": 0.0,
+            "title": "Trades Without R Multiple",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pnl",
+          "r_multiple",
+          "trades_without_r_multiple",
+          "mae_ticks",
+          "mfe_ticks",
+          "holding_minutes"
+        ],
+        "title": "TradeDistributions",
         "type": "object"
       },
       "TradeStatistics": {
@@ -10458,7 +10644,7 @@
     },
     "/v1/runs/{run}": {
       "get": {
-        "description": "The run, by its id or its run key, with its metrics, its fidelity eras, and its warnings\nonce saved.",
+        "description": "The run, by its id or its run key, with its four key figures once saved.",
         "operationId": "run_by_id_v1_runs__run__get",
         "parameters": [
           {
@@ -10480,7 +10666,7 @@
                 "schema": {
                   "discriminator": {
                     "mapping": {
-                      "saved": "#/components/schemas/SavedRunWithMetrics",
+                      "saved": "#/components/schemas/SavedRun",
                       "submitted": "#/components/schemas/SubmittedRun"
                     },
                     "propertyName": "state"
@@ -10490,7 +10676,7 @@
                       "$ref": "#/components/schemas/SubmittedRun"
                     },
                     {
-                      "$ref": "#/components/schemas/SavedRunWithMetrics"
+                      "$ref": "#/components/schemas/SavedRun"
                     }
                   ],
                   "title": "Response Run By Id V1 Runs  Run  Get"
@@ -10571,7 +10757,7 @@
                 "schema": {
                   "discriminator": {
                     "mapping": {
-                      "saved": "#/components/schemas/SavedRunWithMetrics",
+                      "saved": "#/components/schemas/SavedRun",
                       "submitted": "#/components/schemas/SubmittedRun"
                     },
                     "propertyName": "state"
@@ -10581,7 +10767,7 @@
                       "$ref": "#/components/schemas/SubmittedRun"
                     },
                     {
-                      "$ref": "#/components/schemas/SavedRunWithMetrics"
+                      "$ref": "#/components/schemas/SavedRun"
                     }
                   ],
                   "title": "Response Cancel Run V1 Runs  Run  Cancel Post"
@@ -10643,6 +10829,278 @@
           }
         ],
         "summary": "Cancel Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run}/distribution": {
+      "get": {
+        "description": "A saved run's trades as histograms of net P&L, R multiple, MAE and MFE in ticks, and\nminutes held; 409 as `/stats` answers it.",
+        "operationId": "run_distribution_v1_runs__run__distribution_get",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TradeDistributions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run Distribution",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run}/equity": {
+      "get": {
+        "description": "A saved run's equity and its drawdown after each decision, in at most `max_points` points\nthat keep its true maximum drawdown; 409 as `/stats` answers it.",
+        "operationId": "run_equity_v1_runs__run__equity_get",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The most points to answer: each bucket of a longer curve keeps its lowest equity, its highest, and its deepest drawdown.",
+            "in": "query",
+            "name": "max_points",
+            "required": false,
+            "schema": {
+              "default": 3000,
+              "description": "The most points to answer: each bucket of a longer curve keeps its lowest equity, its highest, and its deepest drawdown.",
+              "maximum": 10000,
+              "minimum": 5,
+              "title": "Max Points",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquityCurve"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run Equity",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run}/stats": {
+      "get": {
+        "description": "A saved run's metrics with their breakdowns, its currency, its net P&L as a share of its\ncapital, its fidelity eras, and its warnings, from the record in its folder;\n409 for a run not saved yet, a folder that is gone, or one this engine does not read.",
+        "operationId": "run_statistics_v1_runs__run__stats_get",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStatistics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run Statistics",
         "tags": [
           "runs"
         ]

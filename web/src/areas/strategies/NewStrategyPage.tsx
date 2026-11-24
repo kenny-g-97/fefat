@@ -10,6 +10,7 @@ import {
   strategyTemplatesQuery,
   useStrategyCreation,
 } from "@/api/strategies"
+import { sentenceCase } from "@/ui/figures"
 import { Button } from "@/ui/button"
 import { CodeEditor } from "@/ui/code-editor"
 import { Field, FieldError, FieldLabel } from "@/ui/field"
@@ -20,7 +21,6 @@ import { QueryBody } from "@/ui/query-body"
 import { Segmented } from "@/ui/segmented"
 import { BackLink } from "@/ui/text-link"
 import { strategyName } from "./strategy-names"
-import { templateLabel } from "./strategy-versions"
 
 /** New strategy (step 5.5): a template FEAT ships, its hypothesis and its code, copied whole into
  * a new strategy of the name given, as its version 1, built and saved in the server's executor;
@@ -67,7 +67,7 @@ function TemplateCard({
             label="Template"
             options={templates.map((each) => ({
               value: each.name,
-              label: templateLabel(each.name),
+              label: sentenceCase(each.name),
             }))}
             value={template.name}
             disabled={creation.isPending}
@@ -82,7 +82,7 @@ function TemplateCard({
           {template.hypothesis}
         </p>
         <CodeEditor
-          label={`Code of the ${templateLabel(template.name).toLowerCase()} template`}
+          label={`Code of the ${sentenceCase(template.name).toLowerCase()} template`}
           code={template.code}
         />
         <CreateForm
@@ -127,7 +127,7 @@ function CreateForm({ template, creation }: CreateFormProps) {
         name,
         code: template.code,
         hypothesis: template.hypothesis,
-        changelog: `Created from the ${templateLabel(template.name).toLowerCase()} template`,
+        changelog: `Created from the ${sentenceCase(template.name).toLowerCase()} template`,
       },
       {
         onSuccess: (saved) =>

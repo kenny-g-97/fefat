@@ -1,6 +1,6 @@
 import { cn } from "cn"
 import type { ReactNode } from "react"
-import type { ListedRun } from "@/api/runs"
+import type { Currency, Fee, ListedRun } from "@/api/runs"
 import { counted, fidelityLabel, formatMoney } from "@/ui/figures"
 import { IdentityChip } from "@/ui/identity-chip"
 import { Panel } from "@/ui/panel"
@@ -61,9 +61,19 @@ export function RunParametersCard({ run }: Readonly<{ run: ListedRun }>) {
   )
 }
 
-/** Every setting a run runs under, each default applied, as its record keeps them. */
+/** What a fee table charges, as a row of the Settings card: per contract per side, or a crypto
+ * fee's maker and taker rates. */
+function chargeFact(fee: Fee, currency: Currency | null): Fact {
+  return fee.kind === "futures"
+    ? ["Per contract per side", formatMoney(fee.per_contract_side, currency)]
+    : ["Maker, taker", `${fee.maker_bps} bps, ${fee.taker_bps} bps`]
+}
+
+/** Every setting a run runs under, each default applied, as its record keeps them: its capital in
+ * its currency, and its costs together, the fee table with what it charges the instrument on the
+ * run's last day beside the slippage, where its row names the instrument (D-117). */
 export function RunSettingsCard({ run }: Readonly<{ run: ListedRun }>) {
-  const { settings } = run
+  const { settings, currency, fee } = run
   const instrument = settings.instrument ?? null
   const traded: readonly Fact[] =
     instrument === null ? [] : [["Instrument", instrument]]
@@ -72,10 +82,13 @@ export function RunSettingsCard({ run }: Readonly<{ run: ListedRun }>) {
     ["Data", <IdentityChip key="provider">{settings.provider}</IdentityChip>],
     ["Contract", settings.contract === null ? "Spliced" : settings.contract],
     ["Fidelity", fidelityLabel(settings.fidelity)],
-    ["Fee table", settings.fee_table],
-    ["Capital", formatMoney(settings.capital)],
+    ["Capital", formatMoney(settings.capital, currency)],
   ]
+  const charged: readonly Fact[] =
+    fee === null ? [] : [chargeFact(fee, currency)]
   const right: readonly Fact[] = [
+    ["Commissions and fees", settings.fee_table],
+    ...charged,
     [
       "Slippage on market orders",
       counted(settings.slippage_ticks.market, "tick"),
@@ -93,7 +106,10 @@ export function RunSettingsCard({ run }: Readonly<{ run: ListedRun }>) {
   ]
   return (
     <Panel title="Settings">
-      <div data-testid="run-settings" className="grid grid-cols-2 gap-x-12">
+      <div
+        data-testid="run-settings"
+        className="grid grid-cols-[auto_auto] gap-x-12"
+      >
         <Facts facts={left} />
         <Facts facts={right} />
       </div>

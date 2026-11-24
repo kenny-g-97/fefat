@@ -1,5 +1,5 @@
-import type { RunEstimated } from "@/api/runs"
-import { fidelityLabel } from "@/ui/figures"
+import type { Currency, Fee, RunEstimated } from "@/api/runs"
+import { feeWords, fidelityLabel, sentenceCase } from "@/ui/figures"
 import { KeptField } from "@/ui/kept-field"
 import { Choice, Picker } from "@/ui/picker"
 import {
@@ -11,6 +11,8 @@ import {
 
 /** The fidelity select's first choice, the setting left out. No level is written so. */
 const AUTO = "(auto)"
+/** The line under Commissions and fees, which describes the field. */
+const FEE_NOTE = "run-fee-table-note"
 
 type RunCostFieldsProps = Readonly<{
   draft: RunDraft
@@ -19,15 +21,14 @@ type RunCostFieldsProps = Readonly<{
 }>
 
 /** How the run fills and what it costs: the fidelity, Auto by default, each level the data
- * holds; the fee table, among those that price the instrument; and the ticks of slippage on
- * market and stop orders, each showing the run's default until it is typed, so that a change of
- * fidelity still moves it. */
+ * holds; the commissions and fees, the fee tables that price the instrument, each with what it
+ * charges on the window's last day (D-117); and the ticks of slippage on market and stop orders,
+ * each showing the run's default until it is typed, so that a change of fidelity still moves it. */
 export function RunCostFields({
   draft,
   estimate,
   onChange,
 }: RunCostFieldsProps) {
-  const feeTable = feeTableOf(draft, estimate)
   const level = draft.fidelity === null ? AUTO : draft.fidelity
   const held = level === AUTO || estimate.levels.includes(level)
   return (
@@ -40,6 +41,7 @@ export function RunCostFields({
               className="w-full"
               value={held ? level : ""}
               placeholder="Choose a level"
+              describedBy="run-fidelity-note"
               options={[
                 { value: AUTO, label: "Auto" },
                 ...estimate.levels.map((level) => ({
@@ -56,6 +58,7 @@ export function RunCostFields({
             />
           </Choice>
           <p
+            id="run-fidelity-note"
             data-testid="run-fidelity-note"
             className="text-xs text-muted-foreground"
           >
@@ -66,33 +69,64 @@ export function RunCostFields({
                 : "Each date fills on this level, or the next coarser it holds"}
           </p>
         </div>
-        {estimate.fee_tables.length === 0 ? (
-          <p
-            role="alert"
-            data-testid="run-no-fee-table"
-            className="text-negative"
-          >
-            {`No fee table prices ${estimate.instrument}, so a run could not count its costs.`}
-          </p>
-        ) : (
-          <Choice id="run-fee-table" label="Fee table">
-            <Picker
-              id="run-fee-table"
-              className="w-full"
-              value={feeTable === null ? "" : feeTable}
-              placeholder="Choose a table"
-              options={estimate.fee_tables.map((table) => ({
-                value: table,
-                label: table,
-              }))}
-              onChange={(chosen) => onChange({ ...draft, feeTable: chosen })}
-            />
-          </Choice>
-        )}
+        <RunFees draft={draft} estimate={estimate} onChange={onChange} />
       </div>
       <RunSlippage draft={draft} estimate={estimate} onChange={onChange} />
     </>
   )
+}
+
+/** The commissions and fees: the fee tables that price the instrument, each named in the list
+ * with its charge, the trigger naming the table, and a line under it saying what the charge holds,
+ * which describes the field; where FEAT has none for the instrument, why a run cannot count its
+ * costs. */
+function RunFees({ draft, estimate, onChange }: RunCostFieldsProps) {
+  const feeTable = feeTableOf(draft, estimate)
+  const chosen = estimate.fee_tables.find((choice) => choice.name === feeTable)
+  if (estimate.fee_tables.length === 0) {
+    return (
+      <p role="alert" data-testid="run-no-fee-table" className="text-negative">
+        {`FEAT has no commissions and fees for ${estimate.instrument}, so a run could not count its costs.`}
+      </p>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <Choice id="run-fee-table" label="Commissions and fees">
+        <Picker
+          id="run-fee-table"
+          className="w-full"
+          value={feeTable === null ? "" : feeTable}
+          shown={feeTable === null ? undefined : feeTable}
+          placeholder="Choose a table"
+          describedBy={chosen === undefined ? undefined : FEE_NOTE}
+          options={estimate.fee_tables.map((choice) => ({
+            value: choice.name,
+            label: `${choice.name}, ${feeWords(choice.fee, estimate.currency)}`,
+          }))}
+          onChange={(name) => onChange({ ...draft, feeTable: name })}
+        />
+      </Choice>
+      {chosen !== undefined && (
+        <p
+          id={FEE_NOTE}
+          data-testid="run-fee-note"
+          className="text-xs text-muted-foreground"
+        >
+          {feeNote(chosen.fee, estimate.currency)}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** What a table's charge holds, as the line under the field says it, in a broker statement's
+ * words. */
+function feeNote(fee: Fee, currency: Currency): string {
+  const charge = sentenceCase(feeWords(fee, currency))
+  return fee.kind === "futures"
+    ? `${charge}: commission plus exchange, clearing, and NFA fees`
+    : `${charge} of each trade's value: maker for a limit order that rested on the book`
 }
 
 /** A level as a sentence writes it: lower case, an acronym as it is. */

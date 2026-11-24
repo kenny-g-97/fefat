@@ -657,8 +657,7 @@ export interface paths {
         };
         /**
          * Run By Id
-         * @description The run, by its id or its run key, with its metrics, its fidelity eras, and its warnings
-         *     once saved.
+         * @description The run, by its id or its run key, with its four key figures once saved.
          */
         get: operations["run_by_id_v1_runs__run__get"];
         put?: never;
@@ -684,6 +683,70 @@ export interface paths {
          *     one whose job has ended, is answered as it is.
          */
         post: operations["cancel_run_v1_runs__run__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/runs/{run}/distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Distribution
+         * @description A saved run's trades as histograms of net P&L, R multiple, MAE and MFE in ticks, and
+         *     minutes held; 409 as `/stats` answers it.
+         */
+        get: operations["run_distribution_v1_runs__run__distribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/runs/{run}/equity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Equity
+         * @description A saved run's equity and its drawdown after each decision, in at most `max_points` points
+         *     that keep its true maximum drawdown; 409 as `/stats` answers it.
+         */
+        get: operations["run_equity_v1_runs__run__equity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/runs/{run}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Statistics
+         * @description A saved run's metrics with their breakdowns, its currency, its net P&L as a share of its
+         *     capital, its fidelity eras, and its warnings, from the record in its folder;
+         *     409 for a run not saved yet, a folder that is gone, or one this engine does not read.
+         */
+        get: operations["run_statistics_v1_runs__run__stats_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1617,6 +1680,22 @@ export interface components {
             schema_name: string;
         };
         /**
+         * CryptoFee
+         * @description What a crypto trade costs, in basis points of its value: `maker_bps` for an order that
+         *     rests on the book, `taker_bps` for one that takes liquidity (negative for a rebate).
+         */
+        CryptoFee: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "crypto";
+            /** Maker Bps */
+            maker_bps: string;
+            /** Taker Bps */
+            taker_bps: string;
+        };
+        /**
          * Currency
          * @description The currency of an instrument's prices and of what a point is worth.
          * @enum {string}
@@ -1797,6 +1876,22 @@ export interface components {
             trough: string | null;
         };
         /**
+         * EquityCurve
+         * @description A saved run's account for a chart (step 5.7, D-116): its capital, and for each decision
+         *     kept, one entry a column: its close in whole seconds since the epoch, the equity, and how far
+         *     the equity lies below its peak, each in the instrument's currency.
+         */
+        EquityCurve: {
+            /** Capital */
+            capital: number;
+            /** Drawdown */
+            drawdown: number[];
+            /** Equity */
+            equity: number[];
+            /** Time */
+            time: number[];
+        };
+        /**
          * EstimateSettings
          * @description The settings that change what a run reads, each left out taking the run's default: the
          *     finest data it fills on, the provider whose data it reads, the one contract it reads in
@@ -1866,6 +1961,16 @@ export interface components {
             parameters: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+        };
+        /**
+         * FeeChoice
+         * @description A fee table a run can name, with the fee of the run's root it would pay (D-117).
+         */
+        FeeChoice: {
+            /** Fee */
+            fee: components["schemas"]["FuturesFee"] | components["schemas"]["CryptoFee"];
+            /** Name */
+            name: string;
         };
         /**
          * FidelityCheck
@@ -2116,6 +2221,20 @@ export interface components {
             rows: components["schemas"]["PrintSeen"][];
         };
         /**
+         * FuturesFee
+         * @description What one futures contract costs per side, in US dollars: exchange and clearing,
+         *     regulatory, and broker charges, summed.
+         */
+        FuturesFee: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "futures";
+            /** Per Contract Side */
+            per_contract_side: string;
+        };
+        /**
          * GivenProfile
          * @description A profile given whole, as the wizard builds a new one; it is kept under `profiles/`
          *     once an import with it has written.
@@ -2155,6 +2274,20 @@ export interface components {
              * Format: date
              */
             last: string;
+        };
+        /**
+         * Histogram
+         * @description Trades counted in bins of one width, one entry a bin in each column, in order: each bin
+         *     from `lower` up to but not including `upper`, holding `trades` trades, none where a measure
+         *     has no value.
+         */
+        Histogram: {
+            /** Lower */
+            lower: number[];
+            /** Trades */
+            trades: number[];
+            /** Upper */
+            upper: number[];
         };
         ImportPreviewAnswer: components["schemas"]["TablePreview"] | components["schemas"]["FileSeen"] | components["schemas"]["BatchSeen"] | components["schemas"]["RefusedImport"];
         /**
@@ -3208,8 +3341,9 @@ export interface components {
             bars: number;
             /** Contracts */
             contracts: string[];
+            currency: components["schemas"]["Currency"];
             /** Fee Tables */
-            fee_tables: string[];
+            fee_tables: components["schemas"]["FeeChoice"][];
             held: components["schemas"]["fefat__backtest__record__Window"] | null;
             /** Instrument */
             instrument: string;
@@ -3250,6 +3384,22 @@ export interface components {
             next_cursor: string | null;
             /** Runs */
             runs: (components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRun"])[];
+        };
+        /**
+         * RunStatistics
+         * @description What a saved run's record says of how it went (step 5.7, D-116): its metrics, the currency
+         *     their money is in, its net P&L as a share of its capital, the fidelity era of each trade date
+         *     it filled on, and its warnings.
+         */
+        RunStatistics: {
+            currency: components["schemas"]["Currency"];
+            /** Fidelity Eras */
+            fidelity_eras: components["schemas"]["FidelityEra"][];
+            metrics: components["schemas"]["Metrics"];
+            /** Pnl Share */
+            pnl_share: number;
+            /** Warnings */
+            warnings: string[];
         };
         /**
          * RunStrategy
@@ -3359,11 +3509,14 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            currency: components["schemas"]["Currency"] | null;
             /**
              * End
              * Format: date
              */
             end: string;
+            /** Fee */
+            fee: (components["schemas"]["FuturesFee"] | components["schemas"]["CryptoFee"]) | null;
             /** Id */
             id: string;
             /** Job Id */
@@ -3400,64 +3553,6 @@ export interface components {
              */
             status: "succeeded";
             strategy: components["schemas"]["RunStrategy"] | null;
-        };
-        /**
-         * SavedRunWithMetrics
-         * @description A saved run with what its record says of how it went: its metrics, the fidelity era of
-         *     each trade date it filled on, and its warnings.
-         */
-        SavedRunWithMetrics: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * End
-             * Format: date
-             */
-            end: string;
-            /** Fidelity Eras */
-            fidelity_eras: components["schemas"]["FidelityEra"][];
-            /** Id */
-            id: string;
-            /** Job Id */
-            job_id: string | null;
-            key_metrics: components["schemas"]["KeyMetrics"];
-            metrics: components["schemas"]["Metrics"];
-            origin: components["schemas"]["RunOrigin"];
-            /** Parameters */
-            parameters: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-            /**
-             * Progress
-             * @default 100
-             * @constant
-             */
-            progress: 100;
-            /** Run Key */
-            run_key: string;
-            settings: components["schemas"]["AppliedRunConfig"];
-            /**
-             * Start
-             * Format: date
-             */
-            start: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            state: "saved";
-            /**
-             * Status
-             * @default succeeded
-             * @constant
-             */
-            status: "succeeded";
-            strategy: components["schemas"]["RunStrategy"] | null;
-            /** Warnings */
-            warnings: string[];
         };
         /**
          * SavedStrategyVersion
@@ -3883,6 +3978,7 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            currency: components["schemas"]["Currency"] | null;
             /**
              * End
              * Format: date
@@ -3890,6 +3986,8 @@ export interface components {
             end: string;
             /** Error */
             error: string | null;
+            /** Fee */
+            fee: (components["schemas"]["FuturesFee"] | components["schemas"]["CryptoFee"]) | null;
             /** Id */
             id: string;
             /** Job Id */
@@ -4075,6 +4173,20 @@ export interface components {
             stamp: components["schemas"]["BarStamp"];
             /** Time Zone */
             time_zone: string | null;
+        };
+        /**
+         * TradeDistributions
+         * @description A run's trades by net P&L in the currency, R multiple, MAE and MFE in ticks, and minutes
+         *     held, with how many trades have no R multiple, having no stop.
+         */
+        TradeDistributions: {
+            holding_minutes: components["schemas"]["Histogram"];
+            mae_ticks: components["schemas"]["Histogram"];
+            mfe_ticks: components["schemas"]["Histogram"];
+            pnl: components["schemas"]["Histogram"];
+            r_multiple: components["schemas"]["Histogram"];
+            /** Trades Without R Multiple */
+            trades_without_r_multiple: number;
         };
         /**
          * TradeStatistics
@@ -6118,7 +6230,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRunWithMetrics"];
+                    "application/json": components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRun"];
                 };
             };
             /** @description Unauthorized */
@@ -6168,7 +6280,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRunWithMetrics"];
+                    "application/json": components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRun"];
                 };
             };
             /** @description Unauthorized */
@@ -6191,6 +6303,186 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    run_distribution_v1_runs__run__distribution_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradeDistributions"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    run_equity_v1_runs__run__equity_get: {
+        parameters: {
+            query?: {
+                /** @description The most points to answer: each bucket of a longer curve keeps its lowest equity, its highest, and its deepest drawdown. */
+                max_points?: number;
+            };
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EquityCurve"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    run_statistics_v1_runs__run__stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunStatistics"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -4,7 +4,8 @@ its request finds saved and 202 with a run whose `backtest` job is queued or run
 progress the job's stream gives (`GET /v1/streams/job:<job id>`); `POST /v1/runs/estimate`, what a
 run would read, before anything runs, and `POST /v1/runs/stress`, a run and the same at more ticks
 of slippage (step 5.6); `GET /v1/runs`, a page of the runs; `GET /v1/runs/{run}`, a run by its id
-or its run key, with its metrics once saved; and `POST /v1/runs/{run}/cancel`. A run's status is
+or its run key; `GET /v1/runs/{run}/stats`, `/equity`, and `/distribution`, a saved run's results,
+read from its folder (step 5.7); and `POST /v1/runs/{run}/cancel`. A run's status is
 `succeeded` once its folder is saved, its job's before; a job whose run proved saved under another
 run's row names that row in its result, which a client then follows."""
 
@@ -23,7 +24,8 @@ from pydantic import (
     model_validator,
 )
 
-from fefat.backtest import RunConfig
+from fefat.backtest import RunConfig, TradeDistributions
+from fefat.backtest.equity_curves import EQUITY_POINTS, FEWEST_POINTS
 from fefat.market.contracts import parse_contract_name
 from fefat.market.fidelity import FidelityText
 from fefat.strategy.spec import InstrumentRoot
@@ -33,13 +35,15 @@ from fefat_app.http.problems import CodeRefused, code_refusal_responses, problem
 from fefat_app.job_models import JobStatus
 from fefat_app.library import LibraryRefusedError
 from fefat_app.runs import (
+    EquityCurve,
     EstimateRefusedError,
     IndexedRun,
     NoSuchRunError,
+    ResultsRefusedError,
     RunCursorError,
     RunEstimate,
     RunPage,
-    RunWithMetrics,
+    RunStatistics,
     SavedRun,
     StressedRuns,
 )
@@ -51,6 +55,8 @@ router = APIRouter(prefix=API_PREFIX, tags=["runs"], dependencies=[Depends(the_i
 
 MOST_RUNS_PER_PAGE = 100
 """The most runs a page of the list holds."""
+MOST_EQUITY_POINTS = 10_000
+"""The most points of a run's equity a client can ask for."""
 RunAddress = Annotated[
     str, Path(description="A run's id in the index, a UUIDv7, or its run key, 64 hex digits.")
 ]
@@ -145,9 +151,9 @@ def _refusals() -> Generator[None]:
         raise CodeRefused(refused.line, str(refused)) from refused
     except EstimateRefusedError as refused:
         raise HTTPException(400, str(refused)) from refused
-    except NoSuchStrategyError as unknown:
+    except (NoSuchStrategyError, NoSuchRunError) as unknown:
         raise HTTPException(404, str(unknown)) from unknown
-    except LibraryRefusedError as refused:
+    except (LibraryRefusedError, ResultsRefusedError) as refused:
         raise HTTPException(409, str(refused)) from refused
 
 
@@ -231,17 +237,53 @@ def listed_runs(
 
 
 @router.get("/runs/{run}", responses=problem_responses(401, 404, 422))
-def run_by_id(run: RunAddress, container: ContainerDependency) -> RunWithMetrics:
-    """The run, by its id or its run key, with its metrics, its fidelity eras, and its warnings
-    once saved."""
+def run_by_id(run: RunAddress, container: ContainerDependency) -> IndexedRun:
+    """The run, by its id or its run key, with its four key figures once saved."""
     try:
         return container.runs.by_id(run)
     except NoSuchRunError as unknown:
         raise HTTPException(404, str(unknown)) from unknown
 
 
+@router.get("/runs/{run}/stats", responses=problem_responses(401, 404, 409, 422))
+def run_statistics(run: RunAddress, container: ContainerDependency) -> RunStatistics:
+    """A saved run's metrics with their breakdowns, its currency, its net P&L as a share of its
+    capital, its fidelity eras, and its warnings, from the record in its folder;
+    409 for a run not saved yet, a folder that is gone, or one this engine does not read."""
+    with _refusals():
+        return container.runs.statistics(run)
+
+
+@router.get("/runs/{run}/equity", responses=problem_responses(401, 404, 409, 422))
+def run_equity(
+    run: RunAddress,
+    container: ContainerDependency,
+    max_points: Annotated[
+        int,
+        Query(
+            ge=FEWEST_POINTS,
+            le=MOST_EQUITY_POINTS,
+            description="The most points to answer: each bucket of a longer curve keeps its "
+            "lowest equity, its highest, and its deepest drawdown.",
+        ),
+    ] = EQUITY_POINTS,
+) -> EquityCurve:
+    """A saved run's equity and its drawdown after each decision, in at most `max_points` points
+    that keep its true maximum drawdown; 409 as `/stats` answers it."""
+    with _refusals():
+        return container.runs.equity_curve(run, max_points)
+
+
+@router.get("/runs/{run}/distribution", responses=problem_responses(401, 404, 409, 422))
+def run_distribution(run: RunAddress, container: ContainerDependency) -> TradeDistributions:
+    """A saved run's trades as histograms of net P&L, R multiple, MAE and MFE in ticks, and
+    minutes held; 409 as `/stats` answers it."""
+    with _refusals():
+        return container.runs.distributions(run)
+
+
 @router.post("/runs/{run}/cancel", responses=problem_responses(401, 403, 404, 422))
-def cancel_run(run: RunAddress, container: ContainerDependency) -> RunWithMetrics:
+def cancel_run(run: RunAddress, container: ContainerDependency) -> IndexedRun:
     """Cancel the run's job, at once while it is queued, asked while it runs; a saved run, or
     one whose job has ended, is answered as it is."""
     try:

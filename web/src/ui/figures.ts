@@ -1,8 +1,43 @@
+import type { Currency, Fee } from "@/api/runs"
+
 /** The decimals a figure may need: an instrument's lot step goes to 0.00001. */
 const DECIMALS: readonly number[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
+/** The sign each currency is written with before its figure, or null for one written as its
+ * code after it (web/DESIGN.md, Type, D-117); a currency the API adds fails the build here. */
+const CURRENCY_SIGNS: Readonly<Record<Currency, string | null>> = {
+  USD: "$",
+  USDT: null,
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥",
+  CHF: null,
+  AUD: "A$",
+  CAD: "CA$",
+}
+
+/** The space no line breaks at, which joins a currency's code to its figure (D-117), named
+ * since a formatter writes the character itself, which reads as a plain space. */
+export const NO_BREAK_SPACE = String.fromCharCode(0xa0)
+
 const MONEY = /^(-?)(\d+)(?:\.(\d+))?$/
 const THOUSANDS = /\B(?=(\d{3})+$)/g
+
+const TWO_DECIMALS = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  signDisplay: "negative",
+})
+const PERCENT = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  signDisplay: "negative",
+})
+const EDGE = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+  signDisplay: "negative",
+})
 
 const UNITS: Readonly<Record<string, string>> = {
   s: "second",
@@ -47,19 +82,89 @@ export function formatPrice(price: number, decimals: number): string {
   return price.toFixed(decimals)
 }
 
-/** Money as the API sends it, decimal text such as `-2721.560000`, with its thousands apart and
- * the zeros past its second decimal dropped, read as text so that no float rounds a digit:
- * `-2,721.56`. */
-export function formatMoney(text: string): string {
+/** Money as the API sends it, decimal text such as `-2721.560000`, in `currency`: its thousands
+ * apart and the zeros past its second decimal dropped, read as text so that no float rounds a
+ * digit, after the currency's sign and the minus before both, `-$2,721.56` (`withCurrency`). */
+export function formatMoney(text: string, currency: Currency | null): string {
   const found = MONEY.exec(text)
   if (found === null) {
     throw new Error(
       `Expected money as decimal text, got ${JSON.stringify(text)}.`
     )
   }
-  const [, sign, whole, fraction = ""] = found
+  const [, , whole, fraction = ""] = found
   const decimals = fraction.replace(/0+$/, "").padEnd(2, "0")
-  return `${sign}${whole.replace(THOUSANDS, ",")}.${decimals}`
+  const digits = `${whole.replace(THOUSANDS, ",")}.${decimals}`
+  return withCurrency(moneySign(text) === "negative", digits, currency)
+}
+
+/** An amount of `currency` the API sends as a float, at two decimals: `$51,250.50`. */
+export function moneyFigure(value: number, currency: Currency | null): string {
+  return signedInCurrency(TWO_DECIMALS.format(value), currency)
+}
+
+/** An axis's or a histogram's edge in `currency`, with the decimals it holds: `-$150`. */
+export function moneyEdge(edge: number, currency: Currency | null): string {
+  return signedInCurrency(EDGE.format(edge), currency)
+}
+
+/** What a fee table charges, as the run pays it: per contract per side in the instrument's
+ * currency, or a crypto fee in basis points of the trade's value, as its record writes it. */
+export function feeWords(fee: Fee, currency: Currency | null): string {
+  if (fee.kind === "futures") {
+    return `${formatMoney(fee.per_contract_side, currency)} per contract per side`
+  }
+  return `maker ${fee.maker_bps} bps, taker ${fee.taker_bps} bps`
+}
+
+/** A figure Intl wrote, its minus moved before `currency`'s sign. */
+function signedInCurrency(written: string, currency: Currency | null): string {
+  const negative = written.startsWith("-")
+  return withCurrency(negative, negative ? written.slice(1) : written, currency)
+}
+
+/** A currency's sign and code apart, for a figure set large beside its code in small (web/DESIGN.md,
+ * Stat card): the currency to write the figure in, none where its code follows it, and that code. */
+export function currencyApart(
+  currency: Currency
+): Readonly<{ figure: Currency | null; code: Currency | null }> {
+  return CURRENCY_SIGNS[currency] === null
+    ? { figure: null, code: currency }
+    : { figure: currency, code: null }
+}
+
+/** `digits` in `currency`: after its sign, or before its code where it has no sign, joined by a
+ * space no line breaks at, the minus first; plain where no currency is known, as for a run
+ * indexed before D-114. */
+function withCurrency(
+  negative: boolean,
+  digits: string,
+  currency: Currency | null
+): string {
+  const minus = negative ? "-" : ""
+  if (currency === null) {
+    return `${minus}${digits}`
+  }
+  const sign = CURRENCY_SIGNS[currency]
+  return sign === null
+    ? `${minus}${digits}${NO_BREAK_SPACE}${currency}`
+    : `${minus}${sign}${digits}`
+}
+
+/** A ratio or an amount the API sends as a float, at two decimals with its thousands apart:
+ * `1.84`, `-0.31`, `51,250.50`; a value that rounds to zero carries no sign. */
+export function formatFigure(value: number): string {
+  return TWO_DECIMALS.format(value)
+}
+
+/** A share the API sends as a fraction, in percent at two decimals: 0.025 is `2.50%`. */
+export function formatShare(share: number): string {
+  return PERCENT.format(share)
+}
+
+/** A histogram's edge, with the decimals it holds and its thousands apart: `-1.5`, `12,500`. */
+export function formatEdge(edge: number): string {
+  return EDGE.format(edge)
 }
 
 /** The sign of money as the API sends it, read from its text. */
@@ -85,6 +190,13 @@ export function fidelityLabel(fidelity: string): string {
     )
   }
   return `${parts[1]}-${UNITS[parts[2]]} bars`
+}
+
+/** A word of the API in sentence case, such as an exit reason, a weekday, or a template's name:
+ * `target_1` reads `Target 1`, `mean_reversion` `Mean reversion`. */
+export function sentenceCase(word: string): string {
+  const spaced = word.replaceAll("_", " ")
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
 /** A count with its thousands apart: 12,345. */
