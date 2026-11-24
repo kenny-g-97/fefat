@@ -75,14 +75,14 @@ export function MonteCarloFan({
         <li className="flex items-center gap-2">
           <span
             data-slot="chart-mark"
-            className="size-2.5 rounded-xl bg-input/50"
+            className="size-2.5 rounded-xl bg-input/60"
           />
           Middle 50%
         </li>
         <li className="flex items-center gap-2">
           <span
             data-slot="chart-mark"
-            className="size-2.5 rounded-xl bg-input/25"
+            className="size-2.5 rounded-xl bg-input/30"
           />
           Middle 90%
         </li>

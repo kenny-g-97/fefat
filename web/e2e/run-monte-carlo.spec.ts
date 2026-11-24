@@ -178,9 +178,25 @@ test("every figure of the Monte Carlo card is the API's", async ({
   await screenshot(page, "run-monte-carlo")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
   await screenshot(page, "run-monte-carlo-light")
-  expect(await lowContrastInEachTheme(page)).toEqual([])
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   expect(errors).toEqual([])
+})
+
+test("the Monte Carlo card reads in both themes, under the motion floor", async ({
+  loggedIn: page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  const key = await theSeededKey(page)
+
+  await page.goto(`/runs/run?key=${key}`)
+
+  const card = page.getByRole("region", { name: "Monte Carlo" })
+  await expect(card.getByTestId("monte-carlo-figures")).toBeVisible()
+  await expect(
+    card.getByTestId("fan-chart").locator("canvas").first()
+  ).toBeVisible()
+  expect(await lowContrastInEachTheme(page)).toEqual([])
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
 })
 
 test("the fan's keys step its readout through the counts of trades", async ({
