@@ -18,7 +18,7 @@ import {
 /** The fill of the paths between their 5th and 25th, and 75th and 95th percentiles. */
 export const OUTER_BAND = 0.3
 /** The fill of the paths between their 25th and 75th percentiles. */
-export const INNER_BAND = 0.6
+export const INNER_BAND = 0.55
 
 /** The chart of `fan` in the theme's `tokens` (web/DESIGN.md, Patterns, Fan chart), in the equity
  * chart's idiom: the paths' median equity in the accent over a dashed line at the capital, and

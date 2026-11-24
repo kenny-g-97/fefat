@@ -191,6 +191,10 @@ test("every figure of the Monte Carlo card is the API's", async ({
   await expect(
     card.getByTestId("fan-chart").locator("canvas").first()
   ).toBeVisible()
+  // The full page holds the equity chart too, which loads and draws on its own.
+  await expect(
+    page.getByTestId("equity-chart").locator("canvas").first()
+  ).toBeVisible()
   await page.mouse.move(700, 36)
   await screenshot(page, "run-monte-carlo")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
@@ -232,6 +236,8 @@ test("the fan's keys step its readout through the counts of trades", async ({
   await expect(chart.locator("canvas").first()).toBeVisible()
   await chart.focus()
   await page.keyboard.press("Home")
+  // The quality floor: the fan shows the keyboard's focus, the app's outline.
+  await expect(chart).toHaveCSS("outline-style", "solid")
   await expect(card.getByTestId("fan-count")).toHaveText(`Median after 0 ${of}`)
   await expect(card.getByTestId("fan-figure")).toHaveText(
     readout(shown.capital)
@@ -317,6 +323,32 @@ test("a run of one trade says why it has no Monte Carlo", async ({
   await expect(card.getByTestId("fan-chart")).toHaveCount(0)
 })
 
+test("while the paths are drawn the card says so and keeps its room", async ({
+  loggedIn: page,
+}) => {
+  // The design review: a long run's paths take seconds, and the cards under them must not jump.
+  const key = await theSeededKey(page)
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route(`**/v1/runs/${key}/monte-carlo`, async (route) => {
+    await held
+    await route.continue()
+  })
+
+  await page.goto(`/runs/run?key=${key}`)
+
+  const card = page.getByRole("region", { name: "Monte Carlo" })
+  const drawing = card.getByRole("status")
+  await expect(drawing).toHaveText("Drawing paths", { timeout: 1000 })
+  const room = await drawing.boundingBox()
+  expect(room?.height).toBeGreaterThanOrEqual(700)
+  release()
+  await expect(card.getByTestId("monte-carlo-figures")).toBeVisible()
+  await expect(card.getByTestId("monte-carlo-drawing")).toHaveCount(0)
+})
+
 test("a fuller Monte Carlo draws its fan over every count", async ({
   loggedIn: page,
 }) => {
@@ -342,6 +374,9 @@ test("a fuller Monte Carlo draws its fan over every count", async ({
   )
   await expect(
     card.getByTestId("fan-chart").locator("canvas").first()
+  ).toBeVisible()
+  await expect(
+    page.getByTestId("equity-chart").locator("canvas").first()
   ).toBeVisible()
   await page.mouse.move(700, 36)
   await screenshot(page, "run-monte-carlo-full")

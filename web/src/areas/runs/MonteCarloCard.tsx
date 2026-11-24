@@ -10,12 +10,27 @@ import { monteCarloNote, toneOf } from "./result-words"
 
 /** How a run's outcome could have varied (web/DESIGN.md, Patterns, Monte Carlo card): its trades
  * drawn again with replacement, as the server draws them, its paths' figures beside the run's own
- * and their equity fan, money in `currency`; a run of fewer than two trades says why it has none. */
+ * and their equity fan, money in `currency`; a run of fewer than two trades says why it has none.
+ * While the paths are drawn, which a long run's take seconds, the card says so and keeps the room
+ * its figures take, so that the cards under it do not jump. */
 export function MonteCarloCard({
   runKey,
   currency,
 }: Readonly<{ runKey: string; currency: Currency }>) {
   const monteCarlo = useQuery(runMonteCarloQuery(runKey))
+  if (monteCarlo.status === "pending") {
+    return (
+      <Panel title="Monte Carlo">
+        <p
+          role="status"
+          data-testid="monte-carlo-drawing"
+          className="min-h-176 text-xs text-muted-foreground"
+        >
+          Drawing paths
+        </p>
+      </Panel>
+    )
+  }
   return (
     <Panel title="Monte Carlo">
       <ResultBody query={monteCarlo}>

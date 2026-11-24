@@ -17,7 +17,8 @@ type StatProps = Readonly<{
  * given, such as the code of a currency without a sign, its label under it, and one line of what
  * the figure is out of. The label comes first in the document, so that a screen reader names the
  * figure before reading it. An `inset` stat stands inside a card, on the control surface without
- * a shadow, as the boxes inside cards do. */
+ * a shadow, as the boxes inside cards do, and spans three rows of its `dl`'s grid, so that the
+ * stats of a row keep their figures, labels, and lines in line where a label takes two lines. */
 export function Stat({
   label,
   value,
@@ -31,8 +32,10 @@ export function Stat({
     <div
       data-testid={testId}
       className={cn(
-        "flex flex-col rounded-xl border p-5",
-        inset ? "bg-muted" : "bg-card shadow-raised"
+        "rounded-xl border p-5",
+        inset
+          ? "row-span-3 grid grid-rows-subgrid gap-0 bg-muted"
+          : "flex flex-col bg-card shadow-raised"
       )}
     >
       <dt className="order-2 mt-1 text-foreground-secondary">{label}</dt>

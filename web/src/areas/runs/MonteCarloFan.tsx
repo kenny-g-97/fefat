@@ -75,7 +75,7 @@ export function MonteCarloFan({
         <li className="flex items-center gap-2">
           <span
             data-slot="chart-mark"
-            className="size-2.5 rounded-xl bg-input/60"
+            className="size-2.5 rounded-xl bg-input/55"
           />
           Middle 50%
         </li>

@@ -110,7 +110,8 @@ export function legibleText(fill: string): string {
   return contrast(fill, ink) >= contrast(fill, white) ? ink : white
 }
 
-function contrast(one: string, other: string): number {
+/** WCAG's contrast of two colours, `#rrggbb`: 1 for one colour, 21 for black on white. */
+export function contrast(one: string, other: string): number {
   const [lighter, darker] = [luminance(one), luminance(other)].toSorted(
     (left, right) => right - left
   )

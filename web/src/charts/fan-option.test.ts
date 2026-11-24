@@ -1,7 +1,35 @@
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
-import type { ThemeTokens } from "./chart-look"
+import designSystem from "../../DESIGN.md?raw"
+import { contrast, type ThemeTokens } from "./chart-look"
 import { fanOption, INNER_BAND, OUTER_BAND } from "./fan-option"
+
+/** The token `name`'s colour in `theme` as web/DESIGN.md's palette writes it, which
+ * python/tests/test_web_design_system.py holds equal to index.css, since vitest reads no
+ * stylesheet. */
+function tokenColour(name: string, theme: "dark" | "light"): string {
+  const row = new RegExp(
+    `^\\| [^|]+ \\| \`${name}\` \\| \`(#[0-9a-f]{6})\` \\| \`(#[0-9a-f]{6})\` \\|`,
+    "m"
+  ).exec(designSystem)
+  if (row === null) {
+    throw new Error(
+      `Expected the token ${name} in web/DESIGN.md's palette, got none.`
+    )
+  }
+  return theme === "dark" ? row[1] : row[2]
+}
+
+/** `top` over `bottom` at `alpha`, as a canvas paints a fill, in whole channels. */
+function painted(top: string, bottom: string, alpha: number): string {
+  const channels = (colour: string) =>
+    [1, 3, 5].map((at) => parseInt(colour.slice(at, at + 2), 16))
+  const under = channels(bottom)
+  const mixed = channels(top).map((over, at) =>
+    Math.round(over * alpha + under[at] * (1 - alpha))
+  )
+  return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`
+}
 
 /** A series' points, each a count of trades and an amount. */
 const points = z.array(z.tuple([z.number(), z.number()]))
@@ -117,6 +145,24 @@ describe("the Monte Carlo fan's options", () => {
     expect(left("USD")).toBe(72)
     expect(left("USDT")).toBe(95)
   })
+
+  it.each(["dark", "light"] as const)(
+    "keeps the median at 3 : 1 against either band in the %s theme",
+    (theme) => {
+      // The design review: WCAG 1.4.11, a line keeps 3 : 1 against any band it crosses
+      // (web/DESIGN.md, Charts); at 60 % the middle band left 2.95 : 1 in the light theme.
+      const token = (name: string) => tokenColour(name, theme)
+
+      const ratios = [OUTER_BAND, INNER_BAND].map((fill) =>
+        contrast(
+          token("--brand"),
+          painted(token("--input"), token("--card"), fill)
+        )
+      )
+
+      ratios.forEach((ratio) => expect(ratio).toBeGreaterThanOrEqual(3))
+    }
+  )
 
   it("starts nothing by itself, offers no zoom, and draws horizontal grid lines alone", () => {
     expect(option.animation).toBe(false)
