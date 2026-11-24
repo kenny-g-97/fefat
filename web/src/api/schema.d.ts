@@ -731,6 +731,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/runs/{run}/monte-carlo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Monte Carlo
+         * @description A saved run's Monte Carlo (step 5.20): `paths` walks of its trades drawn with replacement
+         *     from `seed`, their net P&L and closed-trade maximum drawdown at five percentiles beside the
+         *     run's own walk, the shares of paths that end below the capital and fall deeper than the run,
+         *     and the equity fan; `too_few_trades`, with why, for a run of fewer than two trades; 409 as
+         *     `/stats` answers it.
+         */
+        get: operations["run_monte_carlo_v1_runs__run__monte_carlo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/runs/{run}/stats": {
         parameters: {
             query?: never;
@@ -1892,6 +1916,28 @@ export interface components {
             time: number[];
         };
         /**
+         * EquityFan
+         * @description The paths' equity at five percentiles after each count of `trades_made`, one entry a count in
+         *     each column, and the `capital` they start from, in the instrument's currency, as numbers a chart
+         *     draws: the first count is none, where every percentile is the capital.
+         */
+        EquityFan: {
+            /** Capital */
+            capital: number;
+            /** Median */
+            median: number[];
+            /** P25 */
+            p25: number[];
+            /** P5 */
+            p5: number[];
+            /** P75 */
+            p75: number[];
+            /** P95 */
+            p95: number[];
+            /** Trades Made */
+            trades_made: number[];
+        };
+        /**
          * EstimateSettings
          * @description The settings that change what a run reads, each left out taking the run's default: the
          *     finest data it fills on, the provider whose data it reads, the one contract it reads in
@@ -2676,6 +2722,37 @@ export interface components {
             trades: components["schemas"]["TradeStatistics"];
         };
         /**
+         * MonteCarlo
+         * @description `paths` walks of the run's `trades` trades drawn with replacement from `seed`, `kind`
+         *     resampled (module docstring): the paths' net P&L and maximum drawdown at five percentiles, the
+         *     run's own walk's net P&L and closed-trade maximum drawdown, the share of paths that end below
+         *     the capital, the share whose maximum drawdown exceeds the run's own, and the equity fan.
+         */
+        MonteCarlo: {
+            /** Deeper Drawdown Share */
+            deeper_drawdown_share: number;
+            fan: components["schemas"]["EquityFan"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "resampled";
+            max_drawdown: components["schemas"]["Percentiles"];
+            /** Net Loss Share */
+            net_loss_share: number;
+            net_pnl: components["schemas"]["Percentiles"];
+            /** Own Max Drawdown */
+            own_max_drawdown: string;
+            /** Own Net Pnl */
+            own_net_pnl: string;
+            /** Paths */
+            paths: number;
+            /** Seed */
+            seed: number;
+            /** Trades */
+            trades: number;
+        };
+        /**
          * MonthCoverage
          * @description A month of a quality report (`fefat.market.monthly_coverage`): the month, `2026-03`; its
          *     sessions, those with records of any schema, those with ticks, with 1-second bars, and with
@@ -2943,6 +3020,23 @@ export interface components {
             kind: "path";
             /** Path */
             path: string;
+        };
+        /**
+         * Percentiles
+         * @description An amount at five percentiles of the paths, each the amount of the path at that rank, the
+         *     nearest in the paths ordered from the lowest, in the instrument's currency.
+         */
+        Percentiles: {
+            /** Median */
+            median: string;
+            /** P25 */
+            p25: string;
+            /** P5 */
+            p5: string;
+            /** P75 */
+            p75: string;
+            /** P95 */
+            p95: string;
         };
         /**
          * PeriodOutcome
@@ -4173,6 +4267,22 @@ export interface components {
             stamp: components["schemas"]["BarStamp"];
             /** Time Zone */
             time_zone: string | null;
+        };
+        /**
+         * TooFewTrades
+         * @description The Monte Carlo of a run of fewer than `FEWEST_TRADES` trades, `kind` too_few_trades: the
+         *     trades it made, and why it draws no path.
+         */
+        TooFewTrades: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "too_few_trades";
+            /** Reason */
+            reason: string;
+            /** Trades */
+            trades: number;
         };
         /**
          * TradeDistributions
@@ -6402,6 +6512,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EquityCurve"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    run_monte_carlo_v1_runs__run__monte_carlo_get: {
+        parameters: {
+            query?: {
+                /** @description The paths to draw, each as many of the run's trades as it made. */
+                paths?: number;
+                /** @description The seed of the draws: the same seed and paths answer the same. */
+                seed?: number;
+                /** @description The most counts of trades the fan holds, spread evenly from none to the run's trades. */
+                max_points?: number;
+            };
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonteCarlo"] | components["schemas"]["TooFewTrades"];
                 };
             };
             /** @description Unauthorized */

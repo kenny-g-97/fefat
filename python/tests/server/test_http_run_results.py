@@ -1,7 +1,8 @@
 """A saved run's results over the API (step 5.7, D-116): `GET /v1/runs/{run}/stats`, `/equity`, and
 `/distribution` answer what the SDK gives for the same run (Done means 1), the equity in at most
 `max_points` points that keep the true maximum drawdown (Done means 3), and a run whose results
-cannot be read says why, while its row still answers."""
+cannot be read says why, while its row still answers. From step 5.20, `/monte-carlo` answers the
+SDK's too, the same for the same seed, and why for a run of one trade (its Done means 1 and 3)."""
 
 import json
 import os
@@ -16,7 +17,7 @@ from sqlalchemy import Engine, text, update
 from sqlalchemy.orm import Session
 
 import fefat as ff
-from fefat.backtest import Run, TradeDistributions
+from fefat.backtest import MonteCarlo, Run, TradeDistributions
 from fefat.backtest.artifacts import RECORD_FILE
 from fefat.backtest.metrics import Metrics
 from fefat.config import resolve_paths
@@ -30,6 +31,8 @@ from test_run_records import a_submission, the_run
 
 NANOSECONDS = 1_000_000_000
 KEY_OF_NO_RUN = "e" * 64
+RESULTS = ["stats", "equity", "distribution", "monte-carlo"]
+"""A saved run's results, each of which a run without readable results refuses alike."""
 
 
 @pytest.fixture
@@ -126,7 +129,75 @@ def test_the_distributions_are_the_sdks(client: TestClient, run: Run) -> None:
     assert sum(body["pnl"]["trades"]) == run.metrics.trades.trades
 
 
-@pytest.mark.parametrize("result", ["stats", "equity", "distribution"])
+def test_the_monte_carlo_is_the_sdks_for_the_same_run_seed_and_paths(
+    client: TestClient, run: Run
+) -> None:
+    # Done means 1 of step 5.20: API equals SDK.
+    asked = client.get(f"/v1/runs/{run.hash}/monte-carlo", params={"paths": 300, "seed": 3})
+    left_out = client.get(f"/v1/runs/{run.hash}/monte-carlo")
+
+    assert asked.status_code == 200
+    assert MonteCarlo.model_validate(asked.json()) == ff.backtest.monte_carlo(run, 300, 3)
+    assert MonteCarlo.model_validate(left_out.json()) == ff.backtest.monte_carlo(run)
+
+
+def test_the_same_seed_answers_the_same_monte_carlo_and_another_seed_another(
+    client: TestClient, run: Run
+) -> None:
+    # Done means 3 of step 5.20.
+    address = f"/v1/runs/{run.hash}/monte-carlo"
+
+    first = client.get(address, params={"seed": 4}).json()
+
+    assert client.get(address, params={"seed": 4}).json() == first
+    assert client.get(address, params={"seed": 5}).json() != first
+
+
+def test_a_run_of_one_trade_answers_why_it_has_no_monte_carlo(client: TestClient, run: Run) -> None:
+    # Done means 3 of step 5.20.
+    trades = run.folder / "trades.parquet"
+    pl.read_parquet(trades).head(1).write_parquet(trades)
+
+    answer = client.get(f"/v1/runs/{run.hash}/monte-carlo")
+
+    assert answer.status_code == 200
+    assert answer.json() == {
+        "kind": "too_few_trades",
+        "trades": 1,
+        "reason": "This run made 1 trade, and a Monte Carlo draws from at least 2.",
+    }
+
+
+def test_the_most_paths_and_points_a_monte_carlo_allows_are_drawn(
+    client: TestClient, run: Run
+) -> None:
+    answer = client.get(
+        f"/v1/runs/{run.hash}/monte-carlo", params={"paths": 10_000, "max_points": 10_000}
+    )
+
+    assert answer.status_code == 200
+    assert answer.json()["paths"] == 10_000
+
+
+@pytest.mark.parametrize(
+    "asked",
+    [
+        {"paths": 99},
+        {"paths": 10_001},
+        {"seed": -1},
+        {"max_points": 4},
+        {"max_points": 10_001},
+    ],
+)
+def test_a_monte_carlo_asked_out_of_bounds_is_refused(
+    client: TestClient, run: Run, asked: dict[str, int]
+) -> None:
+    answer = client.get(f"/v1/runs/{run.hash}/monte-carlo", params=asked)
+
+    assert answer.status_code == 422
+
+
+@pytest.mark.parametrize("result", RESULTS)
 def test_an_unknown_run_answers_404(client: TestClient, run: Run, result: str) -> None:
     assert run.hash != KEY_OF_NO_RUN
 
@@ -136,7 +207,7 @@ def test_an_unknown_run_answers_404(client: TestClient, run: Run, result: str) -
     assert "names none" in answer.json()["detail"]
 
 
-@pytest.mark.parametrize("result", ["stats", "equity", "distribution"])
+@pytest.mark.parametrize("result", RESULTS)
 def test_a_run_not_saved_yet_is_refused(
     client: TestClient, run: Run, engine: Engine, result: str
 ) -> None:
@@ -167,7 +238,7 @@ def test_a_run_whose_job_ended_is_told_to_run_it_again(
     assert "come once" not in detail
 
 
-@pytest.mark.parametrize("result", ["stats", "equity", "distribution"])
+@pytest.mark.parametrize("result", RESULTS)
 def test_a_folder_that_is_gone_says_so(client: TestClient, run: Run, result: str) -> None:
     shutil.rmtree(run.folder)
 
@@ -178,7 +249,7 @@ def test_a_folder_that_is_gone_says_so(client: TestClient, run: Run, result: str
     assert "Run the backtest again" in answer.json()["detail"]
 
 
-@pytest.mark.parametrize("result", ["stats", "equity", "distribution"])
+@pytest.mark.parametrize("result", RESULTS)
 def test_a_run_another_engine_saved_is_refused_in_the_engines_words(
     client: TestClient, run: Run, result: str
 ) -> None:
@@ -216,7 +287,10 @@ def test_a_folder_part_gone_says_to_delete_it_first(client: TestClient, run: Run
     assert str(run.folder) not in answer.json()["detail"]
 
 
-@pytest.mark.parametrize(("result", "artifact"), [("equity", "equity"), ("distribution", "trades")])
+@pytest.mark.parametrize(
+    ("result", "artifact"),
+    [("equity", "equity"), ("distribution", "trades"), ("monte-carlo", "trades")],
+)
 def test_a_damaged_artifact_says_to_delete_the_folder(
     client: TestClient, run: Run, result: str, artifact: str
 ) -> None:
@@ -257,6 +331,6 @@ def test_a_row_whose_metrics_another_engine_shaped_keeps_its_page(
     assert results.status_code == 409
 
 
-@pytest.mark.parametrize("result", ["stats", "equity", "distribution"])
+@pytest.mark.parametrize("result", RESULTS)
 def test_the_results_need_a_login(client: TestClient, result: str) -> None:
     assert client.get(f"/v1/runs/{KEY_OF_NO_RUN}/{result}").status_code == 401
