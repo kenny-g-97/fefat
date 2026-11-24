@@ -4,7 +4,8 @@ import { z } from "zod"
 const listed = z.object({ runs: z.array(z.object({ run_key: z.string() })) })
 
 /** The run key of the seed's saved run of the strategy `demo`, the run the specs call
- * `demo-run-01`: the first that `GET /v1/runs` lists of it, newest first. */
+ * `demo-run-01`: the last that `GET /v1/runs` lists of it, newest first, so the oldest, since
+ * other specs launch runs of it in the same seeded home. */
 export async function theSeededKey(page: Page): Promise<string> {
   const answer = await page.request.get("/v1/runs", {
     params: { strategy: "demo", status: "succeeded" },

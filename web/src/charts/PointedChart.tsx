@@ -76,9 +76,10 @@ export function PointedChart({
     }
   }, [onPointed])
 
+  // A new `onPointed` makes a new chart above, which this draws again.
   useEffect(() => {
     chart.current?.setOption(optionIn(readThemeTokens()), { notMerge: true })
-  }, [optionIn, theme])
+  }, [optionIn, theme, onPointed])
 
   const letGo = () => {
     chart.current?.dispatchAction({

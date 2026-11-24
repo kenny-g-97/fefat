@@ -134,24 +134,41 @@ test("every figure of the Monte Carlo card is the API's", async ({
   await page.goto(`/runs/run?key=${key}`)
 
   const card = page.getByRole("region", { name: "Monte Carlo" })
-  const stat = (id: string) => card.getByTestId(`monte-carlo-${id}`)
-  await expect(stat("net")).toContainText("Median net P&L")
-  await expect(stat("net")).toContainText(money(net.median))
-  await expect(stat("net")).toContainText(
+  // Each stat card's label, its figure, and its line, each read whole, so that no figure passes
+  // for another standing in the same card.
+  const stat = async (
+    id: string,
+    label: string,
+    figure: string,
+    line: string
+  ) => {
+    const found = card.getByTestId(`monte-carlo-${id}`)
+    await expect(found.locator("dt")).toHaveText(label)
+    await expect(found.locator("dd").first()).toHaveText(figure)
+    await expect(found.locator("dd").nth(1)).toHaveText(line)
+  }
+  await stat(
+    "net",
+    "Median net P&L",
+    money(net.median),
     `5th to 95th percentile: ${money(net.p5)} to ${money(net.p95)}`
   )
-  await expect(stat("loss")).toContainText("Chance of a net loss")
-  await expect(stat("loss")).toContainText(shareText(report.net_loss_share))
-  await expect(stat("drawdown")).toContainText("Median max drawdown")
-  await expect(stat("drawdown")).toContainText(money(drawdown.median))
-  await expect(stat("drawdown")).toContainText(
+  await stat(
+    "loss",
+    "Chance of a net loss",
+    shareText(report.net_loss_share),
+    "Paths that ended below the capital"
+  )
+  await stat(
+    "drawdown",
+    "Median max drawdown",
+    money(drawdown.median),
     `The run's own, of closed trades: ${money(report.own_max_drawdown)}`
   )
-  await expect(stat("drawdown-95")).toContainText(
-    "95th percentile max drawdown"
-  )
-  await expect(stat("drawdown-95")).toContainText(money(drawdown.p95))
-  await expect(stat("drawdown-95")).toContainText(
+  await stat(
+    "drawdown-95",
+    "95th percentile max drawdown",
+    money(drawdown.p95),
     `${shareText(report.deeper_drawdown_share)} of paths fell deeper than the run's own`
   )
   // D-117: every cash value carries its currency's sign, and no label names the currency.
@@ -229,6 +246,55 @@ test("the fan's keys step its readout through the counts of trades", async ({
   await page.keyboard.press("Escape")
   await expect(card.getByTestId("fan-count")).toHaveText(
     `Median after ${report.trades} ${of}`
+  )
+})
+
+test("the pointer on the fan moves its readout to the API's figures there, and leaving gives the last back", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  const { currency, report } = await theMonteCarlo(page, key)
+  const readout = (amount: number) => figureMoney(amount, currency)
+  const { fan: shown } = report
+  const last = shown.trades_made.length - 1
+  await page.goto(`/runs/run?key=${key}`)
+  const card = page.getByRole("region", { name: "Monte Carlo" })
+  const chart = card.getByTestId("fan-chart")
+  await expect(chart.locator("canvas").first()).toBeVisible()
+  await chart.scrollIntoViewIfNeeded()
+  const box = await chart.boundingBox()
+  if (box === null) {
+    throw new Error("Expected the fan drawn, got no box.")
+  }
+  const count = card.getByTestId("fan-count")
+
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.5)
+  await expect(count).not.toHaveText(
+    `Median after ${shown.trades_made[last]} of ${countText(report.trades, "trade")}`
+  )
+
+  const pointedCount = /^Median after ([\d,]+) of /.exec(
+    await count.innerText()
+  )
+  if (pointedCount === null) {
+    throw new Error("Expected the readout to name a count of trades, got none.")
+  }
+  const at = shown.trades_made.indexOf(
+    Number(pointedCount[1].replaceAll(",", ""))
+  )
+  expect(at).toBeGreaterThan(0)
+  await expect(card.getByTestId("fan-figure")).toHaveText(
+    readout(shown.median[at])
+  )
+  await expect(card.getByTestId("fan-inner")).toHaveText(
+    `${readout(shown.p25[at])} to ${readout(shown.p75[at])}`
+  )
+  await expect(card.getByTestId("fan-outer")).toHaveText(
+    `${readout(shown.p5[at])} to ${readout(shown.p95[at])}`
+  )
+  await page.mouse.move(box.x + box.width / 2, box.y - 60)
+  await expect(card.getByTestId("fan-figure")).toHaveText(
+    readout(shown.median[last])
   )
 })
 

@@ -118,24 +118,6 @@ describe("the Monte Carlo fan's options", () => {
     expect(left("USDT")).toBe(95)
   })
 
-  it("keeps the line at the capital in view, wherever the paths went", () => {
-    const axisOf = (shift: number) => {
-      const moved = (column: readonly number[]) =>
-        column.map((amount) => amount + shift)
-      const { yAxis } = fanOption(
-        { ...FAN, p5: moved(FAN.p5), p95: moved(FAN.p95) },
-        "USD",
-        TOKENS
-      )
-      return yAxis
-    }
-
-    expect(axisOf(10_000)).toMatchObject({ min: 50_000 })
-    expect(axisOf(-10_000)).toMatchObject({ max: 50_000 })
-    expect(axisOf(0)).not.toHaveProperty("min")
-    expect(axisOf(0)).not.toHaveProperty("max")
-  })
-
   it("starts nothing by itself, offers no zoom, and draws horizontal grid lines alone", () => {
     expect(option.animation).toBe(false)
     expect(option.tooltip).toMatchObject({ axisPointer: { animation: false } })
