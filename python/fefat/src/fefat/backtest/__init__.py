@@ -13,8 +13,10 @@ From step 5.3 `run` tells a callable each stage it reaches (`RunStage`): `progre
 `saved_runs_in(runs_dir)` lists the runs saved there (`fefat.backtest.saved_runs`), and
 `estimated` tells what a run of a window would read before anything runs (step 5.6).
 `equity_curve` downsamples a run's equity, keeping its deepest drawdown, and `trade_distributions`
-counts its trades into histograms (step 5.7). `RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
-`fefat.backtest.schemas`, and the record is `fefat.backtest.record`. `fidelity_check` works a
+counts its trades into histograms (step 5.7); `monte_carlo` walks paths of its trades drawn again
+with replacement (step 5.20). `RunConfig` holds the run's settings (`fefat.backtest.run_config`),
+the artifacts' schemas are `fefat.backtest.schemas`, and the record is `fefat.backtest.record`.
+`fidelity_check` works a
 saved run's fidelity check out again (`fefat.backtest.fidelity`, step 2.12), and `reconcile`
 waits for fill exports.
 """
@@ -29,6 +31,13 @@ from fefat.backtest.metrics import (
     PeriodOutcome,
     RefusedCheck,
     running_drawdown,
+)
+from fefat.backtest.monte_carlo import (
+    EquityFan,
+    MonteCarlo,
+    Percentiles,
+    TooFewTrades,
+    monte_carlo,
 )
 from fefat.backtest.reconcile import reconcile
 from fefat.backtest.record import FeaturePin, RunRecord
@@ -62,23 +71,28 @@ __all__ = [
     "TRADES",
     "TRADE_PATHS",
     "AppliedRunConfig",
+    "EquityFan",
     "FeaturePin",
     "FidelityCheck",
     "FidelityEra",
     "FidelityRerun",
     "Histogram",
+    "MonteCarlo",
+    "Percentiles",
     "PeriodOutcome",
     "RefusedCheck",
     "Run",
     "RunConfig",
     "RunRecord",
     "RunStage",
+    "TooFewTrades",
     "TradeDistributions",
     "WindowEstimate",
     "equity_curve",
     "estimated",
     "fidelity_check",
     "held_instruments",
+    "monte_carlo",
     "reconcile",
     "run",
     "running_drawdown",
