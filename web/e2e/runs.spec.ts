@@ -390,7 +390,7 @@ test("a saved run's page shows its status, its key, and every setting", async ({
   // D-117: the fee table with what it charges the instrument, and the capital in its currency.
   const charge = moneyText(seeded.fee.per_contract_side, seeded.currency)
   await expect(settings).toContainText(
-    `Commissions and fees${seeded.settings.fee_table}, ${charge} per contract per side`
+    `Commissions and fees${seeded.settings.fee_table}Per contract per side${charge}`
   )
   await expect(settings).toContainText(
     `Capital${moneyText(seeded.settings.capital, seeded.currency)}`
