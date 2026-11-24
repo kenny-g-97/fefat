@@ -4,16 +4,18 @@ import type { ReactNode } from "react"
 type StatProps = Readonly<{
   label: string
   value: ReactNode
+  unit?: string | null
   detail?: ReactNode
   tone?: "positive" | "negative"
   testId: string
 }>
 
 /** A stat card (web/DESIGN.md, Patterns, Stat card), one of a `dl`: its figure at 24 px in bold,
- * in the colour of its sign where it is money, its label under it, and one line of what the
- * figure is out of. The label comes first in the document, so that a screen reader names the
+ * in the colour of its sign where it is money, with the `unit` after it at 12 px where one is
+ * given, such as the code of a currency without a sign, its label under it, and one line of what
+ * the figure is out of. The label comes first in the document, so that a screen reader names the
  * figure before reading it. */
-export function Stat({ label, value, detail, tone, testId }: StatProps) {
+export function Stat({ label, value, unit, detail, tone, testId }: StatProps) {
   return (
     <div
       data-testid={testId}
@@ -28,6 +30,14 @@ export function Stat({ label, value, detail, tone, testId }: StatProps) {
         )}
       >
         {value}
+        {typeof unit === "string" && (
+          <>
+            {" "}
+            <span className="text-xs font-semibold tracking-normal">
+              {unit}
+            </span>
+          </>
+        )}
       </dd>
       {detail !== undefined && (
         <dd className="order-3 mt-1 text-xs text-muted-foreground">{detail}</dd>

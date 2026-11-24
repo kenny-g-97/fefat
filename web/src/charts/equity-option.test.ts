@@ -34,6 +34,27 @@ describe("the equity chart's options", () => {
   const option = equityOption(CURVE, "USD", TOKENS)
   const [equity, drawdown] = Array.isArray(option.series) ? option.series : []
 
+  it("keeps one strip for both panes' labels, as wide as a currency's code needs", () => {
+    // The reviews of D-117: ECharts shrank a pane alone where its labels overflowed the strip, so
+    // the two time axes, and the crosshair across them, fell out of line.
+    const sides = (currency: "USD" | "USDT") => {
+      const { grid } = equityOption(CURVE, currency, TOKENS)
+      return (Array.isArray(grid) ? grid : []).map((pane) => [
+        pane.left,
+        pane.outerBoundsMode,
+      ])
+    }
+
+    expect(sides("USD")).toEqual([
+      [72, "none"],
+      [72, "none"],
+    ])
+    expect(sides("USDT")).toEqual([
+      [95, "none"],
+      [95, "none"],
+    ])
+  })
+
   it("writes both value axes' labels as money in the run's currency", () => {
     // D-117: a cash value reads as one, on the axes too.
     const axes = Array.isArray(option.yAxis) ? option.yAxis : []

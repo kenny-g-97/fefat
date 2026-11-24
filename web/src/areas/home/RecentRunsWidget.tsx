@@ -54,7 +54,7 @@ function RecentRun({ run }: Readonly<{ run: ListedRun }>) {
         search={runAddress(run)}
         data-slot="row-link"
         data-testid="recent-run"
-        className="group grid min-h-10 grid-cols-[minmax(0,1fr)_auto_6rem] items-center gap-x-3 rounded-xl border border-transparent p-2 hover:border-border hover:bg-muted"
+        className="group grid min-h-10 grid-cols-[minmax(0,1fr)_auto_7rem] items-center gap-x-3 rounded-xl border border-transparent p-2 hover:border-border hover:bg-muted"
       >
         <span className="flex min-w-0 flex-wrap items-center gap-2">
           {run.strategy === null ? (

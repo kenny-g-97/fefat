@@ -28,8 +28,8 @@ const CURRENCY_SIGNS = new Map([
   ["CAD", "CA$"],
 ])
 
-/** A figure, with its minus or none, as money in `currency`: `-$2,721.56`, `12.50 USDT`; plain
- * where the API names no currency. */
+/** A figure, with its minus or none, as money in `currency`: `-$2,721.56`, `12.50 USDT`, the code
+ * joined by a space no line breaks at; plain where the API names no currency. */
 function inCurrency(figure: string, currency: string | null): string {
   if (currency === null) {
     return figure
@@ -38,7 +38,7 @@ function inCurrency(figure: string, currency: string | null): string {
   const digits = figure.replace("-", "")
   const sign = CURRENCY_SIGNS.get(currency)
   return sign === undefined
-    ? `${minus}${digits} ${currency}`
+    ? `${minus}${digits} ${currency}`
     : `${minus}${sign}${digits}`
 }
 

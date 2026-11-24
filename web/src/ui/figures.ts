@@ -119,8 +119,19 @@ function signedInCurrency(written: string, currency: Currency | null): string {
   return withCurrency(negative, negative ? written.slice(1) : written, currency)
 }
 
-/** `digits` in `currency`: after its sign, or before its code where it has no sign, the minus
- * first; plain where no currency is known, as for a run indexed before D-114. */
+/** A currency's sign and code apart, for a figure set large beside its code in small (web/DESIGN.md,
+ * Stat card): the currency to write the figure in, none where its code follows it, and that code. */
+export function currencyApart(
+  currency: Currency
+): Readonly<{ figure: Currency | null; code: Currency | null }> {
+  return CURRENCY_SIGNS[currency] === null
+    ? { figure: null, code: currency }
+    : { figure: currency, code: null }
+}
+
+/** `digits` in `currency`: after its sign, or before its code where it has no sign, joined by a
+ * space no line breaks at, the minus first; plain where no currency is known, as for a run
+ * indexed before D-114. */
 function withCurrency(
   negative: boolean,
   digits: string,
@@ -132,7 +143,7 @@ function withCurrency(
   }
   const sign = CURRENCY_SIGNS[currency]
   return sign === null
-    ? `${minus}${digits} ${currency}`
+    ? `${minus}${digits} ${currency}`
     : `${minus}${sign}${digits}`
 }
 

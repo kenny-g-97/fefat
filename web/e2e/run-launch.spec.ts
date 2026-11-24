@@ -214,6 +214,9 @@ test("a strategy written for data FEAT lacks runs on the instrument chosen", asy
     .getByRole("definition")
     .first()
   await expect(instrument).toHaveText("ES")
+  await expect(
+    page.getByTestId("equity-chart").locator("canvas").first()
+  ).toBeVisible()
   await page.mouse.move(700, 36)
   await screenshot(page, "run-page-instrument")
 

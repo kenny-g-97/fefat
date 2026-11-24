@@ -20,7 +20,13 @@ type EquityOption = ComposeOption<
 
 const FONT = '"Geist Mono", ui-monospace, monospace'
 const MILLISECONDS_A_SECOND = 1000
-const GRID_SIDES = { left: 72, right: 16 }
+const GRID_RIGHT = 16
+/** The strip left of both panes for their value axes' labels, at its narrowest. */
+const LABEL_STRIP = 72
+/** A character of the axes' labels at 12 px of Geist Mono, 0.6 of an em wide. */
+const LABEL_CHARACTER = 7.2
+/** ECharts' room between a value axis's label and its pane. */
+const LABEL_MARGIN = 8
 const NO_LINE = { show: false }
 /** The time axis's labels, in the app's one date format, in this browser's time zone. */
 const TIME_LABELS = {
@@ -46,12 +52,17 @@ export function equityOption(
   currency: Currency,
   tokens: ThemeTokens
 ): EquityOption {
+  const sides = {
+    left: labelStrip(curve, currency),
+    right: GRID_RIGHT,
+    outerBoundsMode: "none",
+  } as const
   return {
     animation: false,
     textStyle: { fontFamily: FONT },
     grid: [
-      { ...GRID_SIDES, top: 8, height: "60%" },
-      { ...GRID_SIDES, top: "70%", bottom: 24 },
+      { ...sides, top: 8, height: "60%" },
+      { ...sides, top: "70%", bottom: 24 },
     ],
     tooltip: {
       trigger: "axis",
@@ -67,6 +78,21 @@ export function equityOption(
     ...equityAxes(curve, currency, tokens),
     series: equitySeries(curve, tokens),
   }
+}
+
+/** The strip left of both panes for their value axes' labels, one width so that the two time axes
+ * line up, ECharts moving neither pane for its labels: room for the widest amount either axis can
+ * label in `currency`, a digit more for a tick rounded past it (D-117). */
+function labelStrip(curve: EquityCurve, currency: Currency): number {
+  const widest = [curve.capital, ...curve.equity, ...curve.drawdown].reduce(
+    (wide, amount) => Math.max(wide, Math.abs(amount)),
+    0
+  )
+  const characters = moneyEdge(Math.round(widest), currency).length + 1
+  return Math.max(
+    LABEL_STRIP,
+    Math.ceil(characters * LABEL_CHARACTER) + LABEL_MARGIN
+  )
 }
 
 /** One time axis over two value axes in `currency`, with horizontal grid lines alone, the upper

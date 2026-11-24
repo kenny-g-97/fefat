@@ -18,9 +18,10 @@ import type { RunsSearch } from "./run-search"
 import { runDetail, slippageWords } from "./run-words"
 
 // shortcut: fixed tracks fit a window of 1280 px beside the sidebar, the strategy taking what is
-// left and a long name wrapping; content-sized tracks through subgrid if a column outgrows them.
+// left and a long name wrapping, the money's 7 rem a loss of -$123,456.78 or -2,721.56 USDT
+// (D-117); content-sized tracks through subgrid if a column outgrows them.
 const COLUMNS =
-  "grid grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_5rem_6rem_6rem_3.5rem_6rem_4.5rem] items-center gap-x-3 gap-y-1 border px-2"
+  "grid grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_5rem_6rem_7rem_3.5rem_7rem_4.5rem] items-center gap-x-3 gap-y-1 border px-2"
 const FIGURE = "text-right text-foreground-secondary"
 
 /** The header over the runs, on the rows' own columns (web/DESIGN.md, Patterns, Runs list). */

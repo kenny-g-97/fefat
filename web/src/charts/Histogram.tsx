@@ -90,10 +90,11 @@ export function HistogramChart({
             <span>{edge(bins.lower[0])}</span>
             {zero >= ZERO_LABEL_MARGIN && zero <= 1 - ZERO_LABEL_MARGIN && (
               <span
+                data-testid="histogram-zero-label"
                 className="absolute -translate-x-1/2"
                 style={{ left: `${zero * 100}%` }}
               >
-                0
+                {edge(0)}
               </span>
             )}
             <span>{edge(bins.upper[count - 1])}</span>

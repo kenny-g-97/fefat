@@ -1,6 +1,7 @@
 import type { Outcome, RunStatistics } from "@/api/run-results"
 import {
   counted,
+  currencyApart,
   fidelityLabel,
   formatCount,
   formatFigure,
@@ -33,6 +34,7 @@ export function KeyFigures({
   const { metrics, currency, pnl_share: pnlShare } = statistics
   const { trades, drawdown, daily } = metrics
   const none = trades.trades === 0 ? "No trades" : null
+  const apart = currencyApart(currency)
   return (
     <dl
       data-testid="key-figures"
@@ -41,7 +43,8 @@ export function KeyFigures({
       <Stat
         testId="kpi-pnl"
         label="Net P&L"
-        value={formatMoney(metrics.pnl, currency)}
+        value={formatMoney(metrics.pnl, apart.figure)}
+        unit={apart.code}
         tone={toneOf(metrics.pnl)}
         detail={`${formatShare(pnlShare)} of the capital`}
       />
@@ -81,7 +84,8 @@ export function KeyFigures({
       <Stat
         testId="kpi-drawdown"
         label="Max drawdown"
-        value={formatMoney(drawdown.max_drawdown, currency)}
+        value={formatMoney(drawdown.max_drawdown, apart.figure)}
+        unit={apart.code}
         detail={`${formatShare(drawdown.max_drawdown_share)} of the capital`}
       />
       <Stat

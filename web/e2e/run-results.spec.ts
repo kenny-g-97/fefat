@@ -481,6 +481,13 @@ test("every figure of a finished run's page is the API's", async ({
   await expect(
     page.getByTestId("histogram-pnl").getByTestId("histogram-zero")
   ).toHaveCount(crossesZero ? 1 : 0)
+  // The reviews of D-117: the measure in its caption without the currency, and its zero as money.
+  await expect(
+    page.getByTestId("histogram-pnl").locator("figcaption")
+  ).toHaveText("Net P&L a trade")
+  await expect(
+    page.getByTestId("histogram-pnl").getByTestId("histogram-zero-label")
+  ).toHaveText(edgeMoney(0, currency))
   await expect(page.getByTestId("equity-chart")).toBeVisible()
   await expect(
     page.getByTestId("equity-chart").locator("canvas").first()
@@ -695,6 +702,45 @@ test("the page draws what the seed cannot: a check, flags, figures that are none
   expect(await lowContrastInEachTheme(page)).toEqual([])
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   expect(errors).toEqual([])
+})
+
+test("a currency without a sign follows each figure as its code, which keeps its card", async ({
+  loggedIn: page,
+}) => {
+  // The reviews of D-117: a code stays with its figure, at 12 px after a stat's, so that a crypto
+  // run's figures keep their cards and its readout reads in its code.
+  const key = await theSeededKey(page)
+  const { stats, curve } = await resultsOf(page, key)
+  await withAnswers(page, key, (body, result) => {
+    if (result === "stats") {
+      body.currency = "USDT"
+    }
+  })
+
+  await page.goto(`/runs/run?key=${key}`)
+
+  const pnl = page.getByTestId("kpi-pnl")
+  await expect(pnl).toContainText(moneyText(stats.metrics.pnl, "USDT"))
+  await expect(pnl).not.toContainText("$")
+  await expect(pnl.getByText("USDT", { exact: true })).toHaveCSS(
+    "font-size",
+    "12px"
+  )
+  for (const id of ["kpi-pnl", "kpi-drawdown"]) {
+    const figure = page.getByTestId(id).locator("dd").first()
+    expect(
+      await figure.evaluate((each) => each.scrollWidth <= each.clientWidth),
+      id
+    ).toBe(true)
+  }
+  await expect(page.getByTestId("equity-figure")).toHaveText(
+    figureMoney(curve.equity[curve.equity.length - 1], "USDT")
+  )
+  await expect(
+    page.getByTestId("equity-chart").locator("canvas").first()
+  ).toBeVisible()
+  await page.mouse.move(700, 36)
+  await screenshot(page, "run-results-code")
 })
 
 test("a check the engine refused says why", async ({ loggedIn: page }) => {
