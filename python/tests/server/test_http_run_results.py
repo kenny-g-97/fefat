@@ -132,7 +132,9 @@ def test_the_distributions_are_the_sdks(client: TestClient, run: Run) -> None:
 def test_the_monte_carlo_is_the_sdks_for_the_same_run_seed_and_paths(
     client: TestClient, run: Run
 ) -> None:
-    # Done means 1 of step 5.20: API equals SDK, with each of the three asked for or left out.
+    # Done means 1 of step 5.20: API equals SDK, with each of the three asked for or left out; a
+    # fan of five counts tells max_points apart only for a run of more than four trades.
+    assert run.trades.height > 4
     asked = client.get(
         f"/v1/runs/{run.hash}/monte-carlo", params={"paths": 300, "seed": 3, "max_points": 5}
     )

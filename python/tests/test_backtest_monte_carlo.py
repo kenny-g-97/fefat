@@ -120,8 +120,9 @@ def test_a_runs_own_net_pnl_lies_within_its_paths_range() -> None:
     assert (report.paths, report.seed, report.trades) == (1000, 0, run.trades.height)
     assert report.own_net_pnl == run.record.summary.pnl
     assert report.net_pnl.p5 <= report.own_net_pnl <= report.net_pnl.p95
-    capital = pl.Series([micro_units(run.config.capital)], dtype=pl.Int64)
-    own_walk = capital.append(run.trades.get_column("pnl").cum_sum() + capital.item())
+    capital = micro_units(run.config.capital)
+    walked = run.trades.get_column("pnl").cum_sum() + capital
+    own_walk = pl.concat([pl.Series([capital], dtype=pl.Int64), walked])
     deepest = ff.backtest.running_drawdown(own_walk).max()
     assert isinstance(deepest, int)
     assert report.own_max_drawdown == Decimal(money_text(deepest))

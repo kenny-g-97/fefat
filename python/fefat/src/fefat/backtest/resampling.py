@@ -9,10 +9,11 @@ artifact holds them in is the order their P&L was made.
 
 The report gives the net P&L and the maximum drawdown at the 5th, 25th, 50th, 75th, and 95th
 percentiles, each the amount of the path at that rank, the nearest in the paths ordered from the
-lowest (`percentiles_of`), so that it is an amount some path reached; the share of paths that end below the capital;
-the share whose maximum drawdown exceeds the run's own; and the equity fan, the same percentiles of
-the paths' equity at no more than `max_points` counts of trades, spread evenly from none, where
-every path holds the capital, to the run's trades. A run of fewer than two trades answers why.
+lowest (`percentiles_of`), so that it is an amount some path reached; the share of paths that end
+below the capital; the share whose maximum drawdown exceeds the run's own; and the equity fan, the
+same percentiles of the paths' equity at no more than `max_points` counts of trades, spread evenly
+from none, where every path holds the capital, to the run's trades. A run of fewer than two trades
+answers why.
 
 The walk works a block of trade counts over every path at a time, `BLOCK_DRAWS` drawn trades a
 block, each block's draws seeded in turn from the seed, so that it holds one block's walk whatever
