@@ -5,6 +5,8 @@ another seed another, the run's own walk beside them, a run of fewer than two tr
 
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from decimal import Decimal
 from itertools import pairwise
 
@@ -14,27 +16,34 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import fefat as ff
-from fefat.backtest.monte_carlo import MonteCarlo, TooFewTrades, resampled_trades
-from fefat.market.engine_units import money_text
+from fefat.backtest import resampling
+from fefat.backtest.resampling import (
+    MonteCarlo,
+    Percentiles,
+    TooFewTrades,
+    percentiles_of,
+    resampled_trades,
+)
+from fefat.market.engine_units import micro_units, money_text
 from notebook_runs import breakout, store_with
 
 CAPITAL = 50_000_000_000
 WINDOW = ("2026-03-05", "2026-03-09")
 MEMORY_BOUND = 512 * 2**20
-"""What 10,000 paths of 50,000 trades, the route's most, may hold at their peak above the trades
-they draw from: 264 to 296 MiB on Windows at step 5.20, where every path's equity at once would
-be 4 GB."""
+"""What 10,000 paths of 50,000 trades with a fan of 10,000 counts, the route's most, may hold at
+their peak above the trades they draw from: 324 to 333 MiB on Windows at step 5.20, where every
+path's equity at once would be 4 GB."""
 ROUTES_MOST = """
 import sys
 
 import polars as pl
 import psutil
 
-from fefat.backtest.monte_carlo import resampled_trades
+from fefat.backtest.resampling import resampled_trades
 
 pnl = pl.Series([((i * 7919) % 1001 - 500) * 1_000_000 for i in range(50_000)], dtype=pl.Int64)
 before = psutil.Process().memory_info().rss
-resampled_trades(pnl, 50_000_000_000, paths=10_000, seed=0, max_points=3000)
+resampled_trades(pnl, 50_000_000_000, paths=10_000, seed=0, max_points=10_000)
 if sys.platform == "win32":
     peak = psutil.Process().memory_info().peak_wset
 else:
@@ -60,6 +69,15 @@ def resampled(
     return report
 
 
+@contextmanager
+def drawn_in_blocks_of(draws: int) -> Iterator[None]:
+    """Walks that draw `draws` trades over every path at a time, so that a test's walk crosses
+    the edges of many blocks, where the default's block holds every trade of a short run."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(resampling, "BLOCK_DRAWS", draws)
+        yield
+
+
 def test_the_same_seed_gives_the_same_report_and_another_seed_another() -> None:
     # Done means 3.
     pnl = trades(*[(index * 37 % 101 - 50) * 1_000_000 for index in range(50)])
@@ -74,7 +92,10 @@ def test_the_same_seed_gives_the_same_report_and_another_seed_another() -> None:
 
 @pytest.mark.parametrize("amount", [-30, 40])
 def test_trades_of_one_amount_give_every_percentile_the_runs_own_walk(amount: int) -> None:
-    report = resampled(trades(*[amount * 1_000_000] * 12), paths=100, max_points=5)
+    # Blocks of 5 counts over the 100 paths: the fan's counts fall inside, at the start of, and
+    # at the end of a block.
+    with drawn_in_blocks_of(500):
+        report = resampled(trades(*[amount * 1_000_000] * 12), paths=100, max_points=5)
 
     assert report.own_net_pnl == 12 * amount
     assert report.own_max_drawdown == max(0, -12 * amount)
@@ -99,6 +120,11 @@ def test_a_runs_own_net_pnl_lies_within_its_paths_range() -> None:
     assert (report.paths, report.seed, report.trades) == (1000, 0, run.trades.height)
     assert report.own_net_pnl == run.record.summary.pnl
     assert report.net_pnl.p5 <= report.own_net_pnl <= report.net_pnl.p95
+    capital = pl.Series([micro_units(run.config.capital)], dtype=pl.Int64)
+    own_walk = capital.append(run.trades.get_column("pnl").cum_sum() + capital.item())
+    deepest = ff.backtest.running_drawdown(own_walk).max()
+    assert isinstance(deepest, int)
+    assert report.own_max_drawdown == Decimal(money_text(deepest))
     fan = report.fan
     assert fan.capital == float(run.config.capital)
     assert fan.trades_made == tuple(range(report.trades + 1))
@@ -109,14 +135,31 @@ def test_a_runs_own_net_pnl_lies_within_its_paths_range() -> None:
 @settings(max_examples=100, deadline=None)
 @given(amounts=st.lists(st.integers(-(10**9), 10**9), min_size=2, max_size=60))
 def test_one_paths_drawdown_is_the_engines_on_the_walk_its_fan_draws(amounts: list[int]) -> None:
-    report = resampled(trades(*amounts), paths=1, max_points=len(amounts) + 1)
+    # Blocks of 3 trades, so that the equity, the peak, and the deepest fall carry across many.
+    with drawn_in_blocks_of(3):
+        report = resampled(trades(*amounts), paths=1, max_points=len(amounts) + 1)
 
     walk = [round(equity * 10**6) for equity in report.fan.median]
     assert walk[0] == CAPITAL
+    assert all(after - before in amounts for before, after in pairwise(walk))
     deepest = ff.backtest.running_drawdown(pl.Series(walk, dtype=pl.Int64)).max()
     assert isinstance(deepest, int)
     assert report.max_drawdown.median == Decimal(money_text(deepest))
     assert report.net_pnl.median == Decimal(money_text(walk[-1] - CAPITAL))
+
+
+def test_a_percentile_is_the_amount_at_its_nearest_rank() -> None:
+    # D-118: the rank round((n - 1) * share) of the amounts ordered from the lowest, a half up.
+    ranked = percentiles_of(pl.Series(range(1000), dtype=pl.Int64))
+
+    assert ranked == Percentiles(
+        p5=Decimal("0.000050"),
+        p25=Decimal("0.000250"),
+        median=Decimal("0.000500"),
+        p75=Decimal("0.000749"),
+        p95=Decimal("0.000949"),
+    )
+    assert percentiles_of(pl.Series(range(102), dtype=pl.Int64)).median == Decimal("0.000051")
 
 
 @settings(max_examples=100, deadline=None)

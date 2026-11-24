@@ -11254,6 +11254,7 @@
             "schema": {
               "default": 0,
               "description": "The seed of the draws: the same seed and paths answer the same.",
+              "maximum": 9007199254740991,
               "minimum": 0,
               "title": "Seed",
               "type": "integer"

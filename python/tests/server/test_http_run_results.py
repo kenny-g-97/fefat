@@ -132,12 +132,15 @@ def test_the_distributions_are_the_sdks(client: TestClient, run: Run) -> None:
 def test_the_monte_carlo_is_the_sdks_for_the_same_run_seed_and_paths(
     client: TestClient, run: Run
 ) -> None:
-    # Done means 1 of step 5.20: API equals SDK.
-    asked = client.get(f"/v1/runs/{run.hash}/monte-carlo", params={"paths": 300, "seed": 3})
+    # Done means 1 of step 5.20: API equals SDK, with each of the three asked for or left out.
+    asked = client.get(
+        f"/v1/runs/{run.hash}/monte-carlo", params={"paths": 300, "seed": 3, "max_points": 5}
+    )
     left_out = client.get(f"/v1/runs/{run.hash}/monte-carlo")
 
     assert asked.status_code == 200
-    assert MonteCarlo.model_validate(asked.json()) == ff.backtest.monte_carlo(run, 300, 3)
+    assert MonteCarlo.model_validate(asked.json()) == ff.backtest.monte_carlo(run, 300, 3, 5)
+    assert len(asked.json()["fan"]["trades_made"]) == 5
     assert MonteCarlo.model_validate(left_out.json()) == ff.backtest.monte_carlo(run)
 
 
@@ -185,6 +188,7 @@ def test_the_most_paths_and_points_a_monte_carlo_allows_are_drawn(
         {"paths": 99},
         {"paths": 10_001},
         {"seed": -1},
+        {"seed": 2**53},
         {"max_points": 4},
         {"max_points": 10_001},
     ],

@@ -3,11 +3,13 @@ trades come in other draws. Each path draws as many trades as the run made, with
 from one seed, and walks the capital through their net P&L in the order drawn, so that its maximum
 drawdown, the deepest fall of its equity below the highest before it, the capital first, is of its
 closed trades. Beside the paths stand the run's own trades walked the same way in the order it made
-them, since the metrics' maximum drawdown marks open trades to market and is not of the same kind.
+them, since the metrics' maximum drawdown marks open trades to market and is not of the same kind;
+a run's trades are flat to flat, each closed before the next opens, so that the order the trades
+artifact holds them in is the order their P&L was made.
 
 The report gives the net P&L and the maximum drawdown at the 5th, 25th, 50th, 75th, and 95th
 percentiles, each the amount of the path at that rank, the nearest in the paths ordered from the
-lowest, so that it is an amount some path reached; the share of paths that end below the capital;
+lowest (`percentiles_of`), so that it is an amount some path reached; the share of paths that end below the capital;
 the share whose maximum drawdown exceeds the run's own; and the equity fan, the same percentiles of
 the paths' equity at no more than `max_points` counts of trades, spread evenly from none, where
 every path holds the capital, to the run's trades. A run of fewer than two trades answers why.
@@ -42,10 +44,11 @@ FEWEST_TRADES = 2
 """The fewest trades a Monte Carlo draws from: a run of one trade has one path to walk."""
 FEWEST_FAN_POINTS = 2
 """The fewest counts of the fan: none, and the run's trades."""
-BLOCK_DRAWS = 1_000_000
+BLOCK_DRAWS = 500_000
 """The trades drawn at a time over every path, a block of `BLOCK_DRAWS // paths` counts: 10,000
-paths of a run's 50,000 trades, the route's most, held 264 to 296 MiB at their peak above the
-run's trades and took about 10 s on the PC of step 5.20, within the memory test's bound."""
+paths of a run's 50,000 trades with a fan of 10,000 counts, the route's most, held 324 to 333 MiB
+at their peak above the run's trades and took about 17 s on the PC of step 5.20, within the memory
+test's bound, where blocks of 1,000,000 held up to 505 MiB in 11 s."""
 PERCENTILES = {"p5": 0.05, "p25": 0.25, "median": 0.5, "p75": 0.75, "p95": 0.95}
 """Each percentile's name and its share of the paths ordered from the lowest."""
 
@@ -140,8 +143,8 @@ def resampled_trades(
         paths=paths,
         trades=trades,
         seed=seed,
-        net_pnl=_percentiles(accounts, pl.col("equity") - capital),
-        max_drawdown=_percentiles(accounts, pl.col("deepest")),
+        net_pnl=percentiles_of(accounts.get_column("equity") - capital),
+        max_drawdown=percentiles_of(accounts.get_column("deepest")),
         own_net_pnl=Decimal(money_text(own_net_pnl)),
         own_max_drawdown=Decimal(money_text(own_max_drawdown)),
         net_loss_share=accounts.select((pl.col("equity") < capital).mean()).item(),
@@ -241,13 +244,15 @@ def _walked(
 
 
 def _ranked(amount: pl.Expr) -> list[pl.Expr]:
-    """`amount` at each of `PERCENTILES`, the value at the nearest rank."""
+    """`amount` at each of `PERCENTILES`, the value at the nearest rank (`percentiles_of`)."""
     return [amount.quantile(share, "nearest").alias(name) for name, share in PERCENTILES.items()]
 
 
-def _percentiles(accounts: pl.DataFrame, amount: pl.Expr) -> Percentiles:
-    """`amount` of the paths' `accounts` at each of `PERCENTILES`, in the currency."""
-    ranked = accounts.select(_ranked(amount)).row(0, named=True)
+def percentiles_of(amounts: pl.Series) -> Percentiles:
+    """`amounts`, whole micro-units, at each of `PERCENTILES`, in the currency: the amount at the
+    rank `round((n - 1) * share)` of the `n` ordered from the lowest and counted from none, a half
+    rounded up, as Polars' nearest quantile counts it, so that each is one of `amounts`."""
+    ranked = amounts.to_frame("amount").select(_ranked(pl.col("amount"))).row(0, named=True)
     return Percentiles.model_validate(
         {name: Decimal(money_text(int(value))) for name, value in ranked.items()}
     )

@@ -27,7 +27,7 @@ from pydantic import (
 
 from fefat.backtest import RunConfig, TradeDistributions
 from fefat.backtest.equity_curves import EQUITY_POINTS, FEWEST_POINTS
-from fefat.backtest.monte_carlo import MONTE_CARLO_PATHS, MONTE_CARLO_SEED, MonteCarloAnswer
+from fefat.backtest.resampling import MONTE_CARLO_PATHS, MONTE_CARLO_SEED, MonteCarloAnswer
 from fefat.market.contracts import parse_contract_name
 from fefat.market.fidelity import FidelityText
 from fefat.strategy.spec import InstrumentRoot
@@ -63,6 +63,9 @@ FEWEST_PATHS = 100
 """The fewest paths a client can ask a run's Monte Carlo to draw (step 5.20)."""
 MOST_PATHS = 10_000
 """The most paths a client can ask a run's Monte Carlo to draw."""
+MOST_SEED = 2**53 - 1
+"""The largest seed a client can ask for: the largest whole number a browser's number holds
+exactly, so that the seed an answer names reads back as the one drawn from."""
 RunAddress = Annotated[
     str, Path(description="A run's id in the index, a UUIDv7, or its run key, 64 hex digits.")
 ]
@@ -302,7 +305,11 @@ def run_monte_carlo(
     ] = MONTE_CARLO_PATHS,
     seed: Annotated[
         int,
-        Query(ge=0, description="The seed of the draws: the same seed and paths answer the same."),
+        Query(
+            ge=0,
+            le=MOST_SEED,
+            description="The seed of the draws: the same seed and paths answer the same.",
+        ),
     ] = MONTE_CARLO_SEED,
     max_points: Annotated[
         int,
