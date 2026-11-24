@@ -6,8 +6,9 @@ import {
   type RunMetrics,
   runEquityQuery,
 } from "@/api/run-results"
+import type { Currency } from "@/api/runs"
 import { crosshairTime } from "@/charts/chart-time"
-import { counted, formatFigure } from "@/ui/figures"
+import { counted, moneyFigure } from "@/ui/figures"
 import { Panel } from "@/ui/panel"
 import { ResultBody } from "./ResultBody"
 
@@ -24,16 +25,19 @@ const SECONDS_A_MINUTE = 60
 type EquityCardProps = Readonly<{
   runKey: string
   drawdown: RunMetrics["drawdown"]
+  currency: Currency
 }>
 
-/** The equity curve and its drawdown (web/DESIGN.md, Patterns, Equity chart): its figure is the
- * readout, the equity at the decision under the pointer, or else after the last. */
-export function EquityCard({ runKey, drawdown }: EquityCardProps) {
+/** The equity curve and its drawdown in `currency` (web/DESIGN.md, Patterns, Equity chart): its
+ * figure is the readout, the equity at the decision under the pointer, or else after the last. */
+export function EquityCard({ runKey, drawdown, currency }: EquityCardProps) {
   const equity = useQuery(runEquityQuery(runKey))
   return (
     <Panel title="Equity">
       <ResultBody query={equity}>
-        {(curve) => <ShownCurve curve={curve} drawdown={drawdown} />}
+        {(curve) => (
+          <ShownCurve curve={curve} drawdown={drawdown} currency={currency} />
+        )}
       </ResultBody>
     </Panel>
   )
@@ -42,7 +46,12 @@ export function EquityCard({ runKey, drawdown }: EquityCardProps) {
 function ShownCurve({
   curve,
   drawdown,
-}: Readonly<{ curve: EquityCurve; drawdown: RunMetrics["drawdown"] }>) {
+  currency,
+}: Readonly<{
+  curve: EquityCurve
+  drawdown: RunMetrics["drawdown"]
+  currency: Currency
+}>) {
   const [pointed, setPointed] = useState<number | null>(null)
   const last = curve.time.length - 1
   if (last < 0) {
@@ -61,7 +70,7 @@ function ShownCurve({
           data-testid="equity-figure"
           className="text-3xl font-bold tracking-tight text-foreground"
         >
-          {formatFigure(curve.equity[at])}
+          {moneyFigure(curve.equity[at], currency)}
         </p>
         <p className="flex gap-4 text-foreground-secondary">
           <span data-testid="equity-time">
@@ -73,7 +82,7 @@ function ShownCurve({
               data-testid="equity-drawdown"
               className="font-semibold text-foreground"
             >
-              {formatFigure(curve.drawdown[at])}
+              {moneyFigure(curve.drawdown[at], currency)}
             </span>
           </span>
         </p>
@@ -103,6 +112,7 @@ function ShownCurve({
           <EquityChart
             label="Equity and drawdown of this run. The arrow keys step through its decisions."
             curve={curve}
+            currency={currency}
             pointed={pointed}
             onPointed={setPointed}
           />

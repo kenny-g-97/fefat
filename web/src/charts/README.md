@@ -75,6 +75,7 @@ The pure parts have vitest's tests beside them: the look, the labels in a zone w
   <EquityChart
     label="Equity and drawdown of this run"
     curve={curve}
+    currency={statistics.currency}
     pointed={pointed}
     onPointed={setPointed}
   />
@@ -85,6 +86,7 @@ The pure parts have vitest's tests beside them: the look, the labels in a zone w
 | --- | --- |
 | `label` | The chart's name for a screen reader. |
 | `curve` | `GET /v1/runs/{run}/equity`: the `capital`, and one entry a decision in `time` (whole seconds), `equity`, and `drawdown`, a depth below the peak. |
+| `currency` | The run's currency, from `GET /v1/runs/{run}/stats`, which both value axes' labels write their money in, `$50,000` (D-117). |
 | `pointed` | The decision the readout shows, from `onPointed`, which the keys step from. |
 | `onPointed` | Told the index of the decision under the pointer or the keys, or null when the pointer leaves the chart, Escape is pressed, or the focus moves off it within the page: the caller's readout then shows the last decision. Between the two panes, where no decision lies, it is told nothing, so that the readout holds. |
 
@@ -101,3 +103,4 @@ Give it a parent that sets its height; it fills that box and redraws when it res
 | `note` | Optional, a few words beside the label, such as how many trades have no stop. |
 | `bins` | The server's `lower`, `upper`, and `trades`, one entry a bin. |
 | `signed` | For a measure either side of zero: its bins in the sign colours with a mark at zero, the others in grey. |
+| `edge` | Optional, how an edge is written, such as money in the run's currency, `-$150` (D-117); the decimals it holds by default, `-1.5`. |

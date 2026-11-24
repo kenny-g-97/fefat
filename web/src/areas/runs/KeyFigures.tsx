@@ -6,6 +6,7 @@ import {
   formatFigure,
   formatMoney,
   formatShare,
+  moneyFigure,
   moneySign,
 } from "@/ui/figures"
 import { Stat } from "@/ui/stat"
@@ -24,7 +25,8 @@ function toneOf(money: string): "positive" | "negative" | undefined {
 }
 
 /** The eight KPI cards of a finished run (web/DESIGN.md, Patterns, Stat card), each figure the
- * API's, and where the engine could count nothing, None with the reason. */
+ * API's, money with its currency's sign, and where the engine could count nothing, None with the
+ * reason. */
 export function KeyFigures({
   statistics,
 }: Readonly<{ statistics: RunStatistics }>) {
@@ -38,8 +40,8 @@ export function KeyFigures({
     >
       <Stat
         testId="kpi-pnl"
-        label={`Net P&L, ${currency}`}
-        value={formatMoney(metrics.pnl)}
+        label="Net P&L"
+        value={formatMoney(metrics.pnl, currency)}
         tone={toneOf(metrics.pnl)}
         detail={`${formatShare(pnlShare)} of the capital`}
       />
@@ -64,7 +66,7 @@ export function KeyFigures({
         detail={
           trades.expectancy_r === null
             ? (none ?? "No trade with a stop")
-            : `${figureOrNone(trades.expectancy)} a trade`
+            : `${trades.expectancy === null ? NONE : moneyFigure(trades.expectancy, currency)} a trade`
         }
       />
       <Stat
@@ -79,7 +81,7 @@ export function KeyFigures({
       <Stat
         testId="kpi-drawdown"
         label="Max drawdown"
-        value={formatMoney(drawdown.max_drawdown)}
+        value={formatMoney(drawdown.max_drawdown, currency)}
         detail={`${formatShare(drawdown.max_drawdown_share)} of the capital`}
       />
       <Stat

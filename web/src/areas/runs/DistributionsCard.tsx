@@ -3,17 +3,19 @@ import {
   runDistributionsQuery,
   type TradeDistributions,
 } from "@/api/run-results"
+import type { Currency } from "@/api/runs"
 import { HistogramChart } from "@/charts/Histogram"
-import { counted } from "@/ui/figures"
+import { counted, moneyEdge } from "@/ui/figures"
 import { Panel } from "@/ui/panel"
 import { ResultBody } from "./ResultBody"
 
-/** How a run's trades spread (web/DESIGN.md, Patterns, Histogram): net P&L and the R multiple
- * either side of zero, the excursions in ticks, and the minutes held, every bin the server's. */
+/** How a run's trades spread (web/DESIGN.md, Patterns, Histogram): net P&L in `currency` and the
+ * R multiple either side of zero, the excursions in ticks, and the minutes held, every bin the
+ * server's. */
 export function DistributionsCard({
   runKey,
   currency,
-}: Readonly<{ runKey: string; currency: string }>) {
+}: Readonly<{ runKey: string; currency: Currency }>) {
   const distributions = useQuery(runDistributionsQuery(runKey))
   return (
     <Panel title="Distributions">
@@ -27,7 +29,7 @@ export function DistributionsCard({
 function Histograms({
   shown,
   currency,
-}: Readonly<{ shown: TradeDistributions; currency: string }>) {
+}: Readonly<{ shown: TradeDistributions; currency: Currency }>) {
   if (shown.pnl.trades.length === 0) {
     return (
       <p
@@ -44,9 +46,10 @@ function Histograms({
       <div className="grid grid-cols-2 gap-6">
         <HistogramChart
           testId="histogram-pnl"
-          label={`Net P&L a trade, ${currency}`}
+          label="Net P&L a trade"
           bins={shown.pnl}
           signed
+          edge={(edge) => moneyEdge(edge, currency)}
         />
         <HistogramChart
           testId="histogram-r_multiple"

@@ -188,13 +188,13 @@ function SavedFigures({ run }: Readonly<{ run: SavedRun }>) {
           sign === "zero" && "text-foreground"
         )}
       >
-        {formatMoney(pnl)}
+        {formatMoney(pnl, run.currency)}
       </span>
       <span data-testid="run-trades" className={FIGURE}>
         {formatCount(trades)}
       </span>
       <span data-testid="run-drawdown" className={FIGURE}>
-        {formatMoney(drawdown)}
+        {formatMoney(drawdown, run.currency)}
       </span>
     </>
   )

@@ -1,5 +1,20 @@
+import type { Currency, Fee } from "@/api/runs"
+
 /** The decimals a figure may need: an instrument's lot step goes to 0.00001. */
 const DECIMALS: readonly number[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+/** The sign each currency is written with before its figure, or null for one written as its
+ * code after it (web/DESIGN.md, Type, D-117); a currency the API adds fails the build here. */
+const CURRENCY_SIGNS: Readonly<Record<Currency, string | null>> = {
+  USD: "$",
+  USDT: null,
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥",
+  CHF: null,
+  AUD: "A$",
+  CAD: "CA$",
+}
 
 const MONEY = /^(-?)(\d+)(?:\.(\d+))?$/
 const THOUSANDS = /\B(?=(\d{3})+$)/g
@@ -63,19 +78,62 @@ export function formatPrice(price: number, decimals: number): string {
   return price.toFixed(decimals)
 }
 
-/** Money as the API sends it, decimal text such as `-2721.560000`, with its thousands apart and
- * the zeros past its second decimal dropped, read as text so that no float rounds a digit:
- * `-2,721.56`. */
-export function formatMoney(text: string): string {
+/** Money as the API sends it, decimal text such as `-2721.560000`, in `currency`: its thousands
+ * apart and the zeros past its second decimal dropped, read as text so that no float rounds a
+ * digit, after the currency's sign and the minus before both, `-$2,721.56` (`withCurrency`). */
+export function formatMoney(text: string, currency: Currency | null): string {
   const found = MONEY.exec(text)
   if (found === null) {
     throw new Error(
       `Expected money as decimal text, got ${JSON.stringify(text)}.`
     )
   }
-  const [, sign, whole, fraction = ""] = found
+  const [, , whole, fraction = ""] = found
   const decimals = fraction.replace(/0+$/, "").padEnd(2, "0")
-  return `${sign}${whole.replace(THOUSANDS, ",")}.${decimals}`
+  const digits = `${whole.replace(THOUSANDS, ",")}.${decimals}`
+  return withCurrency(moneySign(text) === "negative", digits, currency)
+}
+
+/** An amount of `currency` the API sends as a float, at two decimals: `$51,250.50`. */
+export function moneyFigure(value: number, currency: Currency | null): string {
+  return signedInCurrency(TWO_DECIMALS.format(value), currency)
+}
+
+/** An axis's or a histogram's edge in `currency`, with the decimals it holds: `-$150`. */
+export function moneyEdge(edge: number, currency: Currency | null): string {
+  return signedInCurrency(EDGE.format(edge), currency)
+}
+
+/** What a fee table charges, as the run pays it: per contract per side in the instrument's
+ * currency, or a crypto fee in basis points of the trade's value, as its record writes it. */
+export function feeWords(fee: Fee, currency: Currency | null): string {
+  if (fee.kind === "futures") {
+    return `${formatMoney(fee.per_contract_side, currency)} per contract per side`
+  }
+  return `maker ${fee.maker_bps} bps, taker ${fee.taker_bps} bps`
+}
+
+/** A figure Intl wrote, its minus moved before `currency`'s sign. */
+function signedInCurrency(written: string, currency: Currency | null): string {
+  const negative = written.startsWith("-")
+  return withCurrency(negative, negative ? written.slice(1) : written, currency)
+}
+
+/** `digits` in `currency`: after its sign, or before its code where it has no sign, the minus
+ * first; plain where no currency is known, as for a run indexed before D-114. */
+function withCurrency(
+  negative: boolean,
+  digits: string,
+  currency: Currency | null
+): string {
+  const minus = negative ? "-" : ""
+  if (currency === null) {
+    return `${minus}${digits}`
+  }
+  const sign = CURRENCY_SIGNS[currency]
+  return sign === null
+    ? `${minus}${digits} ${currency}`
+    : `${minus}${sign}${digits}`
 }
 
 /** A ratio or an amount the API sends as a float, at two decimals with its thousands apart:

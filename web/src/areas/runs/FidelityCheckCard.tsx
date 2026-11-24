@@ -4,6 +4,7 @@ import type {
   FidelityRerun,
   RefusedCheck,
 } from "@/api/run-results"
+import type { Currency } from "@/api/runs"
 import {
   fidelityLabel,
   formatCount,
@@ -23,8 +24,8 @@ import { signed } from "./result-words"
 
 const FIGURE = "px-3 py-0 text-right text-foreground-secondary"
 
-function moneyChange(change: string): string {
-  return signed(formatMoney(change), moneySign(change))
+function moneyChange(change: string, currency: Currency): string {
+  return signed(formatMoney(change, currency), moneySign(change))
 }
 
 /** A net P&L in its sign's colour, as every P&L of the page. */
@@ -44,10 +45,12 @@ function countChange(change: number): string {
 
 /** The fidelity check's deltas where the run has one (`02` section 1.6): the days finer than a
  * minute run from flat at the run's own fidelity, the baseline, and again coarser, each with its
- * change against the baseline, as the API gives it; or why the engine refused the check. */
+ * change against the baseline, as the API gives it, money in `currency`; or why the engine
+ * refused the check. */
 export function FidelityCheckCard({
   check,
-}: Readonly<{ check: FidelityCheck | RefusedCheck }>) {
+  currency,
+}: Readonly<{ check: FidelityCheck | RefusedCheck; currency: Currency }>) {
   const period = `From ${check.first} to ${check.last}, each run from flat`
   if (check.kind === "refused") {
     return (
@@ -87,11 +90,11 @@ export function FidelityCheckCard({
               </TableCell>
               <TableCell className={FIGURE} />
               <TableCell className={pnlCell(baseline.pnl)}>
-                {formatMoney(baseline.pnl)}
+                {formatMoney(baseline.pnl, currency)}
               </TableCell>
               <TableCell className={FIGURE} />
               <TableCell className={FIGURE}>
-                {formatMoney(baseline.max_drawdown)}
+                {formatMoney(baseline.max_drawdown, currency)}
               </TableCell>
               <TableCell className="py-0 pr-6 pl-3" />
             </TableRow>
@@ -110,16 +113,16 @@ export function FidelityCheckCard({
                   {countChange(rerun.trades_delta)}
                 </TableCell>
                 <TableCell className={pnlCell(rerun.outcome.pnl)}>
-                  {formatMoney(rerun.outcome.pnl)}
+                  {formatMoney(rerun.outcome.pnl, currency)}
                 </TableCell>
                 <TableCell className={FIGURE}>
-                  {moneyChange(rerun.pnl_delta)}
+                  {moneyChange(rerun.pnl_delta, currency)}
                 </TableCell>
                 <TableCell className={FIGURE}>
-                  {formatMoney(rerun.outcome.max_drawdown)}
+                  {formatMoney(rerun.outcome.max_drawdown, currency)}
                 </TableCell>
                 <TableCell className="py-0 pr-6 pl-3 text-right text-foreground-secondary">
-                  {moneyChange(rerun.max_drawdown_delta)}
+                  {moneyChange(rerun.max_drawdown_delta, currency)}
                 </TableCell>
               </TableRow>
             ))}

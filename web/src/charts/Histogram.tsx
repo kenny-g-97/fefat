@@ -11,18 +11,21 @@ type HistogramChartProps = Readonly<{
   note?: string
   bins: Histogram
   signed?: boolean
+  edge?: (edge: number) => string
 }>
 
 /** A histogram of a run's trades (`README.md`), one bar a bin of the server's, drawn in the page
  * so that each names its range and its count to a pointer and to a screen reader: `signed` for a
  * measure either side of zero, its bins in the sign colours with a mark at zero, the others in
- * grey. A bin holding a trade always shows, however tall the tallest. */
+ * grey, each edge written by `edge`, with the decimals it holds where it is left out. A bin
+ * holding a trade always shows, however tall the tallest. */
 export function HistogramChart({
   testId,
   label,
   note,
   bins,
   signed = false,
+  edge = formatEdge,
 }: HistogramChartProps) {
   const tallest = Math.max(...bins.trades)
   const count = bins.trades.length
@@ -47,7 +50,11 @@ export function HistogramChart({
               className="flex h-28 items-end gap-px border-b"
             >
               {bins.trades.map((trades, at) => {
-                const words = binWords(bins.lower[at], bins.upper[at], trades)
+                const words = binWords(
+                  edge(bins.lower[at]),
+                  edge(bins.upper[at]),
+                  trades
+                )
                 return (
                   <li
                     key={bins.lower[at]}
@@ -80,7 +87,7 @@ export function HistogramChart({
             )}
           </div>
           <p className="relative flex justify-between text-xs text-muted-foreground">
-            <span>{formatEdge(bins.lower[0])}</span>
+            <span>{edge(bins.lower[0])}</span>
             {zero >= ZERO_LABEL_MARGIN && zero <= 1 - ZERO_LABEL_MARGIN && (
               <span
                 className="absolute -translate-x-1/2"
@@ -89,7 +96,7 @@ export function HistogramChart({
                 0
               </span>
             )}
-            <span>{formatEdge(bins.upper[count - 1])}</span>
+            <span>{edge(bins.upper[count - 1])}</span>
           </p>
         </>
       )}
@@ -97,7 +104,7 @@ export function HistogramChart({
   )
 }
 
-/** What a bar says of its bin: `-150 to -140: 3 trades`. */
-function binWords(lower: number, upper: number, trades: number): string {
-  return `${formatEdge(lower)} to ${formatEdge(upper)}: ${counted(trades, "trade")}`
+/** What a bar says of its bin: `-$150 to -$140: 3 trades`. */
+function binWords(lower: string, upper: string, trades: number): string {
+  return `${lower} to ${upper}: ${counted(trades, "trade")}`
 }

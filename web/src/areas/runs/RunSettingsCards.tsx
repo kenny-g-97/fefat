@@ -1,7 +1,7 @@
 import { cn } from "cn"
 import type { ReactNode } from "react"
 import type { ListedRun } from "@/api/runs"
-import { counted, fidelityLabel, formatMoney } from "@/ui/figures"
+import { counted, feeWords, fidelityLabel, formatMoney } from "@/ui/figures"
 import { IdentityChip } from "@/ui/identity-chip"
 import { Panel } from "@/ui/panel"
 import { parameterText } from "./run-words"
@@ -61,9 +61,11 @@ export function RunParametersCard({ run }: Readonly<{ run: ListedRun }>) {
   )
 }
 
-/** Every setting a run runs under, each default applied, as its record keeps them. */
+/** Every setting a run runs under, each default applied, as its record keeps them: its fee table
+ * with what it charges the instrument on the run's last day, and its capital in its currency,
+ * where its row names the instrument (D-117). */
 export function RunSettingsCard({ run }: Readonly<{ run: ListedRun }>) {
-  const { settings } = run
+  const { settings, currency, fee } = run
   const instrument = settings.instrument ?? null
   const traded: readonly Fact[] =
     instrument === null ? [] : [["Instrument", instrument]]
@@ -72,8 +74,13 @@ export function RunSettingsCard({ run }: Readonly<{ run: ListedRun }>) {
     ["Data", <IdentityChip key="provider">{settings.provider}</IdentityChip>],
     ["Contract", settings.contract === null ? "Spliced" : settings.contract],
     ["Fidelity", fidelityLabel(settings.fidelity)],
-    ["Fee table", settings.fee_table],
-    ["Capital", formatMoney(settings.capital)],
+    [
+      "Commissions and fees",
+      fee === null
+        ? settings.fee_table
+        : `${settings.fee_table}, ${feeWords(fee, currency)}`,
+    ],
+    ["Capital", formatMoney(settings.capital, currency)],
   ]
   const right: readonly Fact[] = [
     [

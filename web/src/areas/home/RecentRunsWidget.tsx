@@ -109,7 +109,7 @@ function RecentState({ run }: Readonly<{ run: ListedRun }>) {
           sign === "zero" && "text-foreground"
         )}
       >
-        {formatMoney(pnl)}
+        {formatMoney(pnl, run.currency)}
       </span>
     </>
   )

@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest"
+import { z } from "zod"
 import type { ThemeTokens } from "./chart-look"
 import { equityOption } from "./equity-option"
+
+/** An axis whose labels a function writes, as ECharts calls it with each tick's value. */
+const labelledAxis = z.object({
+  axisLabel: z.object({
+    formatter: z.custom<(value: number) => string>(
+      (formatter) => typeof formatter === "function"
+    ),
+  }),
+})
 
 const TOKENS: ThemeTokens = {
   card: "#0a0a0a",
@@ -21,8 +31,21 @@ const CURVE = {
 }
 
 describe("the equity chart's options", () => {
-  const option = equityOption(CURVE, TOKENS)
+  const option = equityOption(CURVE, "USD", TOKENS)
   const [equity, drawdown] = Array.isArray(option.series) ? option.series : []
+
+  it("writes both value axes' labels as money in the run's currency", () => {
+    // D-117: a cash value reads as one, on the axes too.
+    const axes = Array.isArray(option.yAxis) ? option.yAxis : []
+    const written = axes.map((axis) =>
+      [50_000, -150].map(labelledAxis.parse(axis).axisLabel.formatter)
+    )
+
+    expect(written).toEqual([
+      ["$50,000", "-$150"],
+      ["$50,000", "-$150"],
+    ])
+  })
 
   it("draws each decision at its instant, the API's figures unchanged", () => {
     expect(equity.data).toEqual([
@@ -52,7 +75,11 @@ describe("the equity chart's options", () => {
 
   it("keeps the line at the capital in view, wherever the curve went", () => {
     const axisOf = (equity: readonly number[]) => {
-      const { yAxis } = equityOption({ ...CURVE, equity: [...equity] }, TOKENS)
+      const { yAxis } = equityOption(
+        { ...CURVE, equity: [...equity] },
+        "USD",
+        TOKENS
+      )
       return Array.isArray(yAxis) ? yAxis[0] : yAxis
     }
 

@@ -2,6 +2,7 @@ import type { Locator, Page } from "@playwright/test"
 import { z } from "zod"
 import { consoleErrors } from "./support/console.ts"
 import { lowContrastInEachTheme } from "./support/contrast.ts"
+import { moneyText } from "./support/figures.ts"
 import { expect, test } from "./support/fixtures.ts"
 import {
   aJob,
@@ -34,6 +35,12 @@ const listed = z.object({
       settings: z.object({
         fee_table: z.string(),
         provider: z.string(),
+        capital: z.string(),
+      }),
+      currency: z.string(),
+      fee: z.object({
+        kind: z.literal("futures"),
+        per_contract_side: z.string(),
       }),
     })
   ),
@@ -82,14 +89,6 @@ async function theSeededRun(page: Page) {
   return seeded
 }
 
-/** A figure as the page writes the API's decimal text. */
-function moneyText(text: string): string {
-  const [whole, fraction] = text.split(".")
-  const sign = whole.startsWith("-") ? "-" : ""
-  const digits = whole.replace("-", "").replace(/\B(?=(\d{3})+$)/g, ",")
-  return `${sign}${digits}.${fraction.replace(/0+$/, "").padEnd(2, "0")}`
-}
-
 async function openTheDialog(page: Page) {
   await page.goto("/strategies/strategy?name=demo")
   await page.getByTestId("run-backtest").click()
@@ -132,6 +131,8 @@ function aSubmittedRow(
       contract: null,
       instrument: "ES",
     },
+    currency: seeded.currency,
+    fee: seeded.fee,
     strategy: {
       strategy_id: "strategy-1",
       name: "demo",
@@ -168,14 +169,15 @@ test("the list shows a saved run's figures as the API gives them", async ({
   await expect(row).toContainText(seeded.end)
   await expect(row.getByTestId("run-slippage")).toHaveText("1 tick")
   await expect(row.getByTestId("run-parameters")).toContainText("lookback 12")
+  // D-117: a row's money carries its currency's sign.
   await expect(row.getByTestId("run-pnl")).toHaveText(
-    moneyText(seeded.key_metrics.pnl)
+    moneyText(seeded.key_metrics.pnl, seeded.currency)
   )
   await expect(row.getByTestId("run-trades")).toHaveText(
     String(seeded.key_metrics.trades)
   )
   await expect(row.getByTestId("run-drawdown")).toHaveText(
-    moneyText(seeded.key_metrics.max_drawdown)
+    moneyText(seeded.key_metrics.max_drawdown, seeded.currency)
   )
   await page.mouse.move(700, 36)
   await screenshot(page, "runs-list")
@@ -385,7 +387,14 @@ test("a saved run's page shows its status, its key, and every setting", async ({
   await expect(page.getByTestId("run-cached")).toHaveCount(0)
   const settings = page.getByTestId("run-settings")
   await expect(settings).toContainText(seeded.settings.provider)
-  await expect(settings).toContainText(seeded.settings.fee_table)
+  // D-117: the fee table with what it charges the instrument, and the capital in its currency.
+  const charge = moneyText(seeded.fee.per_contract_side, seeded.currency)
+  await expect(settings).toContainText(
+    `Commissions and fees${seeded.settings.fee_table}, ${charge} per contract per side`
+  )
+  await expect(settings).toContainText(
+    `Capital${moneyText(seeded.settings.capital, seeded.currency)}`
+  )
   // Words stand beside their labels: only figures align right.
   await expect(settings.getByText("Spliced", { exact: true })).not.toHaveCSS(
     "text-align",
@@ -753,10 +762,10 @@ test("the dialog picks the data by provider and contract, and says when no fee t
   await page.getByRole("option", { name: "1-minute bars" }).click()
 
   await expect(dialog.getByTestId("run-no-fee-table")).toHaveText(
-    "No fee table prices ES, so a run could not count its costs."
+    "No table of commissions and fees prices ES, so a run could not count its costs."
   )
   await expect(dialog.getByTestId("run-waiting")).toHaveText(
-    "Choose a fee table that prices ES"
+    "Choose commissions and fees that price ES"
   )
   await expect(dialog.getByTestId("run-launch")).toBeDisabled()
 })
@@ -813,7 +822,11 @@ test("the dialog chooses the instrument a run trades, and reads that instrument'
     "synthetic holds BTCUSDT-PERP from"
   )
   await expect(dialog.getByLabel("Contract")).toHaveCount(0)
-  await expect(dialog.getByLabel("Fee table")).toHaveText("binance-default")
+  const fees = dialog.getByLabel("Commissions and fees")
+  await expect(fees).toHaveText("binance-default")
+  await expect(dialog.getByTestId("run-fee-note")).toHaveText(
+    "maker 2 bps, taker 5 bps of each trade's value, maker for a limit order that rested on the book"
+  )
 
   // The code's own instrument, chosen again: its estimate is the first one, still fresh, and the
   // run names it, so that a parameter of the code cannot trade another than the dialog shows.
@@ -822,7 +835,18 @@ test("the dialog chooses the instrument a run trades, and reads that instrument'
   await expect(dialog.getByTestId("run-coverage")).toContainText(
     "synthetic holds ES from"
   )
-  await expect(dialog.getByLabel("Fee table")).toHaveText("retail-default")
+  // D-117: the commissions and fees name each table's charge on the run's last day, March 2026
+  // paying the tables' first schedule, as the engine charges it (F-FEE-01).
+  await expect(fees).toHaveText("retail-default")
+  await expect(dialog.getByTestId("run-fee-note")).toHaveText(
+    "$2.87 per contract per side: the exchange's, clearing, and NFA fees with the broker's commission"
+  )
+  await fees.click()
+  await expect(page.getByRole("option")).toHaveText([
+    "retail-default, $2.87 per contract per side",
+    "prop-topstep, $1.89 per contract per side",
+  ])
+  await page.keyboard.press("Escape")
   await expect(dialog.getByTestId("run-launch")).toBeEnabled()
   await expect(dialog.getByTestId("run-estimate")).not.toContainText("Trades")
   expect(
@@ -1230,7 +1254,7 @@ test("Home shows the newest runs with their verdict and three jobs, then a count
 
   const recent = page.getByRole("region", { name: "Recent runs" })
   await expect(recent.getByTestId("recent-pnl").last()).toHaveText(
-    moneyText(seeded.key_metrics.pnl)
+    moneyText(seeded.key_metrics.pnl, seeded.currency)
   )
   await expect(recent.getByTestId("recent-verdict").last()).toHaveText(
     /^Verdict: (Deploy-grade evidence|Refine|Abandon)$/

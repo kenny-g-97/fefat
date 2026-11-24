@@ -163,7 +163,9 @@ export function feeTableOf(
 ): string | null {
   const wanted =
     draft.feeTable === null ? estimate.settings.fee_table : draft.feeTable
-  return estimate.fee_tables.includes(wanted) ? wanted : null
+  return estimate.fee_tables.some((choice) => choice.name === wanted)
+    ? wanted
+    : null
 }
 
 /** The dates the fields show: what was typed, or else the window the estimate read, or where it
@@ -254,7 +256,7 @@ export function runReadiness(
   if (feeTable === null) {
     return {
       kind: "waiting",
-      why: `Choose a fee table that prices ${estimate.instrument}`,
+      why: `Choose commissions and fees that price ${estimate.instrument}`,
     }
   }
   const ticks = shownTicks(draft, estimate)

@@ -3,7 +3,9 @@ import { z } from "zod"
 import { consoleErrors } from "./support/console.ts"
 import { lowContrastInEachTheme } from "./support/contrast.ts"
 import {
+  edgeMoney,
   edgeText,
+  figureMoney,
   figureText,
   moneyText,
   shareText,
@@ -145,16 +147,19 @@ async function theSeededKey(page: Page): Promise<string> {
   return seeded.run_key
 }
 
+/** The run's three results, and how the equity's readout writes an amount of its currency. */
 async function resultsOf(page: Page, key: string) {
   const [stats, curve, histograms] = await Promise.all([
     page.request.get(`/v1/runs/${key}/stats`),
     page.request.get(`/v1/runs/${key}/equity`),
     page.request.get(`/v1/runs/${key}/distribution`),
   ])
+  const read = statistics.parse(await stats.json())
   return {
-    stats: statistics.parse(await stats.json()),
+    stats: read,
     curve: equity.parse(await curve.json()),
     histograms: distributions.parse(await histograms.json()),
+    readout: (amount: number) => figureMoney(amount, read.currency),
   }
 }
 
@@ -257,16 +262,20 @@ function signedCount(change: number): string {
   return change > 0 ? `+${change}` : String(change)
 }
 
-/** A change of money as the page writes it, with its sign above zero. */
-function signedMoney(change: string): string {
-  return Number(change) > 0 ? `+${moneyText(change)}` : moneyText(change)
+/** A change of money in `currency` as the page writes it, with its sign above zero. */
+function signedMoney(change: string, currency: string): string {
+  const written = moneyText(change, currency)
+  return Number(change) > 0 ? `+${written}` : written
 }
 
-/** What the page's bars say of each bin, its range and its count. */
-function binWords(bins: z.infer<typeof histogram>): readonly string[] {
+/** What the page's bars say of each bin, its range, each edge written by `edge`, and its count. */
+function binWords(
+  bins: z.infer<typeof histogram>,
+  edge: (value: number) => string
+): readonly string[] {
   return bins.trades.map((count, at) => {
     const noun = count === 1 ? "trade" : "trades"
-    return `${edgeText(bins.lower[at])} to ${edgeText(bins.upper[at])}: ${count} ${noun}`
+    return `${edge(bins.lower[at])} to ${edge(bins.upper[at])}: ${count} ${noun}`
   })
 }
 
@@ -302,15 +311,18 @@ test("every figure of a finished run's page is the API's", async ({
   // Done means 1: DOM equals API.
   const errors = consoleErrors(page)
   const key = await theSeededKey(page)
-  const { stats, curve, histograms } = await resultsOf(page, key)
-  const { metrics } = stats
+  const { stats, curve, histograms, readout } = await resultsOf(page, key)
+  const { metrics, currency } = stats
   const { trades, drawdown, daily, robustness } = metrics
+  const money = (text: string) => moneyText(text, currency)
 
   await page.goto(`/runs/run?key=${key}`)
 
+  // D-117: every cash value carries its currency's sign, and no label names the currency.
   const kpi = (id: string) => page.getByTestId(`kpi-${id}`)
-  await expect(kpi("pnl")).toContainText(moneyText(metrics.pnl))
-  await expect(kpi("pnl")).toContainText(`Net P&L, ${stats.currency}`)
+  await expect(kpi("pnl")).toContainText(money(metrics.pnl))
+  await expect(kpi("pnl")).toContainText("Net P&L")
+  await expect(kpi("pnl")).not.toContainText(currency)
   await expect(kpi("pnl")).toContainText(
     `${shareText(stats.pnl_share)} of the capital`
   )
@@ -324,7 +336,7 @@ test("every figure of a finished run's page is the API's", async ({
   )
   if (trades.expectancy !== null) {
     await expect(kpi("expectancy")).toContainText(
-      `${figureText(trades.expectancy)} a trade`
+      `${readout(trades.expectancy)} a trade`
     )
   }
   await expect(kpi("win-rate")).toContainText(
@@ -333,7 +345,7 @@ test("every figure of a finished run's page is the API's", async ({
   await expect(kpi("win-rate")).toContainText(
     `${trades.wins} of ${trades.trades}`
   )
-  await expect(kpi("drawdown")).toContainText(moneyText(drawdown.max_drawdown))
+  await expect(kpi("drawdown")).toContainText(money(drawdown.max_drawdown))
   await expect(kpi("drawdown")).toContainText(
     `${shareText(drawdown.max_drawdown_share)} of the capital`
   )
@@ -378,7 +390,7 @@ test("every figure of a finished run's page is the API's", async ({
     countText(trades.trades, "trade")
   )
   await expect(card.getByTestId("robustness-plus-tick")).toContainText(
-    moneyText(robustness.pnl_at_plus_one_tick)
+    money(robustness.pnl_at_plus_one_tick)
   )
   await expect(card.getByTestId("robustness-flag")).toHaveText(
     robustness.red_flags.map(
@@ -387,10 +399,10 @@ test("every figure of a finished run's page is the API's", async ({
   )
 
   await expect(page.getByTestId("equity-figure")).toHaveText(
-    figureText(curve.equity[curve.equity.length - 1])
+    readout(curve.equity[curve.equity.length - 1])
   )
   await expect(page.getByTestId("equity-drawdown")).toHaveText(
-    figureText(curve.drawdown[curve.drawdown.length - 1])
+    readout(curve.drawdown[curve.drawdown.length - 1])
   )
   await expect(page.getByTestId("equity-time")).toHaveText(
     instantText(curve.time[curve.time.length - 1])
@@ -406,7 +418,7 @@ test("every figure of a finished run's page is the API's", async ({
       await expect(cells.nth(0)).toHaveText(ROW_NAMES[table](name))
       await expect(cells.nth(1)).toHaveText(String(group.trades))
       await expect(cells.nth(2)).toHaveText(String(group.wins))
-      await expect(cells.nth(3)).toHaveText(moneyText(group.pnl))
+      await expect(cells.nth(3)).toHaveText(money(group.pnl))
     }
   }
 
@@ -427,9 +439,9 @@ test("every figure of a finished run's page is the API's", async ({
     `Baseline, ${levelText(check.baseline.fidelity)}`
   )
   await expect(baselineCells.nth(1)).toHaveText(String(check.baseline.trades))
-  await expect(baselineCells.nth(3)).toHaveText(moneyText(check.baseline.pnl))
+  await expect(baselineCells.nth(3)).toHaveText(money(check.baseline.pnl))
   await expect(baselineCells.nth(5)).toHaveText(
-    moneyText(check.baseline.max_drawdown)
+    money(check.baseline.max_drawdown)
   )
   const reruns = [check.at_one_second, check.at_one_minute].flatMap((each) =>
     each === null ? [] : [each]
@@ -442,10 +454,12 @@ test("every figure of a finished run's page is the API's", async ({
     )
     await expect(cells.nth(1)).toHaveText(String(each.outcome.trades))
     await expect(cells.nth(2)).toHaveText(signedCount(each.trades_delta))
-    await expect(cells.nth(3)).toHaveText(moneyText(each.outcome.pnl))
-    await expect(cells.nth(4)).toHaveText(signedMoney(each.pnl_delta))
-    await expect(cells.nth(5)).toHaveText(moneyText(each.outcome.max_drawdown))
-    await expect(cells.nth(6)).toHaveText(signedMoney(each.max_drawdown_delta))
+    await expect(cells.nth(3)).toHaveText(money(each.outcome.pnl))
+    await expect(cells.nth(4)).toHaveText(signedMoney(each.pnl_delta, currency))
+    await expect(cells.nth(5)).toHaveText(money(each.outcome.max_drawdown))
+    await expect(cells.nth(6)).toHaveText(
+      signedMoney(each.max_drawdown_delta, currency)
+    )
   }
 
   for (const name of HISTOGRAMS) {
@@ -453,11 +467,13 @@ test("every figure of a finished run's page is the API's", async ({
     const words = await bars.evaluateAll((each) =>
       each.map((bar) => bar.getAttribute("aria-label"))
     )
-    expect(words, name).toEqual(binWords(histograms[name]))
+    const edge =
+      name === "pnl" ? (value: number) => edgeMoney(value, currency) : edgeText
+    expect(words, name).toEqual(binWords(histograms[name], edge))
     const { lower, upper } = histograms[name]
     const axis = page.getByTestId(`histogram-${name}`).locator("p").last()
-    await expect(axis).toContainText(edgeText(lower[0]))
-    await expect(axis).toContainText(edgeText(upper[upper.length - 1]))
+    await expect(axis).toContainText(edge(lower[0]))
+    await expect(axis).toContainText(edge(upper[upper.length - 1]))
   }
   const crossesZero =
     histograms.pnl.lower[0] < 0 &&
@@ -531,7 +547,7 @@ test("the arrow keys step the equity's readout a decision at a time", async ({
 }) => {
   const errors = consoleErrors(page)
   const key = await theSeededKey(page)
-  const { curve } = await resultsOf(page, key)
+  const { curve, readout } = await resultsOf(page, key)
   const last = curve.equity.length - 1
   await page.goto(`/runs/run?key=${key}`)
   const chart = page.getByTestId("equity-chart")
@@ -541,18 +557,18 @@ test("the arrow keys step the equity's readout a decision at a time", async ({
 
   await chart.focus()
   await page.keyboard.press("Home")
-  await expect(figure).toHaveText(figureText(curve.equity[0]))
-  await expect(drawdown).toHaveText(figureText(curve.drawdown[0]))
+  await expect(figure).toHaveText(readout(curve.equity[0]))
+  await expect(drawdown).toHaveText(readout(curve.drawdown[0]))
   await page.keyboard.press("ArrowRight")
-  await expect(figure).toHaveText(figureText(curve.equity[1]))
+  await expect(figure).toHaveText(readout(curve.equity[1]))
   await page.keyboard.press("ArrowLeft")
-  await expect(figure).toHaveText(figureText(curve.equity[0]))
+  await expect(figure).toHaveText(readout(curve.equity[0]))
   await page.keyboard.press("End")
-  await expect(figure).toHaveText(figureText(curve.equity[last]))
+  await expect(figure).toHaveText(readout(curve.equity[last]))
   await page.keyboard.press("ArrowLeft")
-  await expect(figure).toHaveText(figureText(curve.equity[last - 1]))
+  await expect(figure).toHaveText(readout(curve.equity[last - 1]))
   await page.keyboard.press("Escape")
-  await expect(figure).toHaveText(figureText(curve.equity[last]))
+  await expect(figure).toHaveText(readout(curve.equity[last]))
   expect(errors).toEqual([])
 })
 
@@ -560,8 +576,8 @@ test("the pointer on the chart moves the readout, and leaving it gives the last 
   loggedIn: page,
 }) => {
   const key = await theSeededKey(page)
-  const { curve } = await resultsOf(page, key)
-  const last = figureText(curve.equity[curve.equity.length - 1])
+  const { curve, readout } = await resultsOf(page, key)
+  const last = readout(curve.equity[curve.equity.length - 1])
   await page.goto(`/runs/run?key=${key}`)
   const chart = page.getByTestId("equity-chart")
   await expect(chart.locator("canvas").first()).toBeVisible()
@@ -664,8 +680,8 @@ test("the page draws what the seed cannot: a check, flags, figures that are none
   )
   const check = page.getByTestId("fidelity-check")
   await expect(check.getByRole("row")).toHaveCount(3)
-  await expect(check).toContainText("-59.50")
-  await expect(check).toContainText("+12.75")
+  await expect(check).toContainText("-$59.50")
+  await expect(check).toContainText("+$12.75")
   await expect(
     page.getByTestId("breakdown-hour").getByTestId("breakdown-row")
   ).toHaveCount(24)
@@ -817,7 +833,7 @@ test("the readout holds between the chart's panes, where no decision lies", asyn
 }) => {
   // The design review: the band between the panes read as the pointer leaving.
   const key = await theSeededKey(page)
-  const { curve } = await resultsOf(page, key)
+  const { curve, readout } = await resultsOf(page, key)
   await page.goto(`/runs/run?key=${key}`)
   const chart = page.getByTestId("equity-chart")
   await expect(chart.locator("canvas").first()).toBeVisible()
@@ -827,7 +843,7 @@ test("the readout holds between the chart's panes, where no decision lies", asyn
     throw new Error("Expected the chart drawn, got no box.")
   }
   const figure = page.getByTestId("equity-figure")
-  const atRest = figureText(curve.equity[curve.equity.length - 1])
+  const atRest = readout(curve.equity[curve.equity.length - 1])
   await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.3)
   await expect(figure).not.toHaveText(atRest)
   const pointed = await figure.innerText()
@@ -841,8 +857,8 @@ test("Escape and leaving the chart clear its crosshair and give the readout back
   loggedIn: page,
 }) => {
   const key = await theSeededKey(page)
-  const { curve } = await resultsOf(page, key)
-  const last = figureText(curve.equity[curve.equity.length - 1])
+  const { curve, readout } = await resultsOf(page, key)
+  const last = readout(curve.equity[curve.equity.length - 1])
   await page.goto(`/runs/run?key=${key}`)
   const chart = page.getByTestId("equity-chart")
   const figure = page.getByTestId("equity-figure")
@@ -855,14 +871,14 @@ test("Escape and leaving the chart clear its crosshair and give the readout back
 
   await chart.focus()
   await page.keyboard.press("Home")
-  await expect(figure).toHaveText(figureText(curve.equity[0]))
+  await expect(figure).toHaveText(readout(curve.equity[0]))
   await expect.poll(moved).toBeGreaterThan(FEW_PIXELS)
   await page.keyboard.press("Escape")
   await expect(figure).toHaveText(last)
   await expect.poll(moved).toBeLessThan(FEW_PIXELS)
 
   await page.keyboard.press("Home")
-  await expect(figure).toHaveText(figureText(curve.equity[0]))
+  await expect(figure).toHaveText(readout(curve.equity[0]))
   await expect.poll(moved).toBeGreaterThan(FEW_PIXELS)
   await page.keyboard.press("Tab")
   await expect(figure).toHaveText(last)
@@ -875,14 +891,14 @@ test("the chart keeps its reading while the window is away", async ({
   // The design review: a trader who steps to a decision and switches to the charting platform to
   // compare it comes back to that decision.
   const key = await theSeededKey(page)
-  const { curve } = await resultsOf(page, key)
+  const { curve, readout } = await resultsOf(page, key)
   await page.goto(`/runs/run?key=${key}`)
   const chart = page.getByTestId("equity-chart")
   const figure = page.getByTestId("equity-figure")
   await expect(chart.locator("canvas").first()).toBeVisible()
   await chart.focus()
   await page.keyboard.press("Home")
-  await expect(figure).toHaveText(figureText(curve.equity[0]))
+  await expect(figure).toHaveText(readout(curve.equity[0]))
 
   await chart.evaluate((element) => {
     document.hasFocus = () => false
@@ -891,15 +907,15 @@ test("the chart keeps its reading while the window is away", async ({
   })
 
   await page.keyboard.press("ArrowRight")
-  await expect(figure).toHaveText(figureText(curve.equity[1]))
+  await expect(figure).toHaveText(readout(curve.equity[1]))
 })
 
 test("a key with Alt stays the browser's, and the chart repaints with the theme", async ({
   loggedIn: page,
 }) => {
   const key = await theSeededKey(page)
-  const { curve } = await resultsOf(page, key)
-  const last = figureText(curve.equity[curve.equity.length - 1])
+  const { curve, readout } = await resultsOf(page, key)
+  const last = readout(curve.equity[curve.equity.length - 1])
   await page.goto(`/runs/run?key=${key}`)
   const chart = page.getByTestId("equity-chart")
   await expect(chart.locator("canvas").first()).toBeVisible()

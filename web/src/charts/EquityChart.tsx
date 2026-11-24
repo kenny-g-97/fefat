@@ -9,6 +9,7 @@ import { CanvasRenderer } from "echarts/renderers"
 import { type KeyboardEvent, useEffect, useRef } from "react"
 import { z } from "zod"
 import type { EquityCurve } from "@/api/run-results"
+import type { Currency } from "@/api/runs"
 import { useShownTheme } from "@/ui/theme"
 import { readThemeTokens } from "./chart-look"
 import { equityOption } from "./equity-option"
@@ -28,17 +29,20 @@ const pointerEvent = z.looseObject({ dataIndex: z.number().int().optional() })
 type EquityChartProps = Readonly<{
   label: string
   curve: EquityCurve
+  currency: Currency
   pointed: number | null
   onPointed: (index: number | null) => void
 }>
 
 /** The equity curve over its drawdown (`README.md`), over ECharts 6, which only this file and
- * `equity-option.ts` import: it fills the box it is in and tells `onPointed` the decision under
- * the pointer, or null once the pointer leaves it. Focused, the arrows step a decision, Home and
- * End go to either end, and Escape or leaving it gives the readout back to the last. */
+ * `equity-option.ts` import: it fills the box it is in, its axes in `currency`, and tells
+ * `onPointed` the decision under the pointer, or null once the pointer leaves it. Focused, the
+ * arrows step a decision, Home and End go to either end, and Escape or leaving it gives the
+ * readout back to the last. */
 export function EquityChart({
   label,
   curve,
+  currency,
   pointed,
   onPointed,
 }: EquityChartProps) {
@@ -69,10 +73,10 @@ export function EquityChart({
   }, [onPointed])
 
   useEffect(() => {
-    chart.current?.setOption(equityOption(curve, readThemeTokens()), {
+    chart.current?.setOption(equityOption(curve, currency, readThemeTokens()), {
       notMerge: true,
     })
-  }, [curve, theme])
+  }, [curve, currency, theme])
 
   const letGo = () => {
     chart.current?.dispatchAction({

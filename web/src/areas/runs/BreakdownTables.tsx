@@ -1,5 +1,6 @@
 import { cn } from "cn"
 import type { Outcome, RunMetrics } from "@/api/run-results"
+import type { Currency } from "@/api/runs"
 import {
   fidelityLabel,
   formatCount,
@@ -24,14 +25,17 @@ type BreakdownTableProps = Readonly<{
   column: string
   groups: Readonly<Record<string, Outcome>>
   name: (key: string) => string
+  currency: Currency
 }>
 
 /** The run's trades by exit reason, entry hour in the exchange's time zone, weekday, year, and
  * fidelity (web/DESIGN.md, Patterns, Breakdown tables), the hours, the longest, in a column of
- * their own beside the others; one sentence stands in for them where the run has no trade. */
+ * their own beside the others, the net P&L in `currency`; one sentence stands in for them where
+ * the run has no trade. */
 export function BreakdownTables({
   breakdowns,
-}: Readonly<{ breakdowns: RunMetrics["breakdowns"] }>) {
+  currency,
+}: Readonly<{ breakdowns: RunMetrics["breakdowns"]; currency: Currency }>) {
   if (Object.keys(breakdowns.exit_reason).length === 0) {
     return (
       <Panel title="Breakdowns">
@@ -50,6 +54,7 @@ export function BreakdownTables({
           column="Exit"
           groups={breakdowns.exit_reason}
           name={sentenceCase}
+          currency={currency}
         />
         <BreakdownTable
           id="weekday"
@@ -57,6 +62,7 @@ export function BreakdownTables({
           column="Day"
           groups={breakdowns.weekday}
           name={sentenceCase}
+          currency={currency}
         />
         <BreakdownTable
           id="year"
@@ -64,6 +70,7 @@ export function BreakdownTables({
           column="Year"
           groups={breakdowns.year}
           name={(year) => year}
+          currency={currency}
         />
         <BreakdownTable
           id="fidelity"
@@ -71,6 +78,7 @@ export function BreakdownTables({
           column="Entry on"
           groups={breakdowns.fidelity}
           name={fidelityLabel}
+          currency={currency}
         />
       </div>
       <BreakdownTable
@@ -79,6 +87,7 @@ export function BreakdownTables({
         column="Hour"
         groups={breakdowns.hour}
         name={hourLabel}
+        currency={currency}
       />
     </div>
   )
@@ -90,6 +99,7 @@ function BreakdownTable({
   column,
   groups,
   name,
+  currency,
 }: BreakdownTableProps) {
   return (
     <Panel title={title}>
@@ -126,7 +136,7 @@ function BreakdownTable({
                     moneySign(group.pnl) === "negative" && "text-negative"
                   )}
                 >
-                  {formatMoney(group.pnl)}
+                  {formatMoney(group.pnl, currency)}
                 </TableCell>
               </TableRow>
             ))}

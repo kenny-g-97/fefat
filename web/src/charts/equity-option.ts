@@ -6,6 +6,8 @@ import type {
 } from "echarts/components"
 import type { ComposeOption } from "echarts/core"
 import type { EquityCurve } from "@/api/run-results"
+import type { Currency } from "@/api/runs"
+import { moneyEdge } from "@/ui/figures"
 import type { ThemeTokens } from "./chart-look"
 
 /** What `EquityChart` hands ECharts. */
@@ -34,12 +36,14 @@ const TIME_LABELS = {
 
 /** The chart of `curve` in the theme's `tokens` (web/DESIGN.md, Patterns, Charts): the equity in
  * the accent over a dashed line at the capital, and under it, on the same time axis, its drawdown
- * in grey, its axis inverted so that the depth hangs from zero with no figure negated. Nothing
- * animates, the axis pointer included, and there is no zoom; each value holds until the next
- * decision, so that a session's break draws flat rather than as a slope; the pointer reads a
- * decision, its crosshair spanning both, and its figures stand in the page's own readout. */
+ * in grey, its axis inverted so that the depth hangs from zero with no figure negated, both axes
+ * written as money in `currency`. Nothing animates, the axis pointer included, and there is no
+ * zoom; each value holds until the next decision, so that a session's break draws flat rather
+ * than as a slope; the pointer reads a decision, its crosshair spanning both, and its figures
+ * stand in the page's own readout. */
 export function equityOption(
   curve: EquityCurve,
+  currency: Currency,
   tokens: ThemeTokens
 ): EquityOption {
   return {
@@ -60,15 +64,16 @@ export function equityOption(
       label: { show: false },
       lineStyle: { color: tokens.input, type: "dashed", width: 1 },
     },
-    ...equityAxes(curve, tokens),
+    ...equityAxes(curve, currency, tokens),
     series: equitySeries(curve, tokens),
   }
 }
 
-/** One time axis over two value axes, with horizontal grid lines alone, the upper keeping the
- * capital in view wherever the curve went. */
+/** One time axis over two value axes in `currency`, with horizontal grid lines alone, the upper
+ * keeping the capital in view wherever the curve went. */
 function equityAxes(
   curve: EquityCurve,
+  currency: Currency,
   tokens: ThemeTokens
 ): Pick<EquityOption, "xAxis" | "yAxis"> {
   const labels = {
@@ -80,7 +85,10 @@ function equityAxes(
     type: "value",
     axisLine: NO_LINE,
     axisTick: NO_LINE,
-    axisLabel: labels,
+    axisLabel: {
+      ...labels,
+      formatter: (amount: number) => moneyEdge(amount, currency),
+    },
     splitLine: { show: true, lineStyle: { color: tokens.border, width: 1 } },
   } as const
   const time = {

@@ -19,6 +19,11 @@ import {
 
 const HELD = { start: "2026-03-06", end: "2026-03-09" }
 
+const PROP_TOPSTEP = {
+  name: "prop-topstep",
+  fee: { kind: "futures", per_contract_side: "1.89" },
+} as const
+
 const ESTIMATE: RunEstimated = {
   state: "estimated",
   instrument: "ES",
@@ -27,7 +32,14 @@ const ESTIMATE: RunEstimated = {
   providers: ["synthetic"],
   contracts: ["ESH2026", "ESM2026"],
   levels: ["1m"],
-  fee_tables: ["retail-default", "prop-topstep"],
+  fee_tables: [
+    {
+      name: "retail-default",
+      fee: { kind: "futures", per_contract_side: "2.87" },
+    },
+    PROP_TOPSTEP,
+  ],
+  currency: "USD",
   settings: {
     fidelity: "1m",
     latency_ms: 100,
@@ -232,7 +244,7 @@ describe("feeTableOf", () => {
       feeTableOf({ ...UNTOUCHED, feeTable: "prop-topstep" }, ESTIMATE)
     ).toBe("prop-topstep")
     expect(
-      feeTableOf(UNTOUCHED, { ...ESTIMATE, fee_tables: ["prop-topstep"] })
+      feeTableOf(UNTOUCHED, { ...ESTIMATE, fee_tables: [PROP_TOPSTEP] })
     ).toBeNull()
   })
 })
@@ -360,7 +372,7 @@ describe("runReadiness", () => {
       UNTOUCHED,
       { ...ESTIMATE, fee_tables: [] },
       true,
-      "Choose a fee table that prices ES",
+      "Choose commissions and fees that price ES",
     ],
     [
       "a fidelity left from another instrument's data",

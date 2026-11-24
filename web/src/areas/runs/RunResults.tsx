@@ -46,21 +46,29 @@ function ShownResults({
   runKey,
   statistics,
 }: Readonly<{ runKey: string; statistics: RunStatistics }>) {
-  const { metrics } = statistics
+  const { metrics, currency } = statistics
   return (
     <>
       <KeyFigures statistics={statistics} />
       <RobustnessCard
         robustness={metrics.robustness}
         trades={metrics.trades.trades}
+        currency={currency}
       />
-      <EquityCard runKey={runKey} drawdown={metrics.drawdown} />
-      <BreakdownTables breakdowns={metrics.breakdowns} />
+      <EquityCard
+        runKey={runKey}
+        drawdown={metrics.drawdown}
+        currency={currency}
+      />
+      <BreakdownTables breakdowns={metrics.breakdowns} currency={currency} />
       {metrics.fidelity_check !== null &&
         metrics.fidelity_check !== undefined && (
-          <FidelityCheckCard check={metrics.fidelity_check} />
+          <FidelityCheckCard
+            check={metrics.fidelity_check}
+            currency={currency}
+          />
         )}
-      <DistributionsCard runKey={runKey} currency={statistics.currency} />
+      <DistributionsCard runKey={runKey} currency={currency} />
     </>
   )
 }

@@ -36,6 +36,6 @@ it("documents every prop of the results' charts", () => {
     ...fields(histogram, "HistogramChartProps"),
   ]
 
-  expect(named.length).toBe(9)
+  expect(named.length).toBe(11)
   expect(named.filter((name) => !readme.includes(`\`${name}\``))).toEqual([])
 })

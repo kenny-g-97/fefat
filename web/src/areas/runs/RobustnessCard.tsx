@@ -1,6 +1,6 @@
 import { cn } from "cn"
 import type { Robustness } from "@/api/run-results"
-import { VERDICT_LABELS } from "@/api/runs"
+import { type Currency, VERDICT_LABELS } from "@/api/runs"
 import { formatMoney, moneySign, sentenceCase } from "@/ui/figures"
 import { Panel } from "@/ui/panel"
 import { sampleSizeWords } from "./result-words"
@@ -11,12 +11,18 @@ const BADGE =
 type RobustnessCardProps = Readonly<{
   robustness: Robustness
   trades: number
+  currency: Currency
 }>
 
 /** The robustness summary (web/DESIGN.md, Patterns, Robustness summary): the five scores of 20
  * and their total, the verdict with `fragile_to_slippage` beside it, which of 30, 100, and 200
- * trades the run reaches, its net P&L at one more tick of slippage, and the red flags that fired. */
-export function RobustnessCard({ robustness, trades }: RobustnessCardProps) {
+ * trades the run reaches, its net P&L at one more tick of slippage in `currency`, and the red
+ * flags that fired. */
+export function RobustnessCard({
+  robustness,
+  trades,
+  currency,
+}: RobustnessCardProps) {
   const atOneMoreTick = robustness.pnl_at_plus_one_tick
   const sign = moneySign(atOneMoreTick)
   return (
@@ -61,7 +67,7 @@ export function RobustnessCard({ robustness, trades }: RobustnessCardProps) {
                 sign === "negative" && "text-negative"
               )}
             >
-              {formatMoney(atOneMoreTick)}
+              {formatMoney(atOneMoreTick, currency)}
             </span>
           </p>
         </div>
