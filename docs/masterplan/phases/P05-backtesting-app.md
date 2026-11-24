@@ -988,6 +988,10 @@ Not in this step: the day-block bootstrap, stress (slippage, skipped trades, cos
 
 - Two reads that differ mean an unseeded draw: seed every draw from the request's seed, never from the clock or a thread.
 
+#### Amendment
+
+2026-11-24 (the step's plan, D-118): your answers. The paths are drawn and walked in Polars, as the SDK's day-block bootstrap draws, and numpy stays out of the SDK: a block of 2,000,000 drawn trades takes about 80 ms, so that the route's most, 10,000 paths of a run's 50,000 trades, takes about 20 s, and the defaults on a run of a few thousand trades well under a second. The card's figures are four stat cards: the median net P&L, the chance of a net loss, the median maximum drawdown with the run's own closed-trade drawdown in its line, and the 95th percentile's with the share of paths that fell deeper than the run's own. The fan draws its median and its two bands alone, and the run's own walk over them waits in `BACKLOG.md`. The plan's calls: a percentile is the amount of the path at its nearest rank, one some path reached, exact in the currency; the walk works a block of trade counts over every path at a time rather than a block of paths, each block's draws seeded from the request's seed, so that what it holds stays within a stated bound whatever the run, while a block of paths would keep every path's equity at each of the fan's counts to work out their percentiles, 240 MB at the route's most; a run of fewer than two trades answers `too_few_trades`, with its trades and why, which the card says in its place, rather than a refusal; the fan's counts run from none, where every path holds the capital, to the run's trades, spread evenly; and `max_points` keeps the equity route's bounds, 5 to 10,000, 3,000 where left out.
+
 ## Phase exit
 
 ```text
