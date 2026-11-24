@@ -413,6 +413,10 @@ test("a saved run's page shows its status, its key, and every setting", async ({
   const parameters = page.getByRole("region", { name: "Parameters" })
   await expect(parameters).toContainText("lookback")
   await expect(parameters).toContainText("12")
+  // The chart loads apart: its picture waits for it, so that the page's picture holds it.
+  await expect(
+    page.getByTestId("equity-chart").locator("canvas").first()
+  ).toBeVisible()
   await page.mouse.move(700, 36)
   await screenshot(page, "run-page")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
@@ -421,6 +425,41 @@ test("a saved run's page shows its status, its key, and every setting", async ({
   await page.getByRole("link", { name: "Back to Runs" }).click()
   await expect(page).toHaveURL("/runs")
   expect(errors).toEqual([])
+})
+
+test("a perpetual's run lists its fee's maker and taker rates, and its capital in its code", async ({
+  loggedIn: page,
+}) => {
+  // The reviews of D-117: the Settings card's row of a crypto fee, and a currency without a sign.
+  const seeded = await theSeededRun(page)
+  const row = z.looseObject({ settings: z.looseObject({}) })
+  await page.route(`**/v1/runs/${seeded.run_key}`, async (route) => {
+    const answered = await route.fetch()
+    const body = row.parse(await answered.json())
+    await route.fulfill({
+      response: answered,
+      json: {
+        ...body,
+        currency: "USDT",
+        fee: { kind: "crypto", maker_bps: "2", taker_bps: "5" },
+        settings: {
+          ...body.settings,
+          instrument: "BTCUSDT-PERP",
+          fee_table: "binance-default",
+        },
+      },
+    })
+  })
+
+  await page.goto(`/runs/run?key=${seeded.run_key}`)
+
+  const settings = page.getByTestId("run-settings")
+  await expect(settings).toContainText(
+    "Commissions and feesbinance-defaultMaker, taker2 bps, 5 bps"
+  )
+  await expect(settings).toContainText(
+    `Capital${moneyText(seeded.settings.capital, "USDT")}`
+  )
 })
 
 test("an address that names no run says so", async ({ loggedIn: page }) => {
@@ -761,11 +800,12 @@ test("the dialog picks the data by provider and contract, and says when no fee t
   await dialog.getByLabel("Fidelity").click()
   await page.getByRole("option", { name: "1-minute bars" }).click()
 
+  // The design review of D-117: a fact, since nothing can be chosen.
   await expect(dialog.getByTestId("run-no-fee-table")).toHaveText(
-    "No table of commissions and fees prices ES, so a run could not count its costs."
+    "FEAT has no commissions and fees for ES, so a run could not count its costs."
   )
   await expect(dialog.getByTestId("run-waiting")).toHaveText(
-    "Choose commissions and fees that price ES"
+    "No commissions and fees for ES"
   )
   await expect(dialog.getByTestId("run-launch")).toBeDisabled()
 })
@@ -823,10 +863,12 @@ test("the dialog chooses the instrument a run trades, and reads that instrument'
   )
   await expect(dialog.getByLabel("Contract")).toHaveCount(0)
   const fees = dialog.getByLabel("Commissions and fees")
+  const crypto =
+    "Maker 2 bps, taker 5 bps of each trade's value: maker for a limit order that rested on the book"
   await expect(fees).toHaveText("binance-default")
-  await expect(dialog.getByTestId("run-fee-note")).toHaveText(
-    "maker 2 bps, taker 5 bps of each trade's value, maker for a limit order that rested on the book"
-  )
+  await expect(dialog.getByTestId("run-fee-note")).toHaveText(crypto)
+  // The line under the field is its description, so that a screen reader hears the charge.
+  await expect(fees).toHaveAccessibleDescription(crypto)
 
   // The code's own instrument, chosen again: its estimate is the first one, still fresh, and the
   // run names it, so that a parameter of the code cannot trade another than the dialog shows.
@@ -837,15 +879,21 @@ test("the dialog chooses the instrument a run trades, and reads that instrument'
   )
   // D-117: the commissions and fees name each table's charge on the run's last day, March 2026
   // paying the tables' first schedule, as the engine charges it (F-FEE-01).
+  const futures =
+    "$2.87 per contract per side: commission plus exchange, clearing, and NFA fees"
   await expect(fees).toHaveText("retail-default")
-  await expect(dialog.getByTestId("run-fee-note")).toHaveText(
-    "$2.87 per contract per side: the exchange's, clearing, and NFA fees with the broker's commission"
+  await expect(dialog.getByTestId("run-fee-note")).toHaveText(futures)
+  await expect(fees).toHaveAccessibleDescription(futures)
+  await expect(dialog.getByLabel("Fidelity")).toHaveAccessibleDescription(
+    /^Each date fills on/
   )
   await fees.click()
   await expect(page.getByRole("option")).toHaveText([
     "retail-default, $2.87 per contract per side",
     "prop-topstep, $1.89 per contract per side",
   ])
+  await page.mouse.move(700, 36)
+  await screenshot(page, "run-dialog-fees", [], "window")
   await page.keyboard.press("Escape")
   await expect(dialog.getByTestId("run-launch")).toBeEnabled()
   await expect(dialog.getByTestId("run-estimate")).not.toContainText("Trades")

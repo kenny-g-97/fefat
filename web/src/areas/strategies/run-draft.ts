@@ -256,7 +256,10 @@ export function runReadiness(
   if (feeTable === null) {
     return {
       kind: "waiting",
-      why: `Choose commissions and fees that price ${estimate.instrument}`,
+      why:
+        estimate.fee_tables.length === 0
+          ? `No commissions and fees for ${estimate.instrument}`
+          : `Choose commissions and fees for ${estimate.instrument}`,
     }
   }
   const ticks = shownTicks(draft, estimate)

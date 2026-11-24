@@ -57,6 +57,7 @@ type PickerProps = Readonly<{
   placeholder?: string
   label?: string
   shown?: string
+  describedBy?: string
   size?: "sm" | "default"
   className?: string
 }>
@@ -64,8 +65,9 @@ type PickerProps = Readonly<{
 /** The app's select (web/DESIGN.md, Patterns, Select): one choice among many, its list a
  * popper under its trigger, 144 px wide where its values need no more; with no value chosen,
  * `""`, it shows `placeholder` in subtle text, and with one, the chosen option's words, or
- * `shown` where the list's words are longer than the trigger holds. A select over a table's
- * column is `sm`, 32 px, and named by `label`, since no label element names it. */
+ * `shown` where the list's words are longer than the trigger holds, the line under the field
+ * that says the rest named by `describedBy`. A select over a table's column is `sm`, 32 px, and
+ * named by `label`, since no label element names it. */
 export function Picker({
   id,
   value,
@@ -74,6 +76,7 @@ export function Picker({
   placeholder,
   label,
   shown,
+  describedBy,
   size = "default",
   className = "w-36",
 }: PickerProps) {
@@ -84,6 +87,7 @@ export function Picker({
         size={size}
         className={className}
         aria-label={label}
+        aria-describedby={describedBy}
       >
         <SelectValue placeholder={placeholder}>
           {value === "" ? undefined : shown}

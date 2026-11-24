@@ -1,5 +1,5 @@
 import type { Currency, Fee, RunEstimated } from "@/api/runs"
-import { feeWords, fidelityLabel } from "@/ui/figures"
+import { feeWords, fidelityLabel, sentenceCase } from "@/ui/figures"
 import { KeptField } from "@/ui/kept-field"
 import { Choice, Picker } from "@/ui/picker"
 import {
@@ -11,6 +11,8 @@ import {
 
 /** The fidelity select's first choice, the setting left out. No level is written so. */
 const AUTO = "(auto)"
+/** The line under Commissions and fees, which describes the field. */
+const FEE_NOTE = "run-fee-table-note"
 
 type RunCostFieldsProps = Readonly<{
   draft: RunDraft
@@ -39,6 +41,7 @@ export function RunCostFields({
               className="w-full"
               value={held ? level : ""}
               placeholder="Choose a level"
+              describedBy="run-fidelity-note"
               options={[
                 { value: AUTO, label: "Auto" },
                 ...estimate.levels.map((level) => ({
@@ -55,6 +58,7 @@ export function RunCostFields({
             />
           </Choice>
           <p
+            id="run-fidelity-note"
             data-testid="run-fidelity-note"
             className="text-xs text-muted-foreground"
           >
@@ -73,15 +77,16 @@ export function RunCostFields({
 }
 
 /** The commissions and fees: the fee tables that price the instrument, each named in the list
- * with its charge, the trigger naming the table, and a line under it saying what the charge holds;
- * where none prices the instrument, why a run cannot count its costs. */
+ * with its charge, the trigger naming the table, and a line under it saying what the charge holds,
+ * which describes the field; where FEAT has none for the instrument, why a run cannot count its
+ * costs. */
 function RunFees({ draft, estimate, onChange }: RunCostFieldsProps) {
   const feeTable = feeTableOf(draft, estimate)
   const chosen = estimate.fee_tables.find((choice) => choice.name === feeTable)
   if (estimate.fee_tables.length === 0) {
     return (
       <p role="alert" data-testid="run-no-fee-table" className="text-negative">
-        {`No table of commissions and fees prices ${estimate.instrument}, so a run could not count its costs.`}
+        {`FEAT has no commissions and fees for ${estimate.instrument}, so a run could not count its costs.`}
       </p>
     )
   }
@@ -94,6 +99,7 @@ function RunFees({ draft, estimate, onChange }: RunCostFieldsProps) {
           value={feeTable === null ? "" : feeTable}
           shown={feeTable === null ? undefined : feeTable}
           placeholder="Choose a table"
+          describedBy={chosen === undefined ? undefined : FEE_NOTE}
           options={estimate.fee_tables.map((choice) => ({
             value: choice.name,
             label: `${choice.name}, ${feeWords(choice.fee, estimate.currency)}`,
@@ -102,7 +108,11 @@ function RunFees({ draft, estimate, onChange }: RunCostFieldsProps) {
         />
       </Choice>
       {chosen !== undefined && (
-        <p data-testid="run-fee-note" className="text-xs text-muted-foreground">
+        <p
+          id={FEE_NOTE}
+          data-testid="run-fee-note"
+          className="text-xs text-muted-foreground"
+        >
           {feeNote(chosen.fee, estimate.currency)}
         </p>
       )}
@@ -110,12 +120,13 @@ function RunFees({ draft, estimate, onChange }: RunCostFieldsProps) {
   )
 }
 
-/** What a table's charge holds, as the line under the field says it. */
+/** What a table's charge holds, as the line under the field says it, in a broker statement's
+ * words. */
 function feeNote(fee: Fee, currency: Currency): string {
-  const charge = feeWords(fee, currency)
+  const charge = sentenceCase(feeWords(fee, currency))
   return fee.kind === "futures"
-    ? `${charge}: the exchange's, clearing, and NFA fees with the broker's commission`
-    : `${charge} of each trade's value, maker for a limit order that rested on the book`
+    ? `${charge}: commission plus exchange, clearing, and NFA fees`
+    : `${charge} of each trade's value: maker for a limit order that rested on the book`
 }
 
 /** A level as a sentence writes it: lower case, an acronym as it is. */

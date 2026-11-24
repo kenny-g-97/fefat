@@ -372,7 +372,14 @@ describe("runReadiness", () => {
       UNTOUCHED,
       { ...ESTIMATE, fee_tables: [] },
       true,
-      "Choose commissions and fees that price ES",
+      "No commissions and fees for ES",
+    ],
+    [
+      "a fee table chosen that the estimate no longer offers",
+      { ...UNTOUCHED, feeTable: "prop-topstep" },
+      { ...ESTIMATE, fee_tables: [ESTIMATE.fee_tables[0]] },
+      true,
+      "Choose commissions and fees for ES",
     ],
     [
       "a fidelity left from another instrument's data",
