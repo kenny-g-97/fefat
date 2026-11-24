@@ -17,6 +17,9 @@ const EDGE = new Intl.NumberFormat("en-US", {
   signDisplay: "negative",
 })
 
+/** The space no line breaks at, which the page joins a currency's code to its figure with. */
+const NO_BREAK_SPACE = String.fromCharCode(0xa0)
+
 /** The sign a currency's money is written after; a currency without one follows its figure as its
  * code (D-117). */
 const CURRENCY_SIGNS = new Map([
@@ -38,7 +41,7 @@ function inCurrency(figure: string, currency: string | null): string {
   const digits = figure.replace("-", "")
   const sign = CURRENCY_SIGNS.get(currency)
   return sign === undefined
-    ? `${minus}${digits} ${currency}`
+    ? `${minus}${digits}${NO_BREAK_SPACE}${currency}`
     : `${minus}${sign}${digits}`
 }
 

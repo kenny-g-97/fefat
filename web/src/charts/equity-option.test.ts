@@ -55,6 +55,20 @@ describe("the equity chart's options", () => {
     ])
   })
 
+  it("counts a minus in the strip where the equity falls below zero", () => {
+    // The review of the strip: -40,000 USDT is wider than the 90,000 USDT its drawdown reaches.
+    const fallen = {
+      ...CURVE,
+      equity: [50_000, -40_000],
+      drawdown: [0, 90_000],
+    }
+    const { grid } = equityOption(fallen, "USDT", TOKENS)
+
+    expect((Array.isArray(grid) ? grid : []).map((pane) => pane.left)).toEqual([
+      102, 102,
+    ])
+  })
+
   it("writes both value axes' labels as money in the run's currency", () => {
     // D-117: a cash value reads as one, on the axes too.
     const axes = Array.isArray(option.yAxis) ? option.yAxis : []

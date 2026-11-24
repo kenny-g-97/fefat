@@ -16,6 +16,10 @@ const CURRENCY_SIGNS: Readonly<Record<Currency, string | null>> = {
   CAD: "CA$",
 }
 
+/** The space no line breaks at, which joins a currency's code to its figure (D-117), named
+ * since a formatter writes the character itself, which reads as a plain space. */
+export const NO_BREAK_SPACE = String.fromCharCode(0xa0)
+
 const MONEY = /^(-?)(\d+)(?:\.(\d+))?$/
 const THOUSANDS = /\B(?=(\d{3})+$)/g
 
@@ -143,7 +147,7 @@ function withCurrency(
   }
   const sign = CURRENCY_SIGNS[currency]
   return sign === null
-    ? `${minus}${digits} ${currency}`
+    ? `${minus}${digits}${NO_BREAK_SPACE}${currency}`
     : `${minus}${sign}${digits}`
 }
 

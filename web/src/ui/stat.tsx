@@ -1,5 +1,6 @@
 import { cn } from "cn"
 import type { ReactNode } from "react"
+import { NO_BREAK_SPACE } from "@/ui/figures"
 
 type StatProps = Readonly<{
   label: string
@@ -32,7 +33,7 @@ export function Stat({ label, value, unit, detail, tone, testId }: StatProps) {
         {value}
         {typeof unit === "string" && (
           <>
-            {" "}
+            {NO_BREAK_SPACE}
             <span className="text-xs font-semibold tracking-normal">
               {unit}
             </span>

@@ -81,14 +81,15 @@ export function equityOption(
 }
 
 /** The strip left of both panes for their value axes' labels, one width so that the two time axes
- * line up, ECharts moving neither pane for its labels: room for the widest amount either axis can
- * label in `currency`, a digit more for a tick rounded past it (D-117). */
+ * line up, ECharts moving neither pane for its labels: room for the wider of the lowest and the
+ * highest amount either axis can label in `currency`, a minus counted, and a digit more for a
+ * tick rounded past it (D-117). */
 function labelStrip(curve: EquityCurve, currency: Currency): number {
-  const widest = [curve.capital, ...curve.equity, ...curve.drawdown].reduce(
-    (wide, amount) => Math.max(wide, Math.abs(amount)),
-    0
+  const amounts = [curve.capital, ...curve.equity, ...curve.drawdown]
+  const written = [Math.min(...amounts), Math.max(...amounts)].map(
+    (amount) => moneyEdge(Math.round(amount), currency).length
   )
-  const characters = moneyEdge(Math.round(widest), currency).length + 1
+  const characters = Math.max(...written) + 1
   return Math.max(
     LABEL_STRIP,
     Math.ceil(characters * LABEL_CHARACTER) + LABEL_MARGIN

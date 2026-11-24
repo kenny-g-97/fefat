@@ -16,6 +16,7 @@ import {
   moneyEdge,
   moneyFigure,
   moneySign,
+  NO_BREAK_SPACE,
   sentenceCase,
 } from "./figures"
 
@@ -134,8 +135,8 @@ describe("formatMoney", () => {
 
   it("writes a currency without a sign as its code after the figure, and plain figures for none", () => {
     // The design review of D-117: a space no line breaks at keeps the code with its figure.
-    expect(formatMoney("-1250", "USDT")).toBe("-1,250.00 USDT")
-    expect(formatMoney("1250", "CHF")).toBe("1,250.00 CHF")
+    expect(formatMoney("-1250", "USDT")).toBe(`-1,250.00${NO_BREAK_SPACE}USDT`)
+    expect(formatMoney("1250", "CHF")).toBe(`1,250.00${NO_BREAK_SPACE}CHF`)
     expect(formatMoney("-1250", null)).toBe("-1,250.00")
   })
 
@@ -162,14 +163,14 @@ describe("money from a float", () => {
     expect(moneyFigure(51250.5, "USD")).toBe("$51,250.50")
     expect(moneyFigure(-52.084, "USD")).toBe("-$52.08")
     expect(moneyFigure(-0.001, "USD")).toBe("$0.00")
-    expect(moneyFigure(-3.5, "USDT")).toBe("-3.50 USDT")
+    expect(moneyFigure(-3.5, "USDT")).toBe(`-3.50${NO_BREAK_SPACE}USDT`)
   })
 
   it("writes an axis's or a histogram's edge with the decimals it holds", () => {
     expect(moneyEdge(-150, "USD")).toBe("-$150")
     expect(moneyEdge(50000, "USD")).toBe("$50,000")
     expect(moneyEdge(0, "USD")).toBe("$0")
-    expect(moneyEdge(12.5, "USDT")).toBe("12.5 USDT")
+    expect(moneyEdge(12.5, "USDT")).toBe(`12.5${NO_BREAK_SPACE}USDT`)
   })
 })
 
