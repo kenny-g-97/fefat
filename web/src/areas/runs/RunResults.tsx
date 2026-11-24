@@ -7,6 +7,7 @@ import { DistributionsCard } from "./DistributionsCard"
 import { EquityCard } from "./EquityCard"
 import { FidelityCheckCard } from "./FidelityCheckCard"
 import { KeyFigures } from "./KeyFigures"
+import { MonteCarloCard } from "./MonteCarloCard"
 import { ResultBody } from "./ResultBody"
 import { RobustnessCard } from "./RobustnessCard"
 
@@ -69,6 +70,7 @@ function ShownResults({
           />
         )}
       <DistributionsCard runKey={runKey} currency={currency} />
+      <MonteCarloCard runKey={runKey} currency={currency} />
     </>
   )
 }

@@ -13,6 +13,7 @@ import {
 import { expect, test } from "./support/fixtures.ts"
 import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
+import { theSeededKey } from "./support/seeded-run.ts"
 
 // A finished run's results of step 5.7 against the seeded server: every figure the page shows is
 // the API's (Done means 1, its other half in python/tests/server/test_http_run_results.py), read
@@ -120,8 +121,6 @@ const distributions = z.object({
   holding_minutes: histogram,
 })
 
-const listed = z.object({ runs: z.array(z.object({ run_key: z.string() })) })
-
 const VERDICTS: Readonly<Record<string, string>> = {
   deploy_grade_evidence: "Deploy-grade evidence",
   refine: "Refine",
@@ -135,17 +134,6 @@ const HISTOGRAMS = [
   "mfe_ticks",
   "holding_minutes",
 ] as const
-
-async function theSeededKey(page: Page): Promise<string> {
-  const answer = await page.request.get("/v1/runs", {
-    params: { strategy: "demo", status: "succeeded" },
-  })
-  const seeded = listed.parse(await answer.json()).runs.at(-1)
-  if (seeded === undefined) {
-    throw new Error("Expected the seed's saved run of demo, got none.")
-  }
-  return seeded.run_key
-}
 
 /** The run's three results, and how the equity's readout writes an amount of its currency. */
 async function resultsOf(page: Page, key: string) {

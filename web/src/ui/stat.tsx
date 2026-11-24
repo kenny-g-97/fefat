@@ -8,6 +8,7 @@ type StatProps = Readonly<{
   unit?: string | null
   detail?: ReactNode
   tone?: "positive" | "negative"
+  inset?: boolean
   testId: string
 }>
 
@@ -15,12 +16,24 @@ type StatProps = Readonly<{
  * in the colour of its sign where it is money, with the `unit` after it at 12 px where one is
  * given, such as the code of a currency without a sign, its label under it, and one line of what
  * the figure is out of. The label comes first in the document, so that a screen reader names the
- * figure before reading it. */
-export function Stat({ label, value, unit, detail, tone, testId }: StatProps) {
+ * figure before reading it. An `inset` stat stands inside a card, on the control surface without
+ * a shadow, as the boxes inside cards do. */
+export function Stat({
+  label,
+  value,
+  unit,
+  detail,
+  tone,
+  inset = false,
+  testId,
+}: StatProps) {
   return (
     <div
       data-testid={testId}
-      className="flex flex-col rounded-xl border bg-card p-5 shadow-raised"
+      className={cn(
+        "flex flex-col rounded-xl border p-5",
+        inset ? "bg-muted" : "bg-card shadow-raised"
+      )}
     >
       <dt className="order-2 mt-1 text-foreground-secondary">{label}</dt>
       <dd
