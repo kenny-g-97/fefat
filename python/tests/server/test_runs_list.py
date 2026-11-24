@@ -9,6 +9,7 @@ import os
 import shutil
 from base64 import urlsafe_b64encode
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -20,6 +21,8 @@ from sqlalchemy import Engine
 import fefat as ff
 from fefat.backtest.artifacts import RECORD_FILE
 from fefat.config import resolve_paths
+from fefat.market.fees import CryptoFee, FuturesFee
+from fefat.market.instruments import Currency
 from fefat_app.container import Container
 from fefat_app.database import workspace_index
 from fefat_app.database.job_records import JobTables
@@ -170,8 +173,9 @@ def test_a_run_names_the_instrument_it_trades_or_else_its_versions(
     # D-114: a list and a run's page name what it trades in its settings, beside the instrument
     # its version's code names; a row written before the setting shows its version's.
     applied = the_run().config
+    perpetual = {"instrument": "BTCUSDT-PERP", "fee_table": "binance-default"}
     moved = a_submission(engine, "d" * 64).model_copy(
-        update={"settings": applied.model_copy(update={"instrument": "BTCUSDT-PERP"})}
+        update={"settings": applied.model_copy(update=perpetual)}
     )
     older = a_submission(engine, "e" * 64).model_copy(
         update={"settings": applied.model_copy(update={"instrument": None})}
@@ -187,6 +191,33 @@ def test_a_run_names_the_instrument_it_trades_or_else_its_versions(
         assert (run.strategy.instrument, run.settings.instrument) == ("ES", traded)
         assert (shown.strategy.instrument, shown.settings.instrument) == ("ES", traded)
         assert listed[run.id] == run
+
+
+def test_a_run_names_its_currency_and_what_its_fee_table_charges_on_its_last_day(
+    records: RunTables, engine: Engine
+) -> None:
+    # D-117: a list and a run's page write its money with its currency's sign and name its fee
+    # table's charge; March 2026 comes before the tables' first schedule, which the engines
+    # charge then (F-FEE-01).
+    saved = records.saved(the_run().hash)
+    made = records.submitted(a_submission(engine, None), 3, STARTED_AT).run
+    asked = a_submission(engine, "d" * 64)
+    perpetual = asked.settings.model_copy(
+        update={"instrument": "BTCUSDT-PERP", "fee_table": "binance-default"}
+    )
+    moved = records.submitted(asked.model_copy(update={"settings": perpetual}), 3, STARTED_AT).run
+
+    listed = {run.id: run for run in page_of(records)}
+
+    per_side = FuturesFee(per_contract_side=Decimal("2.87"))
+    for run in (saved, made):
+        assert (run.currency, run.fee) == (Currency.USD, per_side)
+        assert listed[run.id] == records.by_id(run.id) == run
+    assert (moved.currency, moved.fee) == (
+        Currency.USDT,
+        CryptoFee(maker_bps=Decimal(2), taker_bps=Decimal(5)),
+    )
+    assert listed[moved.id] == moved
 
 
 def test_a_record_written_before_the_setting_names_the_root_it_traded(records: RunTables) -> None:

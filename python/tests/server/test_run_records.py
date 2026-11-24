@@ -219,6 +219,36 @@ def test_a_run_key_that_names_no_run_of_its_own_folder_is_refused(records: RunTa
         records.saved("e" * 64)
 
 
+def test_a_row_naming_no_instrument_counts_in_no_currency_and_names_no_fee(
+    records: RunTables, engine: Engine
+) -> None:
+    # D-117: a run of a strategy built in a notebook, indexed before D-114, names no instrument,
+    # so the page writes its money without a currency's sign and its fee table by name alone.
+    run = the_run()
+    settings = run.config.model_dump(mode="json")
+    settings.pop("instrument", None)
+    with Session(engine) as session, session.begin():
+        row = RunRow(
+            origin=RunOrigin.MANUAL,
+            parameters_json={},
+            window_start=run.record.window.start,
+            window_end=run.record.window.end,
+            settings_json=settings,
+            run_key=run.hash,
+            metrics_json=run.metrics.model_dump(mode="json"),
+            created_at=run.saved_at,
+        )
+        session.add(row)
+        session.flush()
+        row_id = row.id
+
+    read = records.by_id(row_id)
+
+    assert isinstance(read, SavedRun)
+    assert (read.strategy, read.settings.instrument) == (None, None)
+    assert (read.currency, read.fee) == (None, None)
+
+
 def test_a_saved_runs_settings_read_back_whole(records: RunTables) -> None:
     run = the_run()
     saved = records.saved(run.hash)

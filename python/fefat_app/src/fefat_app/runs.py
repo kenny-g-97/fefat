@@ -28,6 +28,7 @@ from fefat.backtest.estimates import WindowEstimate
 from fefat.backtest.metrics import Metrics, Verdict
 from fefat.backtest.record import Hash
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
+from fefat.market.fees import Fee
 from fefat.market.fidelity import FidelityEra
 from fefat.market.instruments import Currency
 from fefat.market.schema import frozen
@@ -133,7 +134,10 @@ class KeyMetrics(BaseModel):
 class _Run(BaseModel):
     """What every run's row holds: its id; when it was asked for, or saved where the index found
     it saved; its origin; its parameters as bound; the trade dates its window spans, its signal
-    bars' once saved; and its settings, every default applied."""
+    bars' once saved; its settings, every default applied; and, worked out at each read from the
+    instrument it trades (D-117), the currency its money counts in and the fee its table charges
+    on its last day, both None where its row names no instrument, as one indexed before D-114 for
+    a strategy built in a notebook."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -144,6 +148,8 @@ class _Run(BaseModel):
     start: date
     end: date
     settings: AppliedRunConfig
+    currency: Currency | None
+    fee: Fee | None
 
 
 class SubmittedRun(_Run):

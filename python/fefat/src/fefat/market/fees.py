@@ -222,6 +222,27 @@ def tables_pricing(root: str) -> tuple[str, ...]:
 def lookup(table_name: str, root: str, on: date) -> FuturesFee | CryptoFee:
     """The fee of `root` on `on` in the table a run names: `lookup("retail-default", "ES",
     on).per_contract_side` is what one ES contract costs per side."""
+    return _named(table_name).lookup(root, on)
+
+
+def fee_in_force(table_name: str, root: str, on: date | None) -> FuturesFee | CryptoFee:
+    """The fee of `root` a run naming `table_name` pays on the trade date `on`, as the engines
+    charge it (F-FEE-01): `lookup`'s, or the first schedule's for a date before it, which the
+    run's record warns of; the newest schedule's where `on` is None (D-117)."""
+    table = _named(table_name)
+    if on is None:
+        return table.lookup(root, table.schedules[-1].effective_from)
+    return table.lookup(root, max(on, table.schedules[0].effective_from))
+
+
+class FeeChoice(FrozenModel):
+    """A fee table a run can name, with the fee of the run's root it would pay (D-117)."""
+
+    name: str
+    fee: Fee
+
+
+def _named(table_name: str) -> FeeTable:
     if table_name not in TABLES:
         raise ValueError(f"Expected a fee table ({', '.join(sorted(TABLES))}), got {table_name!r}.")
-    return TABLES[table_name].lookup(root, on)
+    return TABLES[table_name]

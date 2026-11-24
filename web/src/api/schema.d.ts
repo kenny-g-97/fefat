@@ -1680,6 +1680,22 @@ export interface components {
             schema_name: string;
         };
         /**
+         * CryptoFee
+         * @description What a crypto trade costs, in basis points of its value: `maker_bps` for an order that
+         *     rests on the book, `taker_bps` for one that takes liquidity (negative for a rebate).
+         */
+        CryptoFee: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "crypto";
+            /** Maker Bps */
+            maker_bps: string;
+            /** Taker Bps */
+            taker_bps: string;
+        };
+        /**
          * Currency
          * @description The currency of an instrument's prices and of what a point is worth.
          * @enum {string}
@@ -1947,6 +1963,16 @@ export interface components {
             };
         };
         /**
+         * FeeChoice
+         * @description A fee table a run can name, with the fee of the run's root it would pay (D-117).
+         */
+        FeeChoice: {
+            /** Fee */
+            fee: components["schemas"]["FuturesFee"] | components["schemas"]["CryptoFee"];
+            /** Name */
+            name: string;
+        };
+        /**
          * FidelityCheck
          * @description The error bar of a run's days at lower fidelity (`02` §1.6, step 2.12), `kind` checked:
          *     the period its trade dates finer than a minute span, from `first` to `last`, run from flat
@@ -2193,6 +2219,20 @@ export interface components {
             kind: "prints";
             /** Rows */
             rows: components["schemas"]["PrintSeen"][];
+        };
+        /**
+         * FuturesFee
+         * @description What one futures contract costs per side, in US dollars: exchange and clearing,
+         *     regulatory, and broker charges, summed.
+         */
+        FuturesFee: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "futures";
+            /** Per Contract Side */
+            per_contract_side: string;
         };
         /**
          * GivenProfile
@@ -3301,8 +3341,9 @@ export interface components {
             bars: number;
             /** Contracts */
             contracts: string[];
+            currency: components["schemas"]["Currency"];
             /** Fee Tables */
-            fee_tables: string[];
+            fee_tables: components["schemas"]["FeeChoice"][];
             held: components["schemas"]["fefat__backtest__record__Window"] | null;
             /** Instrument */
             instrument: string;
@@ -3468,11 +3509,14 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            currency: components["schemas"]["Currency"] | null;
             /**
              * End
              * Format: date
              */
             end: string;
+            /** Fee */
+            fee: (components["schemas"]["FuturesFee"] | components["schemas"]["CryptoFee"]) | null;
             /** Id */
             id: string;
             /** Job Id */
@@ -3934,6 +3978,7 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            currency: components["schemas"]["Currency"] | null;
             /**
              * End
              * Format: date
@@ -3941,6 +3986,8 @@ export interface components {
             end: string;
             /** Error */
             error: string | null;
+            /** Fee */
+            fee: (components["schemas"]["FuturesFee"] | components["schemas"]["CryptoFee"]) | null;
             /** Id */
             id: string;
             /** Job Id */

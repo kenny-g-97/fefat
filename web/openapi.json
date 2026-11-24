@@ -1439,6 +1439,32 @@
         "title": "CoveringDataset",
         "type": "object"
       },
+      "CryptoFee": {
+        "additionalProperties": false,
+        "description": "What a crypto trade costs, in basis points of its value: `maker_bps` for an order that\nrests on the book, `taker_bps` for one that takes liquidity (negative for a rebate).",
+        "properties": {
+          "kind": {
+            "const": "crypto",
+            "default": "crypto",
+            "title": "Kind",
+            "type": "string"
+          },
+          "maker_bps": {
+            "title": "Maker Bps",
+            "type": "string"
+          },
+          "taker_bps": {
+            "title": "Taker Bps",
+            "type": "string"
+          }
+        },
+        "required": [
+          "maker_bps",
+          "taker_bps"
+        ],
+        "title": "CryptoFee",
+        "type": "object"
+      },
       "Currency": {
         "description": "The currency of an instrument's prices and of what a point is worth.",
         "enum": [
@@ -2083,6 +2109,40 @@
         "title": "FeatureOutput",
         "type": "object"
       },
+      "FeeChoice": {
+        "additionalProperties": false,
+        "description": "A fee table a run can name, with the fee of the run's root it would pay (D-117).",
+        "properties": {
+          "fee": {
+            "discriminator": {
+              "mapping": {
+                "crypto": "#/components/schemas/CryptoFee",
+                "futures": "#/components/schemas/FuturesFee"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FuturesFee"
+              },
+              {
+                "$ref": "#/components/schemas/CryptoFee"
+              }
+            ],
+            "title": "Fee"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fee"
+        ],
+        "title": "FeeChoice",
+        "type": "object"
+      },
       "FidelityCheck": {
         "additionalProperties": false,
         "description": "The error bar of a run's days at lower fidelity (`02` \u00a71.6, step 2.12), `kind` checked:\nthe period its trade dates finer than a minute span, from `first` to `last`, run from flat\nat the run's own fidelity, the baseline, and again at 1-second and at 1-minute fidelity, the\nrerun at 1 second none where the period holds no 1-second bars, its dates filling on the\n1-minute bars as the rerun at 1 minute does.",
@@ -2696,6 +2756,27 @@
           "rows"
         ],
         "title": "FirstPrints",
+        "type": "object"
+      },
+      "FuturesFee": {
+        "additionalProperties": false,
+        "description": "What one futures contract costs per side, in US dollars: exchange and clearing,\nregulatory, and broker charges, summed.",
+        "properties": {
+          "kind": {
+            "const": "futures",
+            "default": "futures",
+            "title": "Kind",
+            "type": "string"
+          },
+          "per_contract_side": {
+            "title": "Per Contract Side",
+            "type": "string"
+          }
+        },
+        "required": [
+          "per_contract_side"
+        ],
+        "title": "FuturesFee",
         "type": "object"
       },
       "GivenProfile": {
@@ -5170,9 +5251,12 @@
             "title": "Contracts",
             "type": "array"
           },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
           "fee_tables": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/FeeChoice"
             },
             "title": "Fee Tables",
             "type": "array"
@@ -5252,6 +5336,7 @@
           "contracts",
           "levels",
           "fee_tables",
+          "currency",
           "held",
           "window",
           "sessions",
@@ -5629,10 +5714,45 @@
             "title": "Created At",
             "type": "string"
           },
+          "currency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Currency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "end": {
             "format": "date",
             "title": "End",
             "type": "string"
+          },
+          "fee": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "crypto": "#/components/schemas/CryptoFee",
+                    "futures": "#/components/schemas/FuturesFee"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/FuturesFee"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CryptoFee"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fee"
           },
           "id": {
             "title": "Id",
@@ -5712,6 +5832,8 @@
           "start",
           "end",
           "settings",
+          "currency",
+          "fee",
           "strategy",
           "job_id",
           "run_key",
@@ -6587,6 +6709,16 @@
             "title": "Created At",
             "type": "string"
           },
+          "currency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Currency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "end": {
             "format": "date",
             "title": "End",
@@ -6602,6 +6734,31 @@
               }
             ],
             "title": "Error"
+          },
+          "fee": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "crypto": "#/components/schemas/CryptoFee",
+                    "futures": "#/components/schemas/FuturesFee"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/FuturesFee"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CryptoFee"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fee"
           },
           "id": {
             "title": "Id",
@@ -6665,6 +6822,8 @@
           "start",
           "end",
           "settings",
+          "currency",
+          "fee",
           "strategy",
           "status",
           "progress",

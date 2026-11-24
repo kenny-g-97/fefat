@@ -41,9 +41,11 @@ from fefat.features.cache import first_date_read
 from fefat.features.cache_keys import PartitionKeys, runtime_key
 from fefat.features.grids import input_sources
 from fefat.market.api import parse_trade_date, series_source
+from fefat.market.fees import TABLES
 from fefat.market.schema import FrozenDocument, FrozenModel
 from fefat.market.snapshot import Sha256
 from fefat.market.store_files import json_writer, write_atomically
+from fefat.reference.costs import RunFees
 from fefat.strategy.signal_strategy import SignalStrategy
 
 REQUESTS_FOLDER_NAME = "requests"
@@ -100,10 +102,13 @@ def looked_up(
     """A run of `strategy`, on the instrument `config` names where it names one (D-114), on the
     trade dates from `start` to `end` under `config`, as it is known before a bar is loaded
     (`RunLookup`). Its market is built for every strategy, so that an unknown instrument,
-    provider, or contract is refused here, before the app queues a job (step 5.3)."""
+    provider, or contract is refused here, before the app queues a job (step 5.3), as is a fee
+    table that does not price the instrument, in the words the run would refuse it in once its
+    signals are computed (D-117)."""
     strategy = strategy.trading(config.instrument)
     market = market_of(strategy.instrument, config.provider, paths)
     applied = config.applied(finest_level(market.datasets), market.instrument, market.provider)
+    RunFees.of_table(TABLES[applied.fee_table], market.instrument.root)
     window = Window(start=parse_trade_date(start, "start"), end=parse_trade_date(end, "end"))
     root, contract = strategy.instrument, applied.contract
     symbol = root if contract is None else contract_of(root, contract)

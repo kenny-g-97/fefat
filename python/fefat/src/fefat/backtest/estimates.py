@@ -35,9 +35,9 @@ from fefat.market.dataset_choice import (
     held_records,
 )
 from fefat.market.engine_cache import level_of
-from fefat.market.fees import tables_pricing
+from fefat.market.fees import FeeChoice, fee_in_force, tables_pricing
 from fefat.market.fidelity import TickFidelity
-from fefat.market.instruments import InstrumentKind
+from fefat.market.instruments import Currency, InstrumentKind
 from fefat.market.layout import Dataset, Partition, SeriesKind
 from fefat.market.schema import FrozenModel, Timeframe
 from fefat.market.series_source import SeriesSource, series_source_in
@@ -48,15 +48,18 @@ class WindowEstimate(FrozenModel):
     """What a run of a window would read (module docstring): its `settings`, every default
     applied; the `providers` that hold its root, the provider's `contracts` in time order, none
     for a series of one contract, its `levels`, finest first, and the `fee_tables` that price the
-    root; `held`, the trade dates its series holds, none while it holds none; `window`, the dates
-    asked for cut to them, none where they do not meet; and the `sessions`, `bars`, and `ticks`
-    the engine would replay on it."""
+    root, each with the fee it would pay on the window's last day, or from the newest schedule
+    where there is no window (D-117); the `currency` its money counts in; `held`, the trade dates
+    its series holds, none while it holds none; `window`, the dates asked for cut to them, none
+    where they do not meet; and the `sessions`, `bars`, and `ticks` the engine would replay on
+    it."""
 
     settings: AppliedRunConfig
     providers: tuple[str, ...]
     contracts: tuple[str, ...]
     levels: tuple[str, ...]
-    fee_tables: tuple[str, ...]
+    fee_tables: tuple[FeeChoice, ...]
+    currency: Currency
     held: Window | None
     window: Window | None
     sessions: int = Field(ge=0)
@@ -95,12 +98,17 @@ def estimated(
     sessions, bars, ticks = (
         (0, 0, 0) if window is None else _read(source, ranked, timeframe, window, settings.fidelity)
     )
+    last_day = None if window is None else window.end
     return WindowEstimate(
         settings=settings,
         providers=providers,
         contracts=_contracts(source),
         levels=tuple(str(level_of(dataset)) for dataset in ranked),
-        fee_tables=tables_pricing(root),
+        fee_tables=tuple(
+            FeeChoice(name=name, fee=fee_in_force(name, root, last_day))
+            for name in tables_pricing(root)
+        ),
+        currency=source.instrument.currency,
         held=held,
         window=window,
         sessions=sessions,
