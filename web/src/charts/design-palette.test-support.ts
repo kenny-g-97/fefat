@@ -3,7 +3,7 @@ import designSystem from "../../DESIGN.md?raw"
 /** The token `name`'s colour in `theme` as web/DESIGN.md's palette writes it, which
  * python/tests/test_web_design_system.py holds equal to index.css, for the tests that measure a
  * chart's colours, since vitest reads no stylesheet. */
-export function tokenColour(name: string, theme: "dark" | "light"): string {
+export function paletteColour(name: string, theme: "dark" | "light"): string {
   const row = new RegExp(
     `^\\| [^|]+ \\| \`${name}\` \\| \`(#[0-9a-f]{6})\` \\| \`(#[0-9a-f]{6})\` \\|`,
     "m"

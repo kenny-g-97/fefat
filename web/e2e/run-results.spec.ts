@@ -245,11 +245,17 @@ function differingPixels(
   )
 }
 
-/** The theme's tokens a chart's pixels are measured against, as the page holds them now. */
+/** The theme's tokens a chart's pixels are measured against, as the page holds them now, each in
+ * six digits, since the built stylesheet writes the light theme's white as `#fff`. */
 function shownColours(page: Page) {
   return page.evaluate(() => {
     const style = getComputedStyle(document.documentElement)
-    const read = (name: string) => style.getPropertyValue(name).trim()
+    const read = (name: string) => {
+      const value = style.getPropertyValue(name).trim()
+      return value.length === 4
+        ? `#${[...value.slice(1)].map((digit) => digit + digit).join("")}`
+        : value
+    }
     return {
       card: read("--card"),
       positive: read("--positive"),
@@ -259,18 +265,26 @@ function shownColours(page: Page) {
   })
 }
 
+/** A share of the way from the card to a colour that a line's pixels reach, its smoothed edge
+ * among them, and that the equity's fill does not. */
+const LINE_SHARES = [2 / 3, Number.MAX_VALUE] as const
+/** The share the equity's fill at 30 % reaches, a pixel's rounding either side of it. */
+const FILL_SHARES = [0.2, 0.4] as const
+
 /** How many pixels of the equity's pane, the top 65 % of the chart, each colour draws in its left
- * and its right third: each pixel painted over the card, since the chart's canvas is clear and its
- * fills keep their colour at a share of its alpha, counts toward a colour when it lies at least two
- * thirds of the way from the card to it, as a line's smoothed edge does and a fill at 30 % does
- * not. */
+ * and its right third at a share of the way from the card to it within `shares`, each pixel
+ * painted over the card first, since the chart's canvas is clear and its fills keep their colour
+ * at a share of its alpha; a pixel counts where it lies on the way to the colour, off it by no
+ * more than a smoothed edge, in proportion to its share, since two colours at a fill's strength
+ * lie as much nearer each other. */
 function colourCounts(
   page: Page,
   picture: string,
-  colours: Awaited<ReturnType<typeof shownColours>>
+  colours: Awaited<ReturnType<typeof shownColours>>,
+  shares: readonly [number, number]
 ) {
   return page.evaluate(
-    async ([source, shown]) => {
+    async ([source, shown, [least, most]]) => {
       const channels = (hex: string) =>
         [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16))
       const image = new Image()
@@ -284,35 +298,34 @@ function colourCounts(
         throw new Error("Expected a 2D canvas to count on, got none.")
       }
       context.drawImage(image, 0, 0)
-      const data = context.getImageData(0, 0, image.width, image.height).data
+      const rows = Math.floor(image.height * 0.65)
+      const pixels = context.getImageData(0, 0, image.width, rows).data
       const card = channels(shown.card)
+      const thirdAt = (x: number) => {
+        if (x < image.width / 3) {
+          return "left"
+        }
+        return x > (image.width * 2) / 3 ? "right" : null
+      }
       const counted = (hex: string) => {
         const towards = channels(hex).map((value, at) => value - card[at])
         const span = towards.reduce((sum, part) => sum + part * part, 0)
         const thirds = { left: 0, right: 0 }
-        for (let y = 0; y < Math.floor(image.height * 0.65); y += 1) {
-          for (let x = 0; x < image.width; x += 1) {
-            const third =
-              x < image.width / 3
-                ? "left"
-                : x > (image.width * 2) / 3
-                  ? "right"
-                  : null
-            if (third === null) {
-              continue
-            }
-            const at = (y * image.width + x) * 4
-            const alpha = data[at + 3] / 255
-            const off = [0, 1, 2].map(
-              (part) => alpha * (data[at + part] - card[part])
-            )
-            const share =
-              off.reduce((sum, part, index) => sum + part * towards[index], 0) /
-              span
-            const miss = Math.hypot(
-              ...off.map((part, index) => part - share * towards[index])
-            )
-            thirds[third] += share >= 2 / 3 && miss <= 24 ? 1 : 0
+        for (let at = 0; at < pixels.length; at += 4) {
+          const third = thirdAt((at / 4) % image.width)
+          const alpha = pixels[at + 3] / 255
+          const off = [0, 1, 2].map(
+            (part) => alpha * (pixels[at + part] - card[part])
+          )
+          const share =
+            off.reduce((sum, part, index) => sum + part * towards[index], 0) /
+            span
+          const miss = Math.hypot(
+            ...off.map((part, index) => part - share * towards[index])
+          )
+          const near = miss <= 24 * share
+          if (third !== null && share >= least && share <= most && near) {
+            thirds[third] += 1
           }
         }
         return thirds
@@ -323,8 +336,46 @@ function colourCounts(
         brand: counted(shown.brand),
       }
     },
-    [picture, colours] as const
+    [picture, colours, shares] as const
   )
+}
+
+/** The colours the equity's pane draws now at `shares`, in the theme the page shows. */
+async function drawnColours(page: Page, shares: readonly [number, number]) {
+  return colourCounts(
+    page,
+    (await chartPictures(page))[0],
+    await shownColours(page),
+    shares
+  )
+}
+
+/** Open the seeded run's page with its equity answered by `equityAt` and `drawdownAt` at a
+ * hundred decisions five minutes apart against a capital of 50,000, so that a test places the
+ * curve along the time axis, which a run's own decisions, uneven over its sessions and their
+ * breaks, would move; the pointer then stands off the chart. */
+async function openWithEquity(
+  page: Page,
+  equityAt: (at: number) => number,
+  drawdownAt: (at: number) => number
+) {
+  const key = await theSeededKey(page)
+  await withAnswers(page, key, (body, result) => {
+    if (result !== "equity") {
+      return
+    }
+    const [start] = z.array(z.number()).parse(body.time)
+    const time = Array.from({ length: 100 }, (_, at) => start + at * 300)
+    body.capital = 50_000
+    body.time = time
+    body.equity = time.map((_, at) => equityAt(at))
+    body.drawdown = time.map((_, at) => drawdownAt(at))
+  })
+  await page.goto(`/runs/run?key=${key}`)
+  await expect(
+    page.getByTestId("equity-chart").locator("canvas").first()
+  ).toBeVisible()
+  await page.mouse.move(700, 36)
 }
 
 /** A change of a count, with its sign above zero. */
@@ -564,7 +615,10 @@ test("every figure of a finished run's page is the API's", async ({
   ).toBeVisible()
   await page.mouse.move(700, 36)
   await screenshot(page, "run-results")
+  const darkPictures = await chartPictures(page)
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  // The chart repaints in the light theme's tokens after the page takes it.
+  await expect.poll(() => chartPictures(page)).not.toEqual(darkPictures)
   await screenshot(page, "run-results-light")
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   expect(errors).toEqual([])
@@ -1061,49 +1115,36 @@ test("the equity is green above its capital and red below it, filled to the capi
   loggedIn: page,
 }) => {
   // Your review of step 5.20 (D-119): the sign colours either side of the capital, as the chart
-  // the builder attached draws them, in place of the accent.
-  const key = await theSeededKey(page)
-  await withAnswers(page, key, (body, result) => {
-    if (result !== "equity") {
-      return
-    }
-    // A hundred decisions five minutes apart, above the capital for the first fifty and below it
-    // after, so that the crossing stands at the middle of the time axis, which a run's own
-    // decisions, uneven over its sessions and their breaks, would move.
-    const [start] = z.array(z.number()).parse(body.time)
-    const time = Array.from({ length: 100 }, (_, at) => start + at * 300)
-    body.capital = 50_000
-    body.time = time
-    body.equity = time.map((_, at) => (at < 50 ? 50_800 : 49_200))
-    body.drawdown = time.map((_, at) => (at < 50 ? 0 : 1_600))
-  })
+  // the builder attached draws them, in place of the accent; above the capital for the first
+  // fifty decisions and below it after, so that the crossing stands at the middle of the axis.
+  await openWithEquity(
+    page,
+    (at) => (at < 50 ? 50_800 : 49_200),
+    (at) => (at < 50 ? 0 : 1_600)
+  )
+  const eitherSide = async () => {
+    const line = await drawnColours(page, LINE_SHARES)
+    expect(line.positive.left).toBeGreaterThan(100)
+    expect(line.negative.right).toBeGreaterThan(100)
+    expect(line.negative.left).toBe(0)
+    expect(line.positive.right).toBe(0)
+    expect(line.brand).toEqual({ left: 0, right: 0 })
+    const fill = await drawnColours(page, FILL_SHARES)
+    expect(fill.positive.left).toBeGreaterThan(1_000)
+    expect(fill.negative.right).toBeGreaterThan(1_000)
+    expect(fill.negative.left).toBe(0)
+    expect(fill.positive.right).toBe(0)
+  }
 
-  await page.goto(`/runs/run?key=${key}`)
-
-  await expect(
-    page.getByTestId("equity-chart").locator("canvas").first()
-  ).toBeVisible()
-  await page.mouse.move(700, 36)
-  const colours = await shownColours(page)
-  // The chart draws once its chunk has loaded, after its canvas stands, so the picture is read
-  // again until it holds the line it should.
-  await expect(async () => {
-    const drawn = await colourCounts(
-      page,
-      (await chartPictures(page))[0],
-      colours
-    )
-    expect(drawn.positive.left).toBeGreaterThan(100)
-    expect(drawn.negative.right).toBeGreaterThan(100)
-    expect(drawn.negative.left).toBe(0)
-    expect(drawn.positive.right).toBe(0)
-    expect(drawn.brand).toEqual({ left: 0, right: 0 })
-  }).toPass({ timeout: 10_000 })
+  // The chart draws once its chunk has loaded, after its canvas stands, and again in a theme's
+  // tokens after the page takes it, so its picture is read again until it holds what it should.
+  await expect(eitherSide).toPass({ timeout: 10_000 })
   await expect(page.getByTestId("equity-legend")).toHaveText(
     "Above the capitalBelow the capitalDrawdownCapital"
   )
   await screenshot(page, "run-equity-sign")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  await expect(eitherSide).toPass({ timeout: 10_000 })
   await screenshot(page, "run-equity-sign-light")
   await page.evaluate(() => document.documentElement.classList.add("dark"))
 })
@@ -1112,38 +1153,23 @@ test("an equity that never rises above its capital is red alone", async ({
   loggedIn: page,
 }) => {
   // The seeded run's own case, which drew green under its capital: ECharts reads which way the
-  // axis runs from the colours' closed piece, and one of no height turned them upside down.
-  const key = await theSeededKey(page)
-  await withAnswers(page, key, (body, result) => {
-    if (result !== "equity") {
-      return
-    }
-    // A hundred decisions five minutes apart, falling from just under the capital, so that the
-    // line stays clear of the pane's edges.
-    const [start] = z.array(z.number()).parse(body.time)
-    const time = Array.from({ length: 100 }, (_, at) => start + at * 300)
-    body.capital = 50_000
-    body.time = time
-    body.equity = time.map((_, at) => 49_950 - at * 7)
-    body.drawdown = time.map((_, at) => 50 + at * 7)
-  })
+  // axis runs from the colours' closed piece, and one of no height turned them upside down. The
+  // equity falls from just under the capital, so that the line stays clear of the pane's edges.
+  await openWithEquity(
+    page,
+    (at) => 49_950 - at * 7,
+    (at) => 50 + at * 7
+  )
 
-  await page.goto(`/runs/run?key=${key}`)
-
-  await expect(
-    page.getByTestId("equity-chart").locator("canvas").first()
-  ).toBeVisible()
-  await page.mouse.move(700, 36)
-  const colours = await shownColours(page)
   await expect(async () => {
-    const drawn = await colourCounts(
-      page,
-      (await chartPictures(page))[0],
-      colours
-    )
-    expect(drawn.negative.left).toBeGreaterThan(100)
-    expect(drawn.negative.right).toBeGreaterThan(100)
-    expect(drawn.positive).toEqual({ left: 0, right: 0 })
+    const line = await drawnColours(page, LINE_SHARES)
+    expect(line.negative.left).toBeGreaterThan(100)
+    expect(line.negative.right).toBeGreaterThan(100)
+    expect(line.positive).toEqual({ left: 0, right: 0 })
+    const fill = await drawnColours(page, FILL_SHARES)
+    expect(fill.negative.left).toBeGreaterThan(1_000)
+    expect(fill.negative.right).toBeGreaterThan(1_000)
+    expect(fill.positive).toEqual({ left: 0, right: 0 })
   }).toPass({ timeout: 10_000 })
 })
 

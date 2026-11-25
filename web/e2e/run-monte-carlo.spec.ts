@@ -119,6 +119,21 @@ test.afterEach(async ({ page }) => {
   await page.unrouteAll({ behavior: "ignoreErrors" })
 })
 
+/** The first canvas of the equity chart and of the fan as pictures, which a theme repaints. */
+function chartPictures(page: Page): Promise<readonly string[]> {
+  return Promise.all(
+    ["equity-chart", "fan-chart"].map((testId) =>
+      page
+        .getByTestId(testId)
+        .locator("canvas")
+        .first()
+        .evaluate((canvas) =>
+          canvas instanceof HTMLCanvasElement ? canvas.toDataURL() : ""
+        )
+    )
+  )
+}
+
 test("every figure of the Monte Carlo card is the API's", async ({
   loggedIn: page,
 }) => {
@@ -197,7 +212,16 @@ test("every figure of the Monte Carlo card is the API's", async ({
   ).toBeVisible()
   await page.mouse.move(700, 36)
   await screenshot(page, "run-monte-carlo")
+  const darkPictures = await chartPictures(page)
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  // Each chart repaints in the light theme's tokens after the page takes it.
+  await expect
+    .poll(async () =>
+      (await chartPictures(page)).some(
+        (shown, at) => shown === darkPictures[at]
+      )
+    )
+    .toBe(false)
   await screenshot(page, "run-monte-carlo-light")
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   expect(errors).toEqual([])

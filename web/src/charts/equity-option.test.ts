@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
 import { contrast, type ThemeTokens } from "./chart-look"
-import { painted, tokenColour } from "./design-palette"
+import { painted, paletteColour } from "./design-palette.test-support"
 import { EQUITY_FILL, equityOption } from "./equity-option"
 
 /** An axis whose labels a function writes, as ECharts calls it with each tick's value. */
@@ -110,10 +110,9 @@ describe("the equity chart's options", () => {
     })
     expect(equity.lineStyle).toEqual({ width: 1.5 })
     expect(equity).not.toHaveProperty("itemStyle")
-    expect(equity).toMatchObject({
-      areaStyle: { origin: 50_000, opacity: EQUITY_FILL },
-      markLine: { data: [{ yAxis: 50_000 }] },
-    })
+    // The fill takes the map's colour on either side alone: a colour of its own would override it.
+    expect(equity.areaStyle).toEqual({ origin: 50_000, opacity: EQUITY_FILL })
+    expect(equity).toMatchObject({ markLine: { data: [{ yAxis: 50_000 }] } })
     expect(drawdown).toMatchObject({ lineStyle: { color: TOKENS.input } })
   })
 
@@ -135,7 +134,7 @@ describe("the equity chart's options", () => {
     "keeps each sign colour at 3 : 1 against the card and its own fill in the %s theme",
     (theme) => {
       // WCAG 1.4.11: the line keeps 3 : 1 on either side of it, the card and the fill it bounds.
-      const token = (name: string) => tokenColour(name, theme)
+      const token = (name: string) => paletteColour(name, theme)
       const card = token("--card")
 
       const ratios = ["--positive", "--negative"].flatMap((sign) => [

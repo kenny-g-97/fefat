@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
 import { contrast, type ThemeTokens } from "./chart-look"
-import { painted, tokenColour } from "./design-palette"
+import { painted, paletteColour } from "./design-palette.test-support"
 import { fanOption, INNER_BAND, OUTER_BAND } from "./fan-option"
 
 /** A series' points, each a count of trades and an amount. */
@@ -124,7 +124,7 @@ describe("the Monte Carlo fan's options", () => {
     (theme) => {
       // The design review: WCAG 1.4.11, a line keeps 3 : 1 against any band it crosses
       // (web/DESIGN.md, Charts); at 60 % the middle band left 2.95 : 1 in the light theme.
-      const token = (name: string) => tokenColour(name, theme)
+      const token = (name: string) => paletteColour(name, theme)
 
       const ratios = [OUTER_BAND, INNER_BAND].map((fill) =>
         contrast(
