@@ -1,5 +1,6 @@
 import type { Page, Route } from "@playwright/test"
 import { z } from "zod"
+import { chartPictures, lightThemeDrawn } from "./support/chart.ts"
 import { consoleErrors } from "./support/console.ts"
 import { lowContrastInEachTheme } from "./support/contrast.ts"
 import {
@@ -195,17 +196,8 @@ const ROW_NAMES: Readonly<Record<string, (key: string) => string>> = {
   fidelity: levelText,
 }
 
-/** What the chart's canvases hold now, to compare two moments of it. */
-function chartPictures(page: Page): Promise<readonly string[]> {
-  return page
-    .getByTestId("equity-chart")
-    .locator("canvas")
-    .evaluateAll((canvases) =>
-      canvases.map((canvas) =>
-        canvas instanceof HTMLCanvasElement ? canvas.toDataURL() : ""
-      )
-    )
-}
+/** The equity chart alone, as the pictures of its canvas name it. */
+const EQUITY_CHART = ["equity-chart"] as const
 
 /** More pixels than a repaint moves at the end of a line, fewer than a crosshair covers. */
 const FEW_PIXELS = 32
@@ -344,7 +336,7 @@ function colourCounts(
 async function drawnColours(page: Page, shares: readonly [number, number]) {
   return colourCounts(
     page,
-    (await chartPictures(page))[0],
+    (await chartPictures(page, EQUITY_CHART))[0],
     await shownColours(page),
     shares
   )
@@ -615,10 +607,7 @@ test("every figure of a finished run's page is the API's", async ({
   ).toBeVisible()
   await page.mouse.move(700, 36)
   await screenshot(page, "run-results")
-  const darkPictures = await chartPictures(page)
-  await page.evaluate(() => document.documentElement.classList.remove("dark"))
-  // The chart repaints in the light theme's tokens after the page takes it.
-  await expect.poll(() => chartPictures(page)).not.toEqual(darkPictures)
+  await lightThemeDrawn(page, ["equity-chart", "fan-chart"])
   await screenshot(page, "run-results-light")
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   expect(errors).toEqual([])
@@ -1034,10 +1023,10 @@ test("Escape and leaving the chart clear its crosshair and give the readout back
   const figure = page.getByTestId("equity-figure")
   await expect(chart.locator("canvas").first()).toBeVisible()
   await expect(figure).toHaveText(last)
-  await expect.poll(() => chartPictures(page)).not.toEqual([""])
-  const atRest = await chartPictures(page)
+  await expect.poll(() => chartPictures(page, EQUITY_CHART)).not.toEqual([""])
+  const atRest = await chartPictures(page, EQUITY_CHART)
   const moved = async () =>
-    differingPixels(page, atRest, await chartPictures(page))
+    differingPixels(page, atRest, await chartPictures(page, EQUITY_CHART))
 
   await chart.focus()
   await page.keyboard.press("Home")
@@ -1089,7 +1078,7 @@ test("a key with Alt stays the browser's, and the chart repaints with the theme"
   await page.goto(`/runs/run?key=${key}`)
   const chart = page.getByTestId("equity-chart")
   await expect(chart.locator("canvas").first()).toBeVisible()
-  await expect.poll(() => chartPictures(page)).not.toEqual([""])
+  await expect.poll(() => chartPictures(page, EQUITY_CHART)).not.toEqual([""])
 
   const pressed = chart.evaluate((element) => {
     const key = new KeyboardEvent("keydown", {
@@ -1104,11 +1093,11 @@ test("a key with Alt stays the browser's, and the chart repaints with the theme"
   expect(await pressed).toBe(false)
   await expect(page.getByTestId("equity-figure")).toHaveText(last)
 
-  const dark = await chartPictures(page)
+  const dark = await chartPictures(page, EQUITY_CHART)
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
-  await expect.poll(() => chartPictures(page)).not.toEqual(dark)
+  await expect.poll(() => chartPictures(page, EQUITY_CHART)).not.toEqual(dark)
   await page.evaluate(() => document.documentElement.classList.add("dark"))
-  await expect.poll(() => chartPictures(page)).toEqual(dark)
+  await expect.poll(() => chartPictures(page, EQUITY_CHART)).toEqual(dark)
 })
 
 test("the equity is green above its capital and red below it, filled to the capital", async ({
