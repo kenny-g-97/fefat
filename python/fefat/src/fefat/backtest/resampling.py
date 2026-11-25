@@ -47,9 +47,10 @@ FEWEST_FAN_POINTS = 2
 """The fewest counts of the fan: none, and the run's trades."""
 BLOCK_DRAWS = 500_000
 """The trades drawn at a time over every path, a block of `BLOCK_DRAWS // paths` counts: 10,000
-paths of a run's 50,000 trades with a fan of 10,000 counts, the route's most, held 324 to 333 MiB
-at their peak above the run's trades and took about 17 s on the PC of step 5.20, within the memory
-test's bound, where blocks of 1,000,000 held up to 505 MiB in 11 s."""
+paths of a run's 50,000 trades with a fan of 10,000 counts, the route's most, held 324 to 340 MiB
+at their peak above the run's trades and took about 17 s on the PC of step 5.20, where blocks of
+1,000,000 held up to 505 MiB in 11 s; on CI's Ubuntu they held 1,228 MiB, Polars' allocator there
+keeping the walk's freed blocks resident, within the memory test's bound for each system."""
 PERCENTILES = {"p5": 0.05, "p25": 0.25, "median": 0.5, "p75": 0.75, "p95": 0.95}
 """Each percentile's name and its share of the paths ordered from the lowest."""
 

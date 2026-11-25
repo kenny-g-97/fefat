@@ -29,10 +29,12 @@ from notebook_runs import breakout, store_with
 
 CAPITAL = 50_000_000_000
 WINDOW = ("2026-03-05", "2026-03-09")
-MEMORY_BOUND = 512 * 2**20
+MEMORY_BOUND = 512 * 2**20 if sys.platform == "win32" else 2 * 2**30
 """What 10,000 paths of 50,000 trades with a fan of 10,000 counts, the route's most, may hold at
-their peak above the trades they draw from: 324 to 333 MiB on Windows at step 5.20, where every
-path's equity at once would be 4 GB."""
+their peak above the trades they draw from, where every path's equity at once would be 4 GB: 324
+to 340 MiB on Windows at step 5.20, and 1,228 MiB on CI's Ubuntu, whose allocator in Polars keeps
+the walk's freed blocks resident, a bound by system that you chose at the review of its pull
+request (D-119, `BACKLOG.md`)."""
 ROUTES_MOST = """
 import sys
 
