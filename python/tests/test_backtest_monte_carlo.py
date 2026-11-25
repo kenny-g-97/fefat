@@ -149,9 +149,10 @@ def test_trades_of_one_amount_give_every_figure_the_runs_own_at_every_percent(am
 
 
 def test_a_runs_own_figures_are_its_metrics_and_lie_within_its_paths() -> None:
-    # Done means 3 of step 5.21: the run's own profit factor is its metrics'.
+    # Done means 3 of step 5.21: the run's own profit factor is its metrics'. A stop of 8 ticks
+    # wins 3 of the window's 22 trades, where the default 12 wins none and its factor is zero.
     store_with("ohlcv-1m")
-    run = ff.backtest.run(breakout(), *WINDOW)
+    run = ff.backtest.run(breakout(stop_ticks=8), *WINDOW)
 
     report = ff.backtest.monte_carlo(run)
 
@@ -172,6 +173,7 @@ def test_a_runs_own_figures_are_its_metrics_and_lie_within_its_paths() -> None:
     assert {len(column) for column in columns} == {report.trades + 1}
     assert fan.own == tuple(equity / 10**6 for equity in own_walk.to_list())
     by = report.by_percent
+    assert run.metrics.trades.wins > 0
     assert run.metrics.trades.losses > 0
     assert by.profit_factor.own == run.metrics.trades.profit_factor
     assert by.net_pnl.own == float(report.own_net_pnl)
