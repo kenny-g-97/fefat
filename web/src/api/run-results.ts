@@ -24,6 +24,12 @@ async function readDistributions(run: string) {
   )
 }
 
+async function readMonteCarlo(run: string) {
+  return answer(
+    await api.GET("/v1/runs/{run}/monte-carlo", { params: { path: { run } } })
+  )
+}
+
 /** What a saved run's record says of how it went, as the client reads it. */
 export type RunStatistics = Awaited<ReturnType<typeof readStatistics>>
 /** A saved run's metrics. */
@@ -48,6 +54,12 @@ export type EquityCurve = Awaited<ReturnType<typeof readEquity>>
 export type TradeDistributions = Awaited<ReturnType<typeof readDistributions>>
 /** Trades counted in bins of one width, in columns. */
 export type Histogram = TradeDistributions["pnl"]
+/** A saved run's Monte Carlo, or why a run of fewer than two trades has none. */
+export type MonteCarloAnswer = Awaited<ReturnType<typeof readMonteCarlo>>
+/** Paths of a saved run's trades drawn again with replacement (step 5.20). */
+export type MonteCarlo = Extract<MonteCarloAnswer, { kind: "resampled" }>
+/** The paths' equity at five percentiles after each count of trades, in columns. */
+export type EquityFan = MonteCarlo["fan"]
 
 /** A saved run's metrics, its currency, its net P&L as a share of its capital, its fidelity
  * eras, and its warnings. */
@@ -73,6 +85,16 @@ export function runDistributionsQuery(runKey: string) {
   return queryOptions({
     queryKey: ["run-results", runKey, "distributions"],
     queryFn: () => readDistributions(runKey),
+    ...KEPT,
+  })
+}
+
+/** A saved run's Monte Carlo as the server draws it unless asked otherwise: 1,000 paths from
+ * seed 0, the same each read. */
+export function runMonteCarloQuery(runKey: string) {
+  return queryOptions({
+    queryKey: ["run-results", runKey, "monte-carlo"],
+    queryFn: () => readMonteCarlo(runKey),
     ...KEPT,
   })
 }

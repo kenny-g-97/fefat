@@ -8,21 +8,15 @@ import {
   formatMoney,
   formatShare,
   moneyFigure,
-  moneySign,
 } from "@/ui/figures"
 import { Stat } from "@/ui/stat"
+import { toneOf } from "./result-words"
 
 const NONE = "None"
 
 /** A figure the engine worked out, or None where it could count nothing. */
 function figureOrNone(value: number | null): string {
   return value === null ? NONE : formatFigure(value)
-}
-
-/** The tone of money: its sign's colour, none for zero. */
-function toneOf(money: string): "positive" | "negative" | undefined {
-  const sign = moneySign(money)
-  return sign === "zero" ? undefined : sign
 }
 
 /** The eight KPI cards of a finished run (web/DESIGN.md, Patterns, Stat card), each figure the

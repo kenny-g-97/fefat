@@ -5,7 +5,8 @@ progress the job's stream gives (`GET /v1/streams/job:<job id>`); `POST /v1/runs
 run would read, before anything runs, and `POST /v1/runs/stress`, a run and the same at more ticks
 of slippage (step 5.6); `GET /v1/runs`, a page of the runs; `GET /v1/runs/{run}`, a run by its id
 or its run key; `GET /v1/runs/{run}/stats`, `/equity`, and `/distribution`, a saved run's results,
-read from its folder (step 5.7); and `POST /v1/runs/{run}/cancel`. A run's status is
+read from its folder (step 5.7), and `/monte-carlo`, its trades drawn again (step 5.20); and
+`POST /v1/runs/{run}/cancel`. A run's status is
 `succeeded` once its folder is saved, its job's before; a job whose run proved saved under another
 run's row names that row in its result, which a client then follows."""
 
@@ -26,6 +27,7 @@ from pydantic import (
 
 from fefat.backtest import RunConfig, TradeDistributions
 from fefat.backtest.equity_curves import EQUITY_POINTS, FEWEST_POINTS
+from fefat.backtest.resampling import MONTE_CARLO_PATHS, MONTE_CARLO_SEED, MonteCarloAnswer
 from fefat.market.contracts import parse_contract_name
 from fefat.market.fidelity import FidelityText
 from fefat.strategy.spec import InstrumentRoot
@@ -57,6 +59,13 @@ MOST_RUNS_PER_PAGE = 100
 """The most runs a page of the list holds."""
 MOST_EQUITY_POINTS = 10_000
 """The most points of a run's equity a client can ask for."""
+FEWEST_PATHS = 100
+"""The fewest paths a client can ask a run's Monte Carlo to draw (step 5.20)."""
+MOST_PATHS = 10_000
+"""The most paths a client can ask a run's Monte Carlo to draw."""
+MOST_SEED = 2**53 - 1
+"""The largest seed a client can ask for: the largest whole number a browser's number holds
+exactly, so that the seed an answer names reads back as the one drawn from."""
 RunAddress = Annotated[
     str, Path(description="A run's id in the index, a UUIDv7, or its run key, 64 hex digits.")
 ]
@@ -280,6 +289,45 @@ def run_distribution(run: RunAddress, container: ContainerDependency) -> TradeDi
     minutes held; 409 as `/stats` answers it."""
     with _refusals():
         return container.runs.distributions(run)
+
+
+@router.get("/runs/{run}/monte-carlo", responses=problem_responses(401, 404, 409, 422))
+def run_monte_carlo(
+    run: RunAddress,
+    container: ContainerDependency,
+    paths: Annotated[
+        int,
+        Query(
+            ge=FEWEST_PATHS,
+            le=MOST_PATHS,
+            description="The paths to draw, each as many of the run's trades as it made.",
+        ),
+    ] = MONTE_CARLO_PATHS,
+    seed: Annotated[
+        int,
+        Query(
+            ge=0,
+            le=MOST_SEED,
+            description="The seed of the draws: the same seed and paths answer the same.",
+        ),
+    ] = MONTE_CARLO_SEED,
+    max_points: Annotated[
+        int,
+        Query(
+            ge=FEWEST_POINTS,
+            le=MOST_EQUITY_POINTS,
+            description="The most counts of trades the fan holds, spread evenly from none to the "
+            "run's trades.",
+        ),
+    ] = EQUITY_POINTS,
+) -> MonteCarloAnswer:
+    """A saved run's Monte Carlo (step 5.20): `paths` walks of its trades drawn with replacement
+    from `seed`, their net P&L and closed-trade maximum drawdown at five percentiles beside the
+    run's own walk, the shares of paths that end below the capital and fall deeper than the run,
+    and the equity fan; `too_few_trades`, with why, for a run of fewer than two trades; 409 as
+    `/stats` answers it."""
+    with _refusals():
+        return container.runs.monte_carlo(run, paths, seed, max_points)
 
 
 @router.post("/runs/{run}/cancel", responses=problem_responses(401, 403, 404, 422))

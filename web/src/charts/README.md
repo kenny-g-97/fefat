@@ -64,11 +64,13 @@ The pure parts have vitest's tests beside them: the look, the labels in a zone w
 
 # The results' charts
 
-`EquityChart` and `HistogramChart` draw a finished run's results (step 5.7, D-116) from columns the server worked out; neither computes a figure.
+`EquityChart`, `HistogramChart`, and `FanChart` draw a finished run's results (steps 5.7 and 5.20, D-116, D-118) from columns the server worked out; none computes a figure.
+
+`EquityChart` and `FanChart` draw over [Apache ECharts](https://echarts.apache.org/) 6.1.0 (Apache 2.0, D-93) through `PointedChart`, which alone imports the library, registering its parts: the line chart, the grid, the tooltip with its axis pointer, the mark line, the piecewise visual map, which colours a line by its value, and the canvas renderer. `PointedChart` fills its box, redraws when it resizes and when the theme changes, and tells its caller the entry under the pointer or the keys, for the caller's own readout; each chart hands it a function from the theme's tokens to the library's options, `equityOption` in `equity-option.ts` and `fanOption` in `fan-option.ts`, pure functions that vitest reads and that share their axes, pointer, and capital line (`results-chart.ts`). Each chart loads with the first card that draws it (`lazyRouteComponent`, which reloads the page once when a rebuild replaced its chunk), out of the app's first bundle, and the settings' About carries the library's notice (`EQUITY_CHART_NOTICE`, which a test holds to the installed package's NOTICE file).
 
 ## EquityChart
 
-`EquityChart` draws the equity curve over its drawdown with [Apache ECharts](https://echarts.apache.org/) 6.1.0 (Apache 2.0, D-93), which only it and `equity-option.ts` import, part by part: the line chart, the grid, the tooltip with its axis pointer, the mark line, and the canvas renderer. It loads with the first finished run opened (`lazyRouteComponent` in the run page's equity card, which reloads the page once when a rebuild replaced its chunk), out of the app's first bundle, and the settings' About carries the library's notice (`EQUITY_CHART_NOTICE`, which a test holds to the installed package's NOTICE file).
+`EquityChart` draws the equity curve over its drawdown.
 
 ```tsx
 <div className="h-80">
@@ -90,7 +92,7 @@ The pure parts have vitest's tests beside them: the look, the labels in a zone w
 | `pointed` | The decision the readout shows, from `onPointed`, which the keys step from. |
 | `onPointed` | Told the index of the decision under the pointer or the keys, or null when the pointer leaves the chart, Escape is pressed, or the focus moves off it within the page: the caller's readout then shows the last decision. Between the two panes, where no decision lies, it is told nothing, so that the readout holds. |
 
-Give it a parent that sets its height; it fills that box and redraws when it resizes. `equityOption` in `equity-option.ts` turns the columns and the theme's tokens into the library's options, as a pure function that vitest reads: the equity in the accent over a dashed line at the capital, and under it, on one time axis, the drawdown in grey, its axis inverted so that the depth hangs from zero with no figure negated. Nothing animates, its axis pointer included, and it offers no zoom, so the wheel scrolls the page. The chart takes the focus on a click or Tab, and then Left and Right step a decision, Home and End go to either end, and Escape or moving the focus off it gives the readout back to the last, while the window going away keeps the reading; a key with Alt, Ctrl, or Command stays the browser's.
+Give it a parent that sets its height; it fills that box and redraws when it resizes. `equityOption` turns the columns and the theme's tokens into the library's options: the equity over a dashed line at the capital, its line and its fill to the capital in the sign colours, green above the capital and red below (D-119), through a piecewise visual map, since a line's own colour would override the map's; ECharts colours a line by its value from the pieces closed at both ends alone and reads which way the axis runs from their ends, so the positive takes one from the capital to a unit of money above it, where a piece of no height would turn the colours upside down, and a run that never leaves its capital takes the capital line's grey; and under it, on one time axis, the drawdown in grey, its axis inverted so that the depth hangs from zero with no figure negated. Nothing animates, its axis pointer included, and it offers no zoom, so the wheel scrolls the page. The chart takes the focus on a click or Tab, and then Left and Right step a decision, Home and End go to either end, and Escape or moving the focus off it gives the readout back to the last, while the window going away keeps the reading; a key with Alt, Ctrl, or Command stays the browser's.
 
 ## HistogramChart
 
@@ -104,3 +106,29 @@ Give it a parent that sets its height; it fills that box and redraws when it res
 | `bins` | The server's `lower`, `upper`, and `trades`, one entry a bin. |
 | `signed` | For a measure either side of zero: its bins in the sign colours with a mark at zero, the others in grey. |
 | `edge` | Optional, how an edge is written, such as money in the run's currency, `-$150` (D-117); the decimals it holds by default, `-1.5`. |
+
+## FanChart
+
+`FanChart` draws the equity fan of a run's Monte Carlo (step 5.20, D-118), its paths' equity by the count of trades made, in the equity chart's idiom.
+
+```tsx
+<div className="h-80">
+  <FanChart
+    label="Equity of the paths by trades made"
+    fan={report.fan}
+    currency={statistics.currency}
+    pointed={pointed}
+    onPointed={setPointed}
+  />
+</div>
+```
+
+| Prop | What it is |
+| --- | --- |
+| `label` | The chart's name for a screen reader. |
+| `fan` | `GET /v1/runs/{run}/monte-carlo`'s `fan`: the `capital`, and one entry a count in `trades_made`, from none to the run's trades, and in the paths' `p5`, `p25`, `median`, `p75`, and `p95` equity. |
+| `currency` | The run's currency, which the value axis's labels write their money in. |
+| `pointed` | The count the readout shows, as its index in the fan's columns, from `onPointed`, which the keys step from. |
+| `onPointed` | Told the index of the count under the pointer or the keys, or null when the pointer leaves the chart, Escape is pressed, or the focus moves off it within the page: the caller's readout then shows the last count. |
+
+`fanOption` draws the median in the accent over the dashed line at the capital, and behind it, as layers of one stack, the paths from their 5th to their 95th percentile in a light grey and the middle half, from the 25th to the 75th, in a darker one, each layer as tall as the gap between two of the API's percentiles, so that its top stands at the higher; the counts run along a value axis from none to the run's trades, in whole numbers. It never animates and has no zoom, and its keys are the equity chart's.

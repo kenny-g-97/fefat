@@ -17,7 +17,16 @@ from pathlib import Path
 from polars.exceptions import PolarsError
 from pydantic import JsonValue
 
-from fefat.backtest import Run, RunConfig, TradeDistributions, equity_curve, trade_distributions
+from fefat.backtest import (
+    MonteCarlo,
+    Run,
+    RunConfig,
+    TooFewTrades,
+    TradeDistributions,
+    equity_curve,
+    monte_carlo,
+    trade_distributions,
+)
 from fefat.backtest.estimates import estimated, held_instruments
 from fefat.backtest.saved_runs import saved_run
 from fefat.config import FefatPaths
@@ -219,6 +228,16 @@ class Runs:
         with _results_read(opened.hash, self.paths):
             trades = opened.trades
         return trade_distributions(trades)
+
+    def monte_carlo(
+        self, run: str, paths: int, seed: int, max_points: int
+    ) -> MonteCarlo | TooFewTrades:
+        """`paths` walks of the trades of the saved run `run` drawn from `seed`, with a fan of at
+        most `max_points` counts (`ff.backtest.monte_carlo`, step 5.20), refused as `_opened`
+        refuses."""
+        opened = self._opened(run)
+        with _results_read(opened.hash, self.paths):
+            return monte_carlo(opened, paths, seed, max_points)
 
     def _opened(self, run: str) -> Run:
         """The folder of the saved run `run`: `NoSuchRunError` where no run has that id or key,

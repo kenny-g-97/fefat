@@ -26,3 +26,39 @@ export async function chartReady(page: Page): Promise<void> {
     }
   )
 }
+
+/** The first canvas of each results chart that `testIds` name, as a picture, to compare two
+ * moments of it. */
+export function chartPictures(
+  page: Page,
+  testIds: readonly string[]
+): Promise<readonly string[]> {
+  return Promise.all(
+    testIds.map((testId) =>
+      page
+        .getByTestId(testId)
+        .locator("canvas")
+        .first()
+        .evaluate((canvas) =>
+          canvas instanceof HTMLCanvasElement ? canvas.toDataURL() : ""
+        )
+    )
+  )
+}
+
+/** Take the page to the light theme and wait until each chart that `testIds` name has repainted
+ * in its tokens, which a chart does after the page takes the theme. */
+export async function lightThemeDrawn(
+  page: Page,
+  testIds: readonly string[]
+): Promise<void> {
+  const dark = await chartPictures(page, testIds)
+  await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  await expect
+    .poll(async () =>
+      (await chartPictures(page, testIds)).some(
+        (shown, at) => shown === dark[at]
+      )
+    )
+    .toBe(false)
+}
