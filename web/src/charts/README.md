@@ -64,9 +64,9 @@ The pure parts have vitest's tests beside them: the look, the labels in a zone w
 
 # The results' charts
 
-`EquityChart`, `HistogramChart`, and `FanChart` draw a finished run's results (steps 5.7 and 5.20, D-116, D-118) from columns the server worked out; none computes a figure.
+`EquityChart`, `HistogramChart`, `FanChart`, and `PercentileChart` draw a finished run's results (steps 5.7, 5.20, and 5.21, D-116, D-118, D-120) from columns the server worked out; none computes a figure.
 
-`EquityChart` and `FanChart` draw over [Apache ECharts](https://echarts.apache.org/) 6.1.0 (Apache 2.0, D-93) through `PointedChart`, which alone imports the library, registering its parts: the line chart, the grid, the tooltip with its axis pointer, the mark line, the piecewise visual map, which colours a line by its value, and the canvas renderer. `PointedChart` fills its box, redraws when it resizes and when the theme changes, and tells its caller the entry under the pointer or the keys, for the caller's own readout; each chart hands it a function from the theme's tokens to the library's options, `equityOption` in `equity-option.ts` and `fanOption` in `fan-option.ts`, pure functions that vitest reads and that share their axes, pointer, and capital line (`results-chart.ts`). Each chart loads with the first card that draws it (`lazyRouteComponent`, which reloads the page once when a rebuild replaced its chunk), out of the app's first bundle, and the settings' About carries the library's notice (`EQUITY_CHART_NOTICE`, which a test holds to the installed package's NOTICE file).
+`EquityChart`, `FanChart`, and `PercentileChart` draw over [Apache ECharts](https://echarts.apache.org/) 6.1.0 (Apache 2.0, D-93) through `PointedChart`, which alone imports the library, registering its parts: the line chart, the grid, the tooltip with its axis pointer, the mark line, the piecewise visual map, which colours a line by its value, and the canvas renderer. `PointedChart` fills its box, redraws when it resizes and when the theme changes, and tells its caller the entry under the pointer or the keys, for the caller's own readout, its keys stepping from the entry pointed at, or else from `rest`, the entry the readout shows meanwhile, the last unless a chart gives another; each chart hands it a function from the theme's tokens to the library's options, `equityOption` in `equity-option.ts`, `fanOption` in `fan-option.ts`, and `percentileOption` in `percentile-option.ts`, pure functions that vitest reads and that share their axes, pointer, and dashed lines at the capital and at the run's own figure (`results-chart.ts`). Each chart loads with the first card that draws it (`lazyRouteComponent`, which reloads the page once when a rebuild replaced its chunk), out of the app's first bundle, and the settings' About carries the library's notice (`EQUITY_CHART_NOTICE`, which a test holds to the installed package's NOTICE file).
 
 ## EquityChart
 
@@ -126,9 +126,37 @@ Give it a parent that sets its height; it fills that box and redraws when it res
 | Prop | What it is |
 | --- | --- |
 | `label` | The chart's name for a screen reader. |
-| `fan` | `GET /v1/runs/{run}/monte-carlo`'s `fan`: the `capital`, and one entry a count in `trades_made`, from none to the run's trades, and in the paths' `p5`, `p25`, `median`, `p75`, and `p95` equity. |
+| `fan` | `GET /v1/runs/{run}/monte-carlo`'s `fan`: the `capital`, and one entry a count in `trades_made`, from none to the run's trades, in the paths' `p5`, `p25`, `median`, `p75`, and `p95` equity, and in `own`, the run's own equity after as many of its trades in the order made (step 5.21). |
 | `currency` | The run's currency, which the value axis's labels write their money in. |
 | `pointed` | The count the readout shows, as its index in the fan's columns, from `onPointed`, which the keys step from. |
 | `onPointed` | Told the index of the count under the pointer or the keys, or null when the pointer leaves the chart, Escape is pressed, or the focus moves off it within the page: the caller's readout then shows the last count. |
 
-`fanOption` draws the median in the accent over the dashed line at the capital, and behind it, as layers of one stack, the paths from their 5th to their 95th percentile in a light grey and the middle half, from the 25th to the 75th, in a darker one, each layer as tall as the gap between two of the API's percentiles, so that its top stands at the higher; the counts run along a value axis from none to the run's trades, in whole numbers. It never animates and has no zoom, and its keys are the equity chart's.
+`fanOption` draws the median in the accent and the run's own walk over it in the purple (D-119), over the dashed line at the capital, and behind them, as layers of one stack, the paths from their 5th to their 95th percentile in the field border's grey at 30 % and the middle half, from the 25th to the 75th, at 45 %, where both lines keep 3 : 1 in either theme, each layer as tall as the gap between two of the API's percentiles, so that its top stands at the higher; the counts run along a value axis from none to the run's trades, in whole numbers. It never animates and has no zoom, and its keys are the equity chart's.
+
+## PercentileChart
+
+`PercentileChart` draws one figure of a run's Monte Carlo against the percent of its paths (step 5.21, D-120), as NinjaTrader's Monte Carlo draws it, in the equity chart's idiom.
+
+```tsx
+<div className="h-80">
+  <PercentileChart
+    label="Max drawdown of the paths at each percent of them, beside this run's"
+    figure={report.by_percent.max_drawdown}
+    currency={statistics.currency}
+    rest={50}
+    pointed={pointed}
+    onPointed={setPointed}
+  />
+</div>
+```
+
+| Prop | What it is |
+| --- | --- |
+| `label` | The chart's name for a screen reader. |
+| `figure` | One of `GET /v1/runs/{run}/monte-carlo`'s `by_percent`: `at_percent`, the paths' figure at each whole percent from 0 to 100, the path at the nearest rank of the paths ordered from the lowest, null for a path without a profit factor, which stands above every other, and the run's `own`, null for a run without a losing trade. |
+| `currency` | The run's currency where the figure is money, which the value axis's labels write it in, `$1,500`; null for ticks and the profit factor, written plain, `1.25`. |
+| `rest` | The percent the keys step from while nothing is pointed at, which the caller's readout shows meanwhile: the median path, 50. |
+| `pointed` | The percent the readout shows, from `onPointed`. |
+| `onPointed` | Told the percent under the pointer or the keys, or null when the pointer leaves the chart, Escape is pressed, or the focus moves off it within the page: the caller's readout then shows `rest`. |
+
+`percentileOption` draws the paths' figure in the accent from none of the paths to all of them, a gap where a path has none, and the run's own figure as a dashed line in the purple (D-119), the axis kept to show it where it stands past every path; the percents run along a value axis from 0 to 100, labelled every tenth. A figure no path has is refused, since its chart has nothing to draw: the card says why in its place. It never animates and has no zoom, and its keys are the equity chart's.

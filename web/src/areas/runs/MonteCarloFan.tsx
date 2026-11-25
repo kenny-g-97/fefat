@@ -15,33 +15,39 @@ type MonteCarloFanProps = Readonly<{
   fan: EquityFan
   trades: number
   currency: Currency
-  note: string
 }>
 
-/** The paths' equity fan (web/DESIGN.md, Patterns, Fan chart): its readout, the median and the
- * middle half and nine in ten of the paths after the count of trades under the pointer, or else
- * after the last, so that it never moves the chart; the legend; the chart; and the `note` under it
- * on what was drawn. */
-export function MonteCarloFan({
-  fan,
-  trades,
-  currency,
-  note,
-}: MonteCarloFanProps) {
+/** The paths' equity fan (web/DESIGN.md, Patterns, Fan chart): its readout, the median after the
+ * count of trades under the pointer, or else after the last, the run's own equity after as many
+ * of its trades, and the middle half and nine in ten of the paths, three lines whatever the count,
+ * so that it never moves the chart; the legend; and the chart. Its headline keeps clear of the
+ * card's select of charts. */
+export function MonteCarloFan({ fan, trades, currency }: MonteCarloFanProps) {
   const [pointed, setPointed] = useState<number | null>(null)
   const at = pointed === null ? fan.trades_made.length - 1 : pointed
   const money = (value: number) => moneyFigure(value, currency)
   return (
-    <div className="flex flex-col gap-4">
+    <>
       <div className="flex flex-col gap-1">
         <p
           data-testid="fan-figure"
-          className="text-3xl font-bold tracking-tight text-foreground"
+          className="pr-48 text-3xl font-bold tracking-tight text-foreground"
         >
           {money(fan.median[at])}
         </p>
-        <p data-testid="fan-count" className="text-foreground-secondary">
-          {`Median after ${formatCount(fan.trades_made[at])} of ${counted(trades, "trade")}`}
+        <p className="flex flex-wrap gap-x-4 text-foreground-secondary">
+          <span data-testid="fan-count">
+            {`Median after ${formatCount(fan.trades_made[at])} of ${counted(trades, "trade")}`}
+          </span>
+          <span>
+            This run{" "}
+            <span
+              data-testid="fan-own"
+              className="font-semibold text-foreground"
+            >
+              {money(fan.own[at])}
+            </span>
+          </span>
         </p>
         <p className="flex flex-wrap gap-x-4 text-foreground-secondary">
           <span>
@@ -75,7 +81,14 @@ export function MonteCarloFan({
         <li className="flex items-center gap-2">
           <span
             data-slot="chart-mark"
-            className="size-2.5 rounded-xl bg-input/55"
+            className="size-2.5 rounded-xl bg-brand-secondary"
+          />
+          This run
+        </li>
+        <li className="flex items-center gap-2">
+          <span
+            data-slot="chart-mark"
+            className="size-2.5 rounded-xl bg-input/45"
           />
           Middle 50%
         </li>
@@ -94,7 +107,7 @@ export function MonteCarloFan({
       <div className="h-80">
         <Suspense fallback={<div className="h-full" />}>
           <FanChart
-            label="Equity of the paths by trades made: the median, and the middle half and nine in ten of the paths. The arrow keys step through the counts of trades."
+            label="Equity of the paths by trades made: the median, this run's own, and the middle half and nine in ten of the paths. The arrow keys step through the counts of trades."
             fan={fan}
             currency={currency}
             pointed={pointed}
@@ -102,12 +115,6 @@ export function MonteCarloFan({
           />
         </Suspense>
       </div>
-      <p
-        data-testid="monte-carlo-note"
-        className="text-xs text-muted-foreground"
-      >
-        {note}
-      </p>
-    </div>
+    </>
   )
 }

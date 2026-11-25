@@ -23,6 +23,7 @@ const TOKENS: ThemeTokens = {
   input: "#666666",
   accent: "#1a1a1a",
   brand: "#fc734d",
+  brandSecondary: "#a855f7",
   positive: "#10b981",
   negative: "#ff4d6d",
 }
@@ -43,6 +44,7 @@ describe("the Monte Carlo fan's options", () => {
   const series = Array.isArray(option.series) ? option.series : []
   const layers = series.slice(0, 4)
   const median = series[4]
+  const own = series[5]
 
   it("stacks its bands so that each layer's top stands at one of the API's percentiles", () => {
     // Step 5.20: the 5th, 25th, 75th, and 95th percentiles bound the two bands.
@@ -94,6 +96,20 @@ describe("the Monte Carlo fan's options", () => {
     })
   })
 
+  it("draws the run's own walk over the bands in the purple, the API's figures unchanged", () => {
+    // Step 5.21: the run's own path over its paths, the builder's exception to the cyan (D-119).
+    expect(points.parse(own.data)).toEqual([
+      [0, 50_000],
+      [1, 50_070.5],
+      [2, 49_960.25],
+    ])
+    expect(own).toMatchObject({
+      name: "This run",
+      lineStyle: { color: TOKENS.brandSecondary, width: 1.5 },
+    })
+    expect(series).toHaveLength(6)
+  })
+
   it("writes its amounts as money and its counts of trades as whole numbers", () => {
     // D-117: a cash value reads as one, on the axis too.
     expect(
@@ -121,16 +137,19 @@ describe("the Monte Carlo fan's options", () => {
   })
 
   it.each(["dark", "light"] as const)(
-    "keeps the median at 3 : 1 against either band in the %s theme",
+    "keeps the median and the run's own at 3 : 1 against either band in the %s theme",
     (theme) => {
       // The design review: WCAG 1.4.11, a line keeps 3 : 1 against any band it crosses
-      // (web/DESIGN.md, Charts); at 60 % the middle band left 2.95 : 1 in the light theme.
+      // (web/DESIGN.md, Charts); at 60 % the middle band left the median 2.95 : 1 in the light
+      // theme, and at 55 % the run's own purple 2.75 : 1 in the dark one (step 5.21).
       const token = (name: string) => paletteColour(name, theme)
 
-      const ratios = [OUTER_BAND, INNER_BAND].map((fill) =>
-        contrast(
-          token("--brand"),
-          painted(token("--input"), token("--card"), fill)
+      const ratios = ["--brand", "--brand-secondary"].flatMap((line) =>
+        [OUTER_BAND, INNER_BAND].map((fill) =>
+          contrast(
+            token(line),
+            painted(token("--input"), token("--card"), fill)
+          )
         )
       )
 

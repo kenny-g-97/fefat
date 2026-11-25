@@ -32,11 +32,11 @@ const LABEL_MARGIN = 8
 
 /** The strip left of a chart's panes for their value axes' labels, one width so that panes over
  * one time axis line up, ECharts moving no pane for its labels: room for the wider of the lowest
- * and the highest of `amounts` in `currency`, a minus counted, and a digit more for a tick rounded
- * past it (D-117). */
+ * and the highest of `amounts` in `currency`, or plain where none, a minus counted, and a digit
+ * more for a tick rounded past it (D-117). */
 export function labelStrip(
   amounts: readonly number[],
-  currency: Currency
+  currency: Currency | null
 ): number {
   const written = [Math.min(...amounts), Math.max(...amounts)].map(
     (amount) => moneyEdge(Math.round(amount), currency).length
@@ -53,8 +53,9 @@ export function axisLabels(tokens: ThemeTokens) {
   return { color: tokens.mutedForeground, fontSize: 12, hideOverlap: true }
 }
 
-/** A value axis of money in `currency`, with horizontal grid lines in the hairline alone. */
-export function moneyAxis(tokens: ThemeTokens, currency: Currency) {
+/** A value axis of money in `currency`, or of plain figures where none, as ticks and ratios, the
+ * histograms' edges, with horizontal grid lines in the hairline alone. */
+export function valueAxis(tokens: ThemeTokens, currency: Currency | null) {
   return {
     type: "value",
     axisLine: NO_LINE,
@@ -67,16 +68,16 @@ export function moneyAxis(tokens: ThemeTokens, currency: Currency) {
   } as const
 }
 
-/** The bounds that keep `capital` in view of an axis whose values run from `lowest` to
- * `highest`. */
-export function capitalInView(
-  capital: number,
+/** The bounds that keep `level`, such as the capital or the run's own figure, in view of an axis
+ * whose values run from `lowest` to `highest`. */
+export function keptInView(
+  level: number,
   lowest: number,
   highest: number
 ): Readonly<{ min?: number; max?: number }> {
   return {
-    ...(capital < lowest ? { min: capital } : {}),
-    ...(capital > highest ? { max: capital } : {}),
+    ...(level < lowest ? { min: level } : {}),
+    ...(level > highest ? { max: level } : {}),
   }
 }
 
@@ -105,11 +106,29 @@ export function capitalLine(
   capital: number,
   tokens: ThemeTokens
 ): LineSeriesOption["markLine"] {
+  return dashedAt(capital, tokens.input, 1)
+}
+
+/** A dashed line at the run's `own` figure in the purple, the builder's exception to the cyan
+ * for the run among its Monte Carlo's paths (D-119), which nothing points at. */
+export function ownLine(
+  own: number,
+  tokens: ThemeTokens
+): LineSeriesOption["markLine"] {
+  return dashedAt(own, tokens.brandSecondary, 1.5)
+}
+
+/** A dashed line at `level` in `colour`, `width` px wide, which nothing points at. */
+function dashedAt(
+  level: number,
+  colour: string,
+  width: number
+): LineSeriesOption["markLine"] {
   return {
     silent: true,
     symbol: "none",
     label: { show: false },
-    lineStyle: { color: tokens.input, type: "dashed", width: 1 },
-    data: [{ yAxis: capital }],
+    lineStyle: { color: colour, type: "dashed", width },
+    data: [{ yAxis: level }],
   }
 }

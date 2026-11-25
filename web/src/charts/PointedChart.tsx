@@ -34,6 +34,7 @@ type PointedChartProps = Readonly<{
   testId: string
   optionIn: (tokens: ThemeTokens) => EChartsCoreOption
   last: number
+  rest?: number
   pointed: number | null
   onPointed: (index: number | null) => void
 }>
@@ -41,14 +42,16 @@ type PointedChartProps = Readonly<{
 /** A results chart whose readout follows its pointer and its keys (`README.md`), over ECharts 6,
  * which only this file imports beside the options' types: it fills the box it is in, draws
  * `optionIn` the theme the page shows, again when the theme changes, and tells `onPointed` the
- * entry under the pointer, or null once the pointer leaves it. Focused, the arrows step an entry,
- * Home and End go to the first and to `last`, and Escape or leaving it gives the readout back to
- * the last. */
+ * entry under the pointer, or null once the pointer leaves it. Focused, the arrows step an entry
+ * from the one pointed at, or else from `rest`, the readout's own while nothing is pointed at, the
+ * last unless given, Home and End go to the first and to `last`, and Escape or leaving it gives
+ * the readout back to `rest`. */
 export function PointedChart({
   label,
   testId,
   optionIn,
   last,
+  rest = last,
   pointed,
   onPointed,
 }: PointedChartProps) {
@@ -99,7 +102,7 @@ export function PointedChart({
       letGo()
       return
     }
-    const next = steppedTo(event.key, pointed === null ? last : pointed, last)
+    const next = steppedTo(event.key, pointed === null ? rest : pointed, last)
     if (next === null) {
       return
     }
