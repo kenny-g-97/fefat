@@ -245,6 +245,88 @@ function differingPixels(
   )
 }
 
+/** The theme's tokens a chart's pixels are measured against, as the page holds them now. */
+function shownColours(page: Page) {
+  return page.evaluate(() => {
+    const style = getComputedStyle(document.documentElement)
+    const read = (name: string) => style.getPropertyValue(name).trim()
+    return {
+      card: read("--card"),
+      positive: read("--positive"),
+      negative: read("--negative"),
+      brand: read("--brand"),
+    }
+  })
+}
+
+/** How many pixels of the equity's pane, the top 65 % of the chart, each colour draws in its left
+ * and its right third: each pixel painted over the card, since the chart's canvas is clear and its
+ * fills keep their colour at a share of its alpha, counts toward a colour when it lies at least two
+ * thirds of the way from the card to it, as a line's smoothed edge does and a fill at 30 % does
+ * not. */
+function colourCounts(
+  page: Page,
+  picture: string,
+  colours: Awaited<ReturnType<typeof shownColours>>
+) {
+  return page.evaluate(
+    async ([source, shown]) => {
+      const channels = (hex: string) =>
+        [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16))
+      const image = new Image()
+      image.src = source
+      await image.decode()
+      const canvas = document.createElement("canvas")
+      canvas.width = image.width
+      canvas.height = image.height
+      const context = canvas.getContext("2d")
+      if (context === null) {
+        throw new Error("Expected a 2D canvas to count on, got none.")
+      }
+      context.drawImage(image, 0, 0)
+      const data = context.getImageData(0, 0, image.width, image.height).data
+      const card = channels(shown.card)
+      const counted = (hex: string) => {
+        const towards = channels(hex).map((value, at) => value - card[at])
+        const span = towards.reduce((sum, part) => sum + part * part, 0)
+        const thirds = { left: 0, right: 0 }
+        for (let y = 0; y < Math.floor(image.height * 0.65); y += 1) {
+          for (let x = 0; x < image.width; x += 1) {
+            const third =
+              x < image.width / 3
+                ? "left"
+                : x > (image.width * 2) / 3
+                  ? "right"
+                  : null
+            if (third === null) {
+              continue
+            }
+            const at = (y * image.width + x) * 4
+            const alpha = data[at + 3] / 255
+            const off = [0, 1, 2].map(
+              (part) => alpha * (data[at + part] - card[part])
+            )
+            const share =
+              off.reduce((sum, part, index) => sum + part * towards[index], 0) /
+              span
+            const miss = Math.hypot(
+              ...off.map((part, index) => part - share * towards[index])
+            )
+            thirds[third] += share >= 2 / 3 && miss <= 24 ? 1 : 0
+          }
+        }
+        return thirds
+      }
+      return {
+        positive: counted(shown.positive),
+        negative: counted(shown.negative),
+        brand: counted(shown.brand),
+      }
+    },
+    [picture, colours] as const
+  )
+}
+
 /** A change of a count, with its sign above zero. */
 function signedCount(change: number): string {
   return change > 0 ? `+${change}` : String(change)
@@ -973,6 +1055,96 @@ test("a key with Alt stays the browser's, and the chart repaints with the theme"
   await expect.poll(() => chartPictures(page)).not.toEqual(dark)
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   await expect.poll(() => chartPictures(page)).toEqual(dark)
+})
+
+test("the equity is green above its capital and red below it, filled to the capital", async ({
+  loggedIn: page,
+}) => {
+  // Your review of step 5.20 (D-119): the sign colours either side of the capital, as the chart
+  // the builder attached draws them, in place of the accent.
+  const key = await theSeededKey(page)
+  await withAnswers(page, key, (body, result) => {
+    if (result !== "equity") {
+      return
+    }
+    // A hundred decisions five minutes apart, above the capital for the first fifty and below it
+    // after, so that the crossing stands at the middle of the time axis, which a run's own
+    // decisions, uneven over its sessions and their breaks, would move.
+    const [start] = z.array(z.number()).parse(body.time)
+    const time = Array.from({ length: 100 }, (_, at) => start + at * 300)
+    body.capital = 50_000
+    body.time = time
+    body.equity = time.map((_, at) => (at < 50 ? 50_800 : 49_200))
+    body.drawdown = time.map((_, at) => (at < 50 ? 0 : 1_600))
+  })
+
+  await page.goto(`/runs/run?key=${key}`)
+
+  await expect(
+    page.getByTestId("equity-chart").locator("canvas").first()
+  ).toBeVisible()
+  await page.mouse.move(700, 36)
+  const colours = await shownColours(page)
+  // The chart draws once its chunk has loaded, after its canvas stands, so the picture is read
+  // again until it holds the line it should.
+  await expect(async () => {
+    const drawn = await colourCounts(
+      page,
+      (await chartPictures(page))[0],
+      colours
+    )
+    expect(drawn.positive.left).toBeGreaterThan(100)
+    expect(drawn.negative.right).toBeGreaterThan(100)
+    expect(drawn.negative.left).toBe(0)
+    expect(drawn.positive.right).toBe(0)
+    expect(drawn.brand).toEqual({ left: 0, right: 0 })
+  }).toPass({ timeout: 10_000 })
+  await expect(page.getByTestId("equity-legend")).toHaveText(
+    "Above the capitalBelow the capitalDrawdownCapital"
+  )
+  await screenshot(page, "run-equity-sign")
+  await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  await screenshot(page, "run-equity-sign-light")
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
+})
+
+test("an equity that never rises above its capital is red alone", async ({
+  loggedIn: page,
+}) => {
+  // The seeded run's own case, which drew green under its capital: ECharts reads which way the
+  // axis runs from the colours' closed piece, and one of no height turned them upside down.
+  const key = await theSeededKey(page)
+  await withAnswers(page, key, (body, result) => {
+    if (result !== "equity") {
+      return
+    }
+    // A hundred decisions five minutes apart, falling from just under the capital, so that the
+    // line stays clear of the pane's edges.
+    const [start] = z.array(z.number()).parse(body.time)
+    const time = Array.from({ length: 100 }, (_, at) => start + at * 300)
+    body.capital = 50_000
+    body.time = time
+    body.equity = time.map((_, at) => 49_950 - at * 7)
+    body.drawdown = time.map((_, at) => 50 + at * 7)
+  })
+
+  await page.goto(`/runs/run?key=${key}`)
+
+  await expect(
+    page.getByTestId("equity-chart").locator("canvas").first()
+  ).toBeVisible()
+  await page.mouse.move(700, 36)
+  const colours = await shownColours(page)
+  await expect(async () => {
+    const drawn = await colourCounts(
+      page,
+      (await chartPictures(page))[0],
+      colours
+    )
+    expect(drawn.negative.left).toBeGreaterThan(100)
+    expect(drawn.negative.right).toBeGreaterThan(100)
+    expect(drawn.positive).toEqual({ left: 0, right: 0 })
+  }).toPass({ timeout: 10_000 })
 })
 
 test("a bar of one trade shows beside a tall one, and marks keep a colour in a contrast theme", async ({

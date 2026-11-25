@@ -16,6 +16,8 @@ import {
 } from "./results-chart"
 
 const MILLISECONDS_A_SECOND = 1000
+/** The fill between the equity and its capital, a share of the line's sign colour. */
+export const EQUITY_FILL = 0.3
 /** The time axis's labels, in the app's one date format, in this browser's time zone. */
 const TIME_LABELS = {
   year: "{yyyy}",
@@ -28,13 +30,14 @@ const TIME_LABELS = {
   none: "{yyyy}-{MM}-{dd} {HH}:{mm}",
 }
 
-/** The chart of `curve` in the theme's `tokens` (web/DESIGN.md, Patterns, Charts): the equity in
- * the accent over a dashed line at the capital, and under it, on the same time axis, its drawdown
- * in grey, its axis inverted so that the depth hangs from zero with no figure negated, both axes
- * written as money in `currency`. Nothing animates, the axis pointer included, and there is no
- * zoom; each value holds until the next decision, so that a session's break draws flat rather
- * than as a slope; the pointer reads a decision, its crosshair spanning both, and its figures
- * stand in the page's own readout. */
+/** The chart of `curve` in the theme's `tokens` (web/DESIGN.md, Patterns, Equity chart): the
+ * equity over a dashed line at the capital, in the sign colours, green where the account stands
+ * above its capital and red below, filled to the capital (D-119), and under it, on the same time
+ * axis, its drawdown in grey, its axis inverted so that the depth hangs from zero with no figure
+ * negated, both axes written as money in `currency`. Nothing animates, the axis pointer included,
+ * and there is no zoom; each value holds until the next decision, so that a session's break draws
+ * flat rather than as a slope; the pointer reads a decision, its crosshair spanning both, and its
+ * figures stand in the page's own readout. */
 export function equityOption(
   curve: EquityCurve,
   currency: Currency,
@@ -57,7 +60,31 @@ export function equityOption(
     ],
     ...pointerOptions(tokens),
     ...equityAxes(curve, currency, tokens),
+    visualMap: signColours(curve.capital, tokens),
     series: equitySeries(curve, tokens),
+  }
+}
+
+/** The equity's colours by its value: the negative under the capital and the positive from it
+ * up. ECharts draws a line's colours by value from the pieces closed at both ends, a piece open at
+ * one giving the colours beyond them, and reads which way the axis runs from a closed piece's two
+ * ends, so the positive takes one from the capital to a unit of money above it, since a piece of
+ * no height turns the colours upside down, and another above that. */
+function signColours(
+  capital: number,
+  tokens: ThemeTokens
+): ResultsChartOption["visualMap"] {
+  const unitAbove = capital + 1
+  return {
+    type: "piecewise",
+    show: false,
+    seriesIndex: 0,
+    dimension: 1,
+    pieces: [
+      { lt: capital, color: tokens.negative },
+      { gte: capital, lte: unitAbove, color: tokens.positive },
+      { gt: unitAbove, color: tokens.positive },
+    ],
   }
 }
 
@@ -100,7 +127,8 @@ function equityAxes(
   }
 }
 
-/** The equity with its line at the capital, and the drawdown as an area, each decision at its
+/** The equity with its line at the capital, coloured by the visual map, which a colour of its own
+ * would override, and filled to the capital; and the drawdown as an area, each decision at its
  * instant, the API's figures unchanged. */
 function equitySeries(
   curve: EquityCurve,
@@ -120,8 +148,8 @@ function equitySeries(
       xAxisIndex: 0,
       yAxisIndex: 0,
       data: times.map((time, at) => [time, curve.equity[at]]),
-      lineStyle: { color: tokens.brand, width: 1.5 },
-      itemStyle: { color: tokens.brand },
+      lineStyle: { width: 1.5 },
+      areaStyle: { origin: curve.capital, opacity: EQUITY_FILL },
       markLine: capitalLine(curve.capital, tokens),
     },
     {

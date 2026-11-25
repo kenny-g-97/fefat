@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
-import type { ThemeTokens } from "./chart-look"
-import { equityOption } from "./equity-option"
+import { contrast, type ThemeTokens } from "./chart-look"
+import { painted, tokenColour } from "./design-palette"
+import { EQUITY_FILL, equityOption } from "./equity-option"
 
 /** An axis whose labels a function writes, as ECharts calls it with each tick's value. */
 const labelledAxis = z.object({
@@ -93,13 +94,58 @@ describe("the equity chart's options", () => {
     ])
   })
 
-  it("leads with the equity in the accent over a line at the capital", () => {
+  it("draws the equity in the sign colours either side of the capital, filled to it", () => {
+    // Your review of step 5.20 (D-119): green where the account stands above its capital, red
+    // below, in place of the accent; a piece closed at both ends gives ECharts a gradient to draw.
+    expect(option.visualMap).toEqual({
+      type: "piecewise",
+      show: false,
+      seriesIndex: 0,
+      dimension: 1,
+      pieces: [
+        { lt: 50_000, color: TOKENS.negative },
+        { gte: 50_000, lte: 50_001, color: TOKENS.positive },
+        { gt: 50_001, color: TOKENS.positive },
+      ],
+    })
+    expect(equity.lineStyle).toEqual({ width: 1.5 })
+    expect(equity).not.toHaveProperty("itemStyle")
     expect(equity).toMatchObject({
-      lineStyle: { color: TOKENS.brand },
+      areaStyle: { origin: 50_000, opacity: EQUITY_FILL },
       markLine: { data: [{ yAxis: 50_000 }] },
     })
     expect(drawdown).toMatchObject({ lineStyle: { color: TOKENS.input } })
   })
+
+  it("keeps the colours either side of the capital where the equity never rises above it", () => {
+    // ECharts reads which way the axis runs from the closed piece's two ends, so a piece from the
+    // capital to an equity that never rose above it, of no height, drew the line green under it.
+    const fallen = { ...CURVE, equity: [49_990.5, 49_980], drawdown: [9.5, 20] }
+
+    expect(equityOption(fallen, "USD", TOKENS).visualMap).toMatchObject({
+      pieces: [
+        { lt: 50_000, color: TOKENS.negative },
+        { gte: 50_000, lte: 50_001, color: TOKENS.positive },
+        { gt: 50_001, color: TOKENS.positive },
+      ],
+    })
+  })
+
+  it.each(["dark", "light"] as const)(
+    "keeps each sign colour at 3 : 1 against the card and its own fill in the %s theme",
+    (theme) => {
+      // WCAG 1.4.11: the line keeps 3 : 1 on either side of it, the card and the fill it bounds.
+      const token = (name: string) => tokenColour(name, theme)
+      const card = token("--card")
+
+      const ratios = ["--positive", "--negative"].flatMap((sign) => [
+        contrast(token(sign), card),
+        contrast(token(sign), painted(token(sign), card, EQUITY_FILL)),
+      ])
+
+      ratios.forEach((ratio) => expect(ratio).toBeGreaterThanOrEqual(3))
+    }
+  )
 
   it("hangs the drawdown from zero on an inverted axis, its figures positive", () => {
     expect(Array.isArray(option.yAxis) && option.yAxis[1]).toMatchObject({

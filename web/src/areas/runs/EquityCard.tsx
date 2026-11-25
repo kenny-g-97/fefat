@@ -87,13 +87,23 @@ function ShownCurve({
           </span>
         </p>
       </div>
-      <ul className="flex gap-5 text-xs text-foreground-secondary">
+      <ul
+        data-testid="equity-legend"
+        className="flex gap-5 text-xs text-foreground-secondary"
+      >
         <li className="flex items-center gap-2">
           <span
             data-slot="chart-mark"
-            className="size-2.5 rounded-xl bg-brand"
+            className="size-2.5 rounded-xl bg-positive"
           />
-          Equity
+          Above the capital
+        </li>
+        <li className="flex items-center gap-2">
+          <span
+            data-slot="chart-mark"
+            className="size-2.5 rounded-xl bg-negative"
+          />
+          Below the capital
         </li>
         <li className="flex items-center gap-2">
           <span

@@ -3,6 +3,7 @@ import {
   GridComponent,
   MarkLineComponent,
   TooltipComponent,
+  VisualMapPiecewiseComponent,
 } from "echarts/components"
 import {
   type EChartsCoreOption,
@@ -20,6 +21,7 @@ registerParts([
   GridComponent,
   MarkLineComponent,
   TooltipComponent,
+  VisualMapPiecewiseComponent,
   CanvasRenderer,
 ])
 

@@ -3,19 +3,21 @@ import type {
   GridComponentOption,
   MarkLineComponentOption,
   TooltipComponentOption,
+  VisualMapComponentOption,
 } from "echarts/components"
 import type { ComposeOption } from "echarts/core"
 import type { Currency } from "@/api/runs"
 import { moneyEdge } from "@/ui/figures"
 import type { ThemeTokens } from "./chart-look"
 
-/** What a results chart hands ECharts: lines over grids, a mark line, and the axis pointer, the
- * parts `PointedChart` registers. */
+/** What a results chart hands ECharts: lines over grids, a mark line, the axis pointer, and a
+ * visual map colouring a line by its value, the parts `PointedChart` registers. */
 export type ResultsChartOption = ComposeOption<
   | LineSeriesOption
   | GridComponentOption
   | MarkLineComponentOption
   | TooltipComponentOption
+  | VisualMapComponentOption
 >
 
 export const FONT = '"Geist Mono", ui-monospace, monospace'
