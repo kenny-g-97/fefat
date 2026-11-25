@@ -740,11 +740,13 @@ export interface paths {
         };
         /**
          * Run Monte Carlo
-         * @description A saved run's Monte Carlo (step 5.20): `paths` walks of its trades drawn with replacement
-         *     from `seed`, their net P&L and closed-trade maximum drawdown at five percentiles beside the
-         *     run's own walk, the shares of paths that end below the capital and fall deeper than the run,
-         *     and the equity fan; `too_few_trades`, with why, for a run of fewer than two trades; 409 as
-         *     `/stats` answers it.
+         * @description A saved run's Monte Carlo (steps 5.20 and 5.21): `paths` walks of its trades drawn with
+         *     replacement from `seed`, their net P&L and closed-trade maximum drawdown at five percentiles
+         *     beside the run's own walk, the shares of paths that end below the capital and fall deeper than
+         *     the run, the equity fan with the run's own walk over it, and the paths' net P&L, maximum
+         *     drawdown, profit factor, and average MAE and MFE in ticks at each whole percent of them beside
+         *     the run's own; `too_few_trades`, with why, for a run of fewer than two trades; 409 as `/stats`
+         *     answers it.
          */
         get: operations["run_monte_carlo_v1_runs__run__monte_carlo_get"];
         put?: never;
@@ -1918,14 +1920,17 @@ export interface components {
         /**
          * EquityFan
          * @description The paths' equity at five percentiles after each count of `trades_made`, one entry a count in
-         *     each column, and the `capital` they start from, in the instrument's currency, as numbers a chart
-         *     draws: the first count is none, where every percentile is the capital.
+         *     each column, the run's `own` equity after as many of its trades in the order made, and the
+         *     `capital` they start from, in the instrument's currency, as numbers a chart draws: the first
+         *     count is none, where every column holds the capital.
          */
         EquityFan: {
             /** Capital */
             capital: number;
             /** Median */
             median: number[];
+            /** Own */
+            own: number[];
             /** P25 */
             p25: number[];
             /** P5 */
@@ -2102,6 +2107,31 @@ export interface components {
             message: string;
             /** Type */
             type: string;
+        };
+        /**
+         * FigureByPercent
+         * @description A figure of the paths at each whole percent of them from 0 to 100, `at_percent[95]` that of
+         *     the path at the nearest rank of 95 % of the paths ordered from the lowest, as numbers a chart
+         *     draws, beside the run's `own`.
+         */
+        FigureByPercent: {
+            /** At Percent */
+            at_percent: number[];
+            /** Own */
+            own: number;
+        };
+        /**
+         * FiguresByPercent
+         * @description The paths' figures at each whole percent of them, each beside the run's own: the net P&L and
+         *     the maximum drawdown in the instrument's currency, the profit factor, and the average MAE and
+         *     MFE of a path's trades in ticks.
+         */
+        FiguresByPercent: {
+            average_mae_ticks: components["schemas"]["FigureByPercent"];
+            average_mfe_ticks: components["schemas"]["FigureByPercent"];
+            max_drawdown: components["schemas"]["FigureByPercent"];
+            net_pnl: components["schemas"]["FigureByPercent"];
+            profit_factor: components["schemas"]["ProfitFactorByPercent"];
         };
         /**
          * FileImportAsked
@@ -2726,9 +2756,11 @@ export interface components {
          * @description `paths` walks of the run's `trades` trades drawn with replacement from `seed`, `kind`
          *     resampled (module docstring): the paths' net P&L and maximum drawdown at five percentiles, the
          *     run's own walk's net P&L and closed-trade maximum drawdown, the share of paths that end below
-         *     the capital, the share whose maximum drawdown exceeds the run's own, and the equity fan.
+         *     the capital, the share whose maximum drawdown exceeds the run's own, the equity fan, and the
+         *     paths' figures at each whole percent of them.
          */
         MonteCarlo: {
+            by_percent: components["schemas"]["FiguresByPercent"];
             /** Deeper Drawdown Share */
             deeper_drawdown_share: number;
             fan: components["schemas"]["EquityFan"];
@@ -3184,6 +3216,18 @@ export interface components {
          * @enum {string}
          */
         ProfileOrigin: "preset" | "saved";
+        /**
+         * ProfitFactorByPercent
+         * @description The paths' profit factors at each whole percent of them from 0 to 100, ranked from the
+         *     lowest, none for a path that drew no losing trade, which stands above every other, beside the
+         *     run's `own`, its metrics' profit factor, none for a run without a losing trade.
+         */
+        ProfitFactorByPercent: {
+            /** At Percent */
+            at_percent: (number | null)[];
+            /** Own */
+            own: number | null;
+        };
         /**
          * QualityFinding
          * @description What a report finds wrong with a dataset on a trade date: a session without records,

@@ -132,8 +132,9 @@ def test_the_distributions_are_the_sdks(client: TestClient, run: Run) -> None:
 def test_the_monte_carlo_is_the_sdks_for_the_same_run_seed_and_paths(
     client: TestClient, run: Run
 ) -> None:
-    # Done means 1 of step 5.20: API equals SDK, with each of the three asked for or left out; a
-    # fan of five counts tells max_points apart only for a run of more than four trades.
+    # Done means 1 of steps 5.20 and 5.21: API equals SDK, with each of the three asked for or left
+    # out; a fan of five counts tells max_points apart only for a run of more than four trades; the
+    # figures by percent answer beside the rest, each at the 101 whole percents.
     assert run.trades.height > 4
     asked = client.get(
         f"/v1/runs/{run.hash}/monte-carlo", params={"paths": 300, "seed": 3, "max_points": 5}
@@ -142,7 +143,17 @@ def test_the_monte_carlo_is_the_sdks_for_the_same_run_seed_and_paths(
 
     assert asked.status_code == 200
     assert MonteCarlo.model_validate(asked.json()) == ff.backtest.monte_carlo(run, 300, 3, 5)
-    assert len(asked.json()["fan"]["trades_made"]) == 5
+    fan = asked.json()["fan"]
+    assert (len(fan["trades_made"]), len(fan["own"])) == (5, 5)
+    by_percent = asked.json()["by_percent"]
+    assert list(by_percent) == [
+        "net_pnl",
+        "max_drawdown",
+        "profit_factor",
+        "average_mae_ticks",
+        "average_mfe_ticks",
+    ]
+    assert {len(figure["at_percent"]) for figure in by_percent.values()} == {101}
     assert MonteCarlo.model_validate(left_out.json()) == ff.backtest.monte_carlo(run)
 
 

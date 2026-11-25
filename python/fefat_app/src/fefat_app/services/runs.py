@@ -233,8 +233,8 @@ class Runs:
         self, run: str, paths: int, seed: int, max_points: int
     ) -> MonteCarlo | TooFewTrades:
         """`paths` walks of the trades of the saved run `run` drawn from `seed`, with a fan of at
-        most `max_points` counts (`ff.backtest.monte_carlo`, step 5.20), refused as `_opened`
-        refuses."""
+        most `max_points` counts and each figure at every whole percent of the paths
+        (`ff.backtest.monte_carlo`, steps 5.20 and 5.21), refused as `_opened` refuses."""
         opened = self._opened(run)
         with _results_read(opened.hash, self.paths):
             return monte_carlo(opened, paths, seed, max_points)
