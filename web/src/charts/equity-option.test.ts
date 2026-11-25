@@ -130,6 +130,20 @@ describe("the equity chart's options", () => {
     })
   })
 
+  it("draws a run that never leaves its capital in the capital line's grey", () => {
+    // A line lying on the capital splits along its width where the colours meet, so a run that
+    // never traded would read as green over red from end to end.
+    const flat = { ...CURVE, equity: [50_000, 50_000], drawdown: [0, 0] }
+
+    expect(equityOption(flat, "USD", TOKENS).visualMap).toMatchObject({
+      pieces: [
+        { lt: 50_000, color: TOKENS.input },
+        { gte: 50_000, lte: 50_001, color: TOKENS.input },
+        { gt: 50_001, color: TOKENS.input },
+      ],
+    })
+  })
+
   it.each(["dark", "light"] as const)(
     "keeps each sign colour at 3 : 1 against the card and its own fill in the %s theme",
     (theme) => {

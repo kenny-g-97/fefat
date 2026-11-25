@@ -60,7 +60,7 @@ export function equityOption(
     ],
     ...pointerOptions(tokens),
     ...equityAxes(curve, currency, tokens),
-    visualMap: signColours(curve.capital, tokens),
+    visualMap: signColours(curve, tokens),
     series: equitySeries(curve, tokens),
   }
 }
@@ -69,21 +69,26 @@ export function equityOption(
  * up. ECharts draws a line's colours by value from the pieces closed at both ends, a piece open at
  * one giving the colours beyond them, and reads which way the axis runs from a closed piece's two
  * ends, so the positive takes one from the capital to a unit of money above it, since a piece of
- * no height turns the colours upside down, and another above that. */
+ * no height turns the colours upside down, and another above that. A run that never leaves its
+ * capital, as one that never traded, takes the capital line's grey, since a line lying on the
+ * capital splits along its width where the colours meet. */
 function signColours(
-  capital: number,
+  curve: EquityCurve,
   tokens: ThemeTokens
 ): ResultsChartOption["visualMap"] {
-  const unitAbove = capital + 1
+  const unitAbove = curve.capital + 1
+  const [below, above] = curve.equity.every((value) => value === curve.capital)
+    ? [tokens.input, tokens.input]
+    : [tokens.negative, tokens.positive]
   return {
     type: "piecewise",
     show: false,
     seriesIndex: 0,
     dimension: 1,
     pieces: [
-      { lt: capital, color: tokens.negative },
-      { gte: capital, lte: unitAbove, color: tokens.positive },
-      { gt: unitAbove, color: tokens.positive },
+      { lt: curve.capital, color: below },
+      { gte: curve.capital, lte: unitAbove, color: above },
+      { gt: unitAbove, color: above },
     ],
   }
 }
