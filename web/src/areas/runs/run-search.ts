@@ -40,7 +40,10 @@ export const allResultsSearch = runSearch.pick({ key: true })
 
 type Schemas = components["schemas"]
 
-const SIDES = ["long", "short"] as const satisfies readonly Schemas["PositionSide"][]
+const SIDES = [
+  "long",
+  "short",
+] as const satisfies readonly Schemas["PositionSide"][]
 /** Every role a fill can take, a trade's exit reason among them (F-TAG-01). */
 export const FILL_ROLES = [
   "entry",
@@ -77,7 +80,10 @@ export const TRADE_SORTS = [
   "mae_ticks",
   "mfe_ticks",
 ] as const satisfies readonly Schemas["TradeSort"][]
-const ORDERS = ["asc", "desc"] as const satisfies readonly Schemas["SortOrder"][]
+const ORDERS = [
+  "asc",
+  "desc",
+] as const satisfies readonly Schemas["SortOrder"][]
 const TRADE_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
 const FIDELITY = /^(trades|tbbo|[0-9]+[smhd])$/
 
