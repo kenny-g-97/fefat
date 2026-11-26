@@ -4,7 +4,8 @@
 cannot be read says why, while its row still answers. From step 5.20, `/monte-carlo` answers the
 SDK's too, the same for the same seed, and why for a run of one trade (its Done means 1 and 3);
 from step 5.22, `/results` answers the SDK's figures by side, all trades the run's metrics', and is
-refused as `/stats` is (its Done means 1)."""
+refused as `/stats` is (its Done means 1); and from step 5.23, `/market` answers the SDK's market
+exposure and buy and hold, refused alike (its Done means 1)."""
 
 import json
 import os
@@ -20,7 +21,7 @@ from sqlalchemy import Engine, text, update
 from sqlalchemy.orm import Session
 
 import fefat as ff
-from fefat.backtest import MonteCarlo, ResultsBySide, Run, TradeDistributions
+from fefat.backtest import MarketExposure, MonteCarlo, ResultsBySide, Run, TradeDistributions
 from fefat.backtest.artifacts import RECORD_FILE
 from fefat.backtest.metrics import Metrics
 from fefat.config import resolve_paths
@@ -29,12 +30,14 @@ from fefat.market.fidelity import FidelityEra
 from fefat_app.container import Container
 from fefat_app.database.models import RunRow
 from fefat_app.database.run_records import RunTables
+from generated_minutes import FEBRUARY, write_minutes
 from local_server import STARTED_AT, logged_in
+from notebook_runs import breakout_both_ways
 from test_run_records import a_submission, the_run
 
 NANOSECONDS = 1_000_000_000
 KEY_OF_NO_RUN = "e" * 64
-RESULTS = ["stats", "equity", "distribution", "monte-carlo", "results"]
+RESULTS = ["stats", "equity", "distribution", "monte-carlo", "results", "market"]
 """A saved run's results, each of which a run without readable results refuses alike."""
 
 
@@ -118,9 +121,12 @@ def test_the_equity_keeps_the_true_maximum_drawdown_in_the_points_asked_for(
     assert max(recovered["drawdown"]) == 4.0
 
 
+@pytest.mark.parametrize("result", ["equity", "market"])
 @pytest.mark.parametrize("max_points", [4, 10_001])
-def test_points_out_of_bounds_are_refused(client: TestClient, run: Run, max_points: int) -> None:
-    answer = client.get(f"/v1/runs/{run.hash}/equity", params={"max_points": max_points})
+def test_points_out_of_bounds_are_refused(
+    client: TestClient, run: Run, max_points: int, result: str
+) -> None:
+    answer = client.get(f"/v1/runs/{run.hash}/{result}", params={"max_points": max_points})
 
     assert answer.status_code == 422
 
@@ -147,6 +153,36 @@ def test_the_results_by_side_are_the_sdks_and_all_trades_the_metrics(
     assert Decimal(every["net_pnl"]) == metrics.pnl
     assert Decimal(every["max_drawdown"]) == metrics.drawdown.max_drawdown
     assert every["longest_drawdown_days"] == metrics.drawdown.longest_drawdown_days
+
+
+def test_the_market_exposure_is_the_sdks_for_the_same_run(
+    client: TestClient, container: Container
+) -> None:
+    # Done means 1 of step 5.23: API equals SDK, on a run of the generated February store whose
+    # figures count, its money in decimal text and buy and hold's curve at the equity's decisions.
+    logged_in(client, container)
+    write_minutes(FEBRUARY)
+    run = ff.backtest.run(breakout_both_ways(), "2026-02-03", "2026-02-20")
+    assert client.get("/v1/runs").status_code == 200
+
+    answer = client.get(f"/v1/runs/{run.hash}/market")
+
+    assert answer.status_code == 200
+    body = answer.json()
+    exposure = ff.backtest.market_exposure(run)
+    assert MarketExposure.model_validate(body) == exposure
+    assert body["all_days"]["correlation"] is not None
+    held = body["buy_and_hold"]
+    assert held["kind"] == "sized"
+    assert held["at_one_lot"]["net_pnl"] == str(exposure.buy_and_hold.at_one_lot.net_pnl)
+    equity = client.get(f"/v1/runs/{run.hash}/equity").json()
+    assert held["curve"]["time"] == equity["time"]
+    # The step review: max_points reaches the SDK, and buy and hold's curve keeps /equity's points.
+    fewest = client.get(f"/v1/runs/{run.hash}/market", params={"max_points": 5}).json()
+    assert MarketExposure.model_validate(fewest) == ff.backtest.market_exposure(run, 5)
+    kept = client.get(f"/v1/runs/{run.hash}/equity", params={"max_points": 5}).json()
+    assert fewest["buy_and_hold"]["curve"]["time"] == kept["time"]
+    assert len(kept["time"]) <= 5 < len(equity["time"])
 
 
 def test_the_distributions_are_the_sdks(client: TestClient, run: Run) -> None:

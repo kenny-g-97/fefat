@@ -29,6 +29,7 @@ const TOKENS: ThemeTokens = {
   foregroundSecondary: "#888888",
   positive: "#10b981",
   negative: "#ff4d6d",
+  chartSecond: "#06b6d4",
 }
 
 const CURVE = {
@@ -227,6 +228,70 @@ describe("the equity chart's options", () => {
     expect(option.tooltip).toMatchObject({ axisPointer: { animation: false } })
     expect(option).not.toHaveProperty("dataZoom")
   })
+
+  it("draws buy and hold beside the equity as a walk in the cyan, after the equity's fill", () => {
+    // Step 5.23: a second line at the run's volatility, the equity still the series the sign
+    // colours and the pointer read.
+    const held = { time: CURVE.time, equity: [50_000, 50_480.75] }
+    const drawn = equityOption(CURVE, "USD", TOKENS, held)
+    const series = Array.isArray(drawn.series) ? drawn.series : []
+
+    expect(series.map((each) => each.name)).toEqual([
+      "Equity",
+      "Drawdown",
+      "Buy and hold",
+    ])
+    expect(series[2]).toMatchObject({
+      type: "line",
+      step: "end",
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      data: [
+        [1_772_700_000_000, 50_000],
+        [1_772_700_300_000, 50_480.75],
+      ],
+      lineStyle: { color: TOKENS.chartSecond, width: 1.5 },
+    })
+    expect(series[2]).not.toHaveProperty("areaStyle")
+    expect(drawn.visualMap).toMatchObject({ seriesIndex: 0 })
+    expect(option.series).toHaveLength(2)
+  })
+
+  it("counts buy and hold in the value axis's range and its labels' strip", () => {
+    const axisOf = (held: readonly number[]) => {
+      const curve = { ...CURVE, equity: [60_000, 61_000] }
+      const { yAxis, grid } = equityOption(curve, "USD", TOKENS, {
+        time: CURVE.time,
+        equity: [...held],
+      })
+      const [upper] = Array.isArray(yAxis) ? yAxis : [yAxis]
+      const [pane] = Array.isArray(grid) ? grid : [grid]
+      return { upper, left: pane?.left }
+    }
+
+    expect(axisOf([60_500, 60_900]).upper).toMatchObject({ min: 50_000 })
+    expect(axisOf([49_000, 52_000]).upper).not.toHaveProperty("min")
+    expect(axisOf([49_000, 1_250_000]).left).toBeGreaterThan(
+      Number(axisOf([49_000, 52_000]).left)
+    )
+  })
+
+  it.each(["dark", "light"] as const)(
+    "keeps buy and hold's cyan at 3 : 1 against the card and the equity's fills in the %s theme",
+    (theme) => {
+      // WCAG 1.4.11: the line crosses the card and either fill, over which it draws.
+      const token = (name: string) => paletteColour(name, theme)
+      const card = token("--card")
+      const cyan = token("--chart-2")
+      const fills = ["--positive", "--negative"].map((sign) =>
+        painted(token(sign), card, EQUITY_FILL)
+      )
+
+      const ratios = [card, ...fills].map((under) => contrast(cyan, under))
+
+      ratios.forEach((ratio) => expect(ratio).toBeGreaterThanOrEqual(3))
+    }
+  )
 
   it("draws horizontal grid lines alone", () => {
     const axes = Array.isArray(option.xAxis) ? option.xAxis : []

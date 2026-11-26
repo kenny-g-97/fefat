@@ -1005,6 +1005,75 @@
         "title": "BusinessDaysBeforeThe25th",
         "type": "object"
       },
+      "BuyAndHoldCurve": {
+        "additionalProperties": false,
+        "description": "Buy and hold's equity at the run's volatility at each decision the run's equity curve keeps\n(`equity_curve`), one entry a decision: its close in whole seconds since the epoch, as the\nrun's curve is served, and the equity in the instrument's currency.",
+        "properties": {
+          "equity": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Equity",
+            "type": "array"
+          },
+          "time": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Time",
+            "type": "array"
+          }
+        },
+        "required": [
+          "time",
+          "equity"
+        ],
+        "title": "BuyAndHoldCurve",
+        "type": "object"
+      },
+      "BuyAndHoldFigures": {
+        "additionalProperties": false,
+        "description": "Buy and hold at `lots` (module docstring), money in the instrument's currency.",
+        "properties": {
+          "longest_drawdown_days": {
+            "minimum": 0.0,
+            "title": "Longest Drawdown Days",
+            "type": "integer"
+          },
+          "lots": {
+            "title": "Lots",
+            "type": "number"
+          },
+          "max_drawdown": {
+            "title": "Max Drawdown",
+            "type": "string"
+          },
+          "net_pnl": {
+            "title": "Net Pnl",
+            "type": "string"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          }
+        },
+        "required": [
+          "lots",
+          "net_pnl",
+          "max_drawdown",
+          "longest_drawdown_days",
+          "sharpe"
+        ],
+        "title": "BuyAndHoldFigures",
+        "type": "object"
+      },
       "CalendarId": {
         "description": "A built-in session calendar: CME Globex's equity index, energy, and metals groups, and\ncrypto's 24x7 UTC days (`fefat.market.builtin_calendars`).",
         "enum": [
@@ -1739,6 +1808,57 @@
         "title": "DayPnl",
         "type": "object"
       },
+      "DaysExposure": {
+        "additionalProperties": false,
+        "description": "How the run's days moved with the market's over `days` of them: the correlation and the\nbeta in lots, each none where `uncounted` says why.",
+        "properties": {
+          "beta_lots": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beta Lots"
+          },
+          "correlation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation"
+          },
+          "days": {
+            "minimum": 0.0,
+            "title": "Days",
+            "type": "integer"
+          },
+          "uncounted": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Uncounted"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "days",
+          "correlation",
+          "beta_lots",
+          "uncounted"
+        ],
+        "title": "DaysExposure",
+        "type": "object"
+      },
       "DeletionPreview": {
         "description": "What a delete of a provider's data of a root removes, as its dataset's page says it before\nit asks: how many of FEAT's copies of the files it was imported from go, so that those files\nimport again as new; the names of the files kept, since each also holds another root still\nstored; whether its quality report goes; and how many saved runs read the data, which keep\ntheir records and results but can no longer be explained or checked again.",
         "properties": {
@@ -2067,6 +2187,81 @@
           }
         },
         "title": "EstimateSettings",
+        "type": "object"
+      },
+      "Exposure": {
+        "additionalProperties": false,
+        "description": "How the run's days moved with the market's over all of them, with the share of the run's\nvariance the market explains and the alpha in the currency, each none where `uncounted` says\nwhy.",
+        "properties": {
+          "alpha": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alpha"
+          },
+          "beta_lots": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beta Lots"
+          },
+          "correlation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation"
+          },
+          "days": {
+            "minimum": 0.0,
+            "title": "Days",
+            "type": "integer"
+          },
+          "explained_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explained Share"
+          },
+          "uncounted": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Uncounted"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "days",
+          "correlation",
+          "beta_lots",
+          "uncounted",
+          "explained_share",
+          "alpha"
+        ],
+        "title": "Exposure",
         "type": "object"
       },
       "FeatureCode": {
@@ -3816,6 +4011,47 @@
           "password"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "MarketExposure": {
+        "additionalProperties": false,
+        "description": "A run's market exposure over all its days, the days the market fell, and the days it rose,\nwith buy and hold beside it (module docstring).",
+        "properties": {
+          "all_days": {
+            "$ref": "#/components/schemas/Exposure"
+          },
+          "buy_and_hold": {
+            "discriminator": {
+              "mapping": {
+                "sized": "#/components/schemas/SizedBuyAndHold",
+                "unsized": "#/components/schemas/UnsizedBuyAndHold"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SizedBuyAndHold"
+              },
+              {
+                "$ref": "#/components/schemas/UnsizedBuyAndHold"
+              }
+            ],
+            "title": "Buy And Hold"
+          },
+          "falling_days": {
+            "$ref": "#/components/schemas/DaysExposure"
+          },
+          "rising_days": {
+            "$ref": "#/components/schemas/DaysExposure"
+          }
+        },
+        "required": [
+          "all_days",
+          "falling_days",
+          "rising_days",
+          "buy_and_hold"
+        ],
+        "title": "MarketExposure",
         "type": "object"
       },
       "MergeSeen": {
@@ -6845,6 +7081,34 @@
         "title": "SizeUnit",
         "type": "object"
       },
+      "SizedBuyAndHold": {
+        "additionalProperties": false,
+        "description": "One lot held from the run's first mark to its last, and as many lots as give its days the\nrun's volatility, with that size's curve.",
+        "properties": {
+          "at_one_lot": {
+            "$ref": "#/components/schemas/BuyAndHoldFigures"
+          },
+          "at_run_volatility": {
+            "$ref": "#/components/schemas/BuyAndHoldFigures"
+          },
+          "curve": {
+            "$ref": "#/components/schemas/BuyAndHoldCurve"
+          },
+          "kind": {
+            "const": "sized",
+            "default": "sized",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at_one_lot",
+          "at_run_volatility",
+          "curve"
+        ],
+        "title": "SizedBuyAndHold",
+        "type": "object"
+      },
       "SlippageTicks": {
         "additionalProperties": false,
         "description": "Ticks by which market and stop-market fills are worse than their reference (F-SLP-01).",
@@ -7954,6 +8218,40 @@
           }
         },
         "title": "TradesInput",
+        "type": "object"
+      },
+      "Uncounted": {
+        "description": "Why a figure of a market exposure is none.",
+        "enum": [
+          "too_few_days",
+          "market_never_differed",
+          "run_never_differed"
+        ],
+        "title": "Uncounted",
+        "type": "string"
+      },
+      "UnsizedBuyAndHold": {
+        "additionalProperties": false,
+        "description": "One lot held from the run's first mark to its last alone, `uncounted` saying why it has no\nsize at the run's volatility.",
+        "properties": {
+          "at_one_lot": {
+            "$ref": "#/components/schemas/BuyAndHoldFigures"
+          },
+          "kind": {
+            "const": "unsized",
+            "default": "unsized",
+            "title": "Kind",
+            "type": "string"
+          },
+          "uncounted": {
+            "$ref": "#/components/schemas/Uncounted"
+          }
+        },
+        "required": [
+          "at_one_lot",
+          "uncounted"
+        ],
+        "title": "UnsizedBuyAndHold",
         "type": "object"
       },
       "UploadSource": {
@@ -11573,6 +11871,106 @@
           }
         ],
         "summary": "Run Equity",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run}/market": {
+      "get": {
+        "description": "A saved run's market exposure (step 5.23): the correlation, the beta in lots, the share of\nits variance explained, and the alpha in its currency of its days with one lot of its\ninstrument held long, each roll's gap taken off, over all its days and again over those the\nmarket fell and rose, each none with why where nothing can be counted; and buy and hold at\none lot and at the run's volatility, with that size's equity at the decisions `/equity`\nkeeps. Money as decimal text, the alpha and the curve as numbers; 409 as `/stats` answers\nit.",
+        "operationId": "run_market_exposure_v1_runs__run__market_get",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The most points of buy and hold's curve, at the decisions `/equity` keeps in as many.",
+            "in": "query",
+            "name": "max_points",
+            "required": false,
+            "schema": {
+              "default": 3000,
+              "description": "The most points of buy and hold's curve, at the decisions `/equity` keeps in as many.",
+              "maximum": 10000,
+              "minimum": 5,
+              "title": "Max Points",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketExposure"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run Market Exposure",
         "tags": [
           "runs"
         ]

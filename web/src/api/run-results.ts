@@ -36,6 +36,12 @@ async function readResultsBySide(run: string) {
   )
 }
 
+async function readMarketExposure(run: string) {
+  return answer(
+    await api.GET("/v1/runs/{run}/market", { params: { path: { run } } })
+  )
+}
+
 /** What a saved run's record says of how it went, as the client reads it. */
 export type RunStatistics = Awaited<ReturnType<typeof readStatistics>>
 /** A saved run's metrics. */
@@ -79,6 +85,21 @@ export type FigureAtPercents = FiguresByPercent[PathFigure]
 export type ResultsBySide = Awaited<ReturnType<typeof readResultsBySide>>
 /** The figures of a run's trades of one side, or of all of them. */
 export type SideResults = ResultsBySide["all_trades"]
+/** A saved run's market exposure, how its days moved with one lot of its instrument held long,
+ * with buy and hold beside it (step 5.23). */
+export type MarketExposure = Awaited<ReturnType<typeof readMarketExposure>>
+/** How a run's days moved with the market's over some of them. */
+export type DaysExposure = MarketExposure["falling_days"]
+/** Why a figure of a market exposure reads None. */
+export type Uncounted = NonNullable<DaysExposure["uncounted"]>
+/** Buy and hold at one lot and, where the volatility counts, at the run's, told apart by `kind`. */
+export type BuyAndHold = MarketExposure["buy_and_hold"]
+/** Buy and hold at one lot and at the run's volatility, with that size's curve. */
+export type SizedBuyAndHold = Extract<BuyAndHold, { kind: "sized" }>
+/** Buy and hold's figures at one size. */
+export type BuyAndHoldFigures = BuyAndHold["at_one_lot"]
+/** Buy and hold's equity at the run's volatility, at the equity curve's decisions. */
+export type BuyAndHoldCurve = SizedBuyAndHold["curve"]
 
 /** A saved run's metrics, its currency, its net P&L as a share of its capital, its fidelity
  * eras, and its warnings. */
@@ -123,6 +144,16 @@ export function runResultsBySideQuery(runKey: string) {
   return queryOptions({
     queryKey: ["run-results", runKey, "by-side"],
     queryFn: () => readResultsBySide(runKey),
+    ...KEPT,
+  })
+}
+
+/** A saved run's market exposure and buy and hold, its curve at the decisions the equity's
+ * answer keeps, which the market exposure card and the equity chart share. */
+export function runMarketQuery(runKey: string) {
+  return queryOptions({
+    queryKey: ["run-results", runKey, "market"],
+    queryFn: () => readMarketExposure(runKey),
     ...KEPT,
   })
 }

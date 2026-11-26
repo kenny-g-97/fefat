@@ -526,7 +526,7 @@ The units are the store's: prices in billionths of a point, money in millionths 
 
 `python/fefat/src/fefat/backtest/schemas.py` lists every column of every file. Polars reads any of them without FEFAT, for example `pl.read_parquet(folder / "trades.parquet")`.
 
-The run page's figures come from five functions a notebook can call too:
+The run page's figures come from six functions a notebook can call too:
 
 ```python
 run.pnl_share                               # the net P&L over the capital: 0.025 is 2.5 %
@@ -535,11 +535,14 @@ ff.backtest.trade_distributions(run.trades).r_multiple  # lower, upper, and trad
 ff.backtest.monte_carlo(run).max_drawdown.p95  # the run's trades drawn again, 1,000 paths from seed 0
 ff.backtest.monte_carlo(run).by_percent.max_drawdown.at_percent[95]  # the path at 95 % of them
 ff.backtest.results_by_side(run).short  # every figure of the short trades, None without one
+ff.backtest.market_exposure(run).all_days.beta_lots  # the lots held long the run's days moved like
 ```
 
 `equity_curve` keeps every decision up to `max_points`; past it, each bucket of consecutive decisions keeps its lowest equity, its highest, and its deepest drawdown, so the `drawdown` column's maximum is the run's. `trade_distributions` holds net P&L, the R multiple, MAE and MFE in ticks, and the minutes held, each in at most 40 bins of one width, with no bin across zero. `monte_carlo(run, paths=1000, seed=0, max_points=3000)` draws as many of the run's trades as it made, with replacement, for each path, and walks the capital through them: its net P&L and maximum drawdown at five percentiles, the chance of a net loss, the run's own trades walked in their order beside them (`own_max_drawdown`, of closed trades, where the metrics' drawdown marks open trades), and the paths' equity fan with the run's own walk over it (`fan.own`); the same seed gives the same report, and a run of fewer than two trades gives `TooFewTrades` with why. Its `by_percent` gives the net P&L, the maximum drawdown, the profit factor, and the average MAE and MFE in ticks at each whole percent of the paths from 0 to 100, each beside the run's own (`own`), whose profit factor is its metrics'; a path that drew no losing trade has no profit factor and stands above every other.
 
 `results_by_side(run)` gives `all_trades`, `long`, and `short`, the figures of the All results page: the trades, wins, and losses, the win rate, the net P&L with the gross profit and the gross loss, the winners' and the losers' net P&L, the profit factor, the expectancy in the currency and in R, the average win and loss and their ratio, the commissions and fees, a perpetual's funding received, the slippage in the currency, the trades a day, the average time in the market in minutes, the average MAE and MFE in ticks, and the maximum drawdown, the longest spell under a peak in days, and the Sharpe ratio. For all trades the figures the metrics hold are theirs, the drawdown and the Sharpe marking open trades; for a side they are the engine's metrics on its closed trades, walked from the capital in the order they closed, every trade date of the run counted, a day without a trade of the side as nothing, and its longest spell under a peak counted from the day it fell from the peak, not from the day it reached it. A side the run made no trade on is `None`. The slippage counts each fill a trade's path names, its `slippage_ticks` at its lots and the tick's value, so that a stop a gap passed counts the ticks past its price.
+
+`market_exposure(run, max_points=3000)` says how much of the run's result is the market's: one lot of its instrument held long, a contract or a coin as the run's sizes count them, valued at the marks its `equity` file holds after each decision, each roll's gap taken off at the roll's instant. Over the run's trade dates, its days and the market's give `all_days`, the correlation, the beta in lots, the share of the run's variance the market explains, and the alpha in the currency, what the run made beyond the beta's lots of the market, and `falling_days` and `rising_days`, the correlation and the beta again over the days the market fell and rose. `buy_and_hold` holds one lot from the run's first mark to its last, with no fee, slippage, or funding: its net P&L, maximum drawdown, longest spell under a peak, and Sharpe ratio, at one lot, and, `sized` where the correlation counts, at the lots whose days have the run's volatility, with its equity at that size for the chart; `unsized`, with why, elsewhere. Under three days, or where the market's or the run's days never differed, a figure is `None` and `uncounted` says why.
 
 ### Trade paths
 

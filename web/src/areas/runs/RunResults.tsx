@@ -7,6 +7,7 @@ import { DistributionsCard } from "./DistributionsCard"
 import { EquityCard } from "./EquityCard"
 import { FidelityCheckCard } from "./FidelityCheckCard"
 import { KeyFigures } from "./KeyFigures"
+import { MarketExposureCard } from "./MarketExposureCard"
 import { MonteCarloCard } from "./MonteCarloCard"
 import { ResultBody } from "./ResultBody"
 import { RobustnessCard } from "./RobustnessCard"
@@ -56,6 +57,7 @@ function ShownResults({
         trades={metrics.trades.trades}
         currency={currency}
       />
+      <MarketExposureCard runKey={runKey} statistics={statistics} />
       <EquityCard
         runKey={runKey}
         drawdown={metrics.drawdown}

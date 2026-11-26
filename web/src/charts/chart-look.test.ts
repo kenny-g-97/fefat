@@ -20,6 +20,7 @@ const DARK: ThemeTokens = {
   foregroundSecondary: "#888888",
   positive: "#10b981",
   negative: "#ff4d6d",
+  chartSecond: "#06b6d4",
 }
 const THEMES_OWN = {
   up: null,

@@ -32,8 +32,8 @@ it("documents every prop of PriceChart and every field of its panes and series",
 })
 
 it("documents every prop of the results' charts", () => {
-  // Step 5.7: the two charts of a finished run's page, step 5.20's fan, and step 5.21's figures
-  // against the percent of paths.
+  // Step 5.7: the two charts of a finished run's page, step 5.20's fan, step 5.21's figures
+  // against the percent of paths, and step 5.23's buy and hold on the equity chart.
   const named = [
     ...fields(equityChart, "EquityChartProps"),
     ...fields(histogram, "HistogramChartProps"),
@@ -41,6 +41,6 @@ it("documents every prop of the results' charts", () => {
     ...fields(percentileChart, "PercentileChartProps"),
   ]
 
-  expect(named.length).toBe(22)
+  expect(named.length).toBe(23)
   expect(named.filter((name) => !readme.includes(`\`${name}\``))).toEqual([])
 })

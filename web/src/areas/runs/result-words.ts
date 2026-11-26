@@ -39,6 +39,11 @@ export function toneOf(money: string): "positive" | "negative" | undefined {
   return sign === "zero" ? undefined : sign
 }
 
+/** A figure the engine worked out, at two decimals, or None where it could count nothing. */
+export function figureOrNone(value: number | null): string {
+  return value === null ? "None" : formatFigure(value)
+}
+
 /** What a Monte Carlo drew, and what its paths cannot show: `1,000 paths of 24 trades, drawn with
  * replacement from seed 0.`, then that its drawdowns are of closed trades and that a path keeps no
  * streak across days. */

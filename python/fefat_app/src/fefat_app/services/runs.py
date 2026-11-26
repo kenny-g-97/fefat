@@ -18,6 +18,7 @@ from polars.exceptions import PolarsError
 from pydantic import JsonValue
 
 from fefat.backtest import (
+    MarketExposure,
     MonteCarlo,
     ResultsBySide,
     Run,
@@ -25,6 +26,7 @@ from fefat.backtest import (
     TooFewTrades,
     TradeDistributions,
     equity_curve,
+    market_exposure,
     monte_carlo,
     results_by_side,
     trade_distributions,
@@ -247,6 +249,14 @@ class Runs:
         opened = self._opened(run)
         with _results_read(opened.hash, self.paths):
             return results_by_side(opened)
+
+    def market_exposure(self, run: str, max_points: int) -> MarketExposure:
+        """How the days of the saved run `run` moved with one lot of its instrument held long,
+        beside buy and hold, whose curve stands at the decisions an equity curve of `max_points`
+        keeps (`ff.backtest.market_exposure`, step 5.23), refused as `_opened` refuses."""
+        opened = self._opened(run)
+        with _results_read(opened.hash, self.paths):
+            return market_exposure(opened, max_points)
 
     def _opened(self, run: str) -> Run:
         """The folder of the saved run `run`: `NoSuchRunError` where no run has that id or key,
