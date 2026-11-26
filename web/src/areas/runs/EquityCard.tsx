@@ -38,8 +38,9 @@ type HeldLine = Readonly<{ lots: number; curve: BuyAndHoldCurve }>
 
 /** The equity curve and its drawdown in `currency` (web/DESIGN.md, Patterns, Equity chart): its
  * figure is the readout, the equity at the decision under the pointer, or else after the last;
- * once the run's market exposure answers with it, buy and hold at the run's volatility beside it
- * (step 5.23), which the chart draws without while the answer is read or where it failed. */
+ * and, where the run's market exposure holds it, buy and hold at the run's volatility beside it
+ * (step 5.23). The chart draws once the market's answer is in or has failed, so that a second
+ * line never rescales a chart already drawn. */
 export function EquityCard({ runKey, drawdown, currency }: EquityCardProps) {
   const equity = useQuery(runEquityQuery(runKey))
   const market = useQuery(runMarketQuery(runKey))
@@ -50,6 +51,7 @@ export function EquityCard({ runKey, drawdown, currency }: EquityCardProps) {
           <ShownCurve
             curve={curve}
             held={heldLine(market.data, curve)}
+            drawn={market.status !== "pending"}
             drawdown={drawdown}
             currency={currency}
           />
@@ -66,16 +68,19 @@ function heldLine(
   exposure: MarketExposure | undefined,
   curve: EquityCurve
 ): HeldLine | null {
-  if (exposure === undefined) {
+  if (exposure === undefined || exposure.buy_and_hold.kind === "unsized") {
     return null
   }
   const { at_run_volatility: sized, curve: held } = exposure.buy_and_hold
-  if (sized === null || held === null) {
-    return null
-  }
   if (held.time.length !== curve.time.length) {
     throw new Error(
       `Expected buy and hold at the equity's ${curve.time.length} decisions, got ${held.time.length}.`
+    )
+  }
+  const astray = held.time.findIndex((time, at) => time !== curve.time[at])
+  if (astray !== -1) {
+    throw new Error(
+      `Expected buy and hold at the equity's decisions, got another instant at decision ${astray}.`
     )
   }
   return { lots: sized.lots, curve: held }
@@ -84,11 +89,13 @@ function heldLine(
 function ShownCurve({
   curve,
   held,
+  drawn,
   drawdown,
   currency,
 }: Readonly<{
   curve: EquityCurve
   held: HeldLine | null
+  drawn: boolean
   drawdown: RunMetrics["drawdown"]
   currency: Currency
 }>) {
@@ -112,18 +119,9 @@ function ShownCurve({
         >
           {moneyFigure(curve.equity[at], currency)}
         </p>
-        <p className="flex gap-4 text-foreground-secondary">
+        <p className="flex flex-wrap gap-x-4 text-foreground-secondary">
           <span data-testid="equity-time">
             {crosshairTime(curve.time[at], inSeconds)}
-          </span>
-          <span>
-            Drawdown{" "}
-            <span
-              data-testid="equity-drawdown"
-              className="font-semibold text-foreground"
-            >
-              {moneyFigure(curve.drawdown[at], currency)}
-            </span>
           </span>
           {held !== null && (
             <span>
@@ -136,20 +134,33 @@ function ShownCurve({
               </span>
             </span>
           )}
+          <span>
+            Drawdown{" "}
+            <span
+              data-testid="equity-drawdown"
+              className="font-semibold text-foreground"
+            >
+              {moneyFigure(curve.drawdown[at], currency)}
+            </span>
+          </span>
         </p>
       </div>
       <EquityLegend held={held} />
       <div className="h-80">
-        <Suspense fallback={<div className="h-full" />}>
-          <EquityChart
-            label={`Equity and drawdown of this run${held === null ? "" : ", with buy and hold at its volatility"}. The arrow keys step through its decisions.`}
-            curve={curve}
-            buyAndHold={held === null ? null : held.curve}
-            currency={currency}
-            pointed={pointed}
-            onPointed={setPointed}
-          />
-        </Suspense>
+        {drawn ? (
+          <Suspense fallback={<div className="h-full" />}>
+            <EquityChart
+              label={`Equity and drawdown of this run${held === null ? "" : ", with buy and hold at its volatility"}. The arrow keys step through its decisions.`}
+              curve={curve}
+              buyAndHold={held === null ? null : held.curve}
+              currency={currency}
+              pointed={pointed}
+              onPointed={setPointed}
+            />
+          </Suspense>
+        ) : (
+          <div data-testid="equity-waiting" className="h-full" />
+        )}
       </div>
       {drawdown.peak !== null && drawdown.trough !== null && (
         <p data-testid="equity-spell" className="text-xs text-muted-foreground">
@@ -161,12 +172,13 @@ function ShownCurve({
 }
 
 /** The chart's legend in HTML: the equity above and below its capital, the drawdown, the dashed
- * capital, and buy and hold at its lots where the chart draws it. */
+ * capital, and buy and hold at its lots where the chart draws it, wrapping with 8 px between its
+ * lines at a larger text size. */
 function EquityLegend({ held }: Readonly<{ held: HeldLine | null }>) {
   return (
     <ul
       data-testid="equity-legend"
-      className="flex gap-5 text-xs text-foreground-secondary"
+      className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-foreground-secondary"
     >
       <li className="flex items-center gap-2">
         <span

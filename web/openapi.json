@@ -1005,53 +1005,6 @@
         "title": "BusinessDaysBeforeThe25th",
         "type": "object"
       },
-      "BuyAndHold": {
-        "additionalProperties": false,
-        "description": "One lot held from the run's first mark to its last, and as many lots as give its days the\nrun's volatility, none with its curve where `uncounted` says why.",
-        "properties": {
-          "at_one_lot": {
-            "$ref": "#/components/schemas/BuyAndHoldFigures"
-          },
-          "at_run_volatility": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BuyAndHoldFigures"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "curve": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BuyAndHoldCurve"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "uncounted": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Uncounted"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "at_one_lot",
-          "at_run_volatility",
-          "uncounted",
-          "curve"
-        ],
-        "title": "BuyAndHold",
-        "type": "object"
-      },
       "BuyAndHoldCurve": {
         "additionalProperties": false,
         "description": "Buy and hold's equity at the run's volatility at each decision the run's equity curve keeps\n(`equity_curve`), one entry a decision: its close in whole seconds since the epoch, as the\nrun's curve is served, and the equity in the instrument's currency.",
@@ -4068,7 +4021,22 @@
             "$ref": "#/components/schemas/Exposure"
           },
           "buy_and_hold": {
-            "$ref": "#/components/schemas/BuyAndHold"
+            "discriminator": {
+              "mapping": {
+                "sized": "#/components/schemas/SizedBuyAndHold",
+                "unsized": "#/components/schemas/UnsizedBuyAndHold"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SizedBuyAndHold"
+              },
+              {
+                "$ref": "#/components/schemas/UnsizedBuyAndHold"
+              }
+            ],
+            "title": "Buy And Hold"
           },
           "falling_days": {
             "$ref": "#/components/schemas/DaysExposure"
@@ -7113,6 +7081,34 @@
         "title": "SizeUnit",
         "type": "object"
       },
+      "SizedBuyAndHold": {
+        "additionalProperties": false,
+        "description": "One lot held from the run's first mark to its last, and as many lots as give its days the\nrun's volatility, with that size's curve.",
+        "properties": {
+          "at_one_lot": {
+            "$ref": "#/components/schemas/BuyAndHoldFigures"
+          },
+          "at_run_volatility": {
+            "$ref": "#/components/schemas/BuyAndHoldFigures"
+          },
+          "curve": {
+            "$ref": "#/components/schemas/BuyAndHoldCurve"
+          },
+          "kind": {
+            "const": "sized",
+            "default": "sized",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at_one_lot",
+          "at_run_volatility",
+          "curve"
+        ],
+        "title": "SizedBuyAndHold",
+        "type": "object"
+      },
       "SlippageTicks": {
         "additionalProperties": false,
         "description": "Ticks by which market and stop-market fills are worse than their reference (F-SLP-01).",
@@ -8233,6 +8229,30 @@
         ],
         "title": "Uncounted",
         "type": "string"
+      },
+      "UnsizedBuyAndHold": {
+        "additionalProperties": false,
+        "description": "One lot held from the run's first mark to its last alone, `uncounted` saying why it has no\nsize at the run's volatility.",
+        "properties": {
+          "at_one_lot": {
+            "$ref": "#/components/schemas/BuyAndHoldFigures"
+          },
+          "kind": {
+            "const": "unsized",
+            "default": "unsized",
+            "title": "Kind",
+            "type": "string"
+          },
+          "uncounted": {
+            "$ref": "#/components/schemas/Uncounted"
+          }
+        },
+        "required": [
+          "at_one_lot",
+          "uncounted"
+        ],
+        "title": "UnsizedBuyAndHold",
+        "type": "object"
       },
       "UploadSource": {
         "additionalProperties": false,

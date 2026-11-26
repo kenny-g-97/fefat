@@ -3,17 +3,23 @@ import { z } from "zod"
 
 // A run's market exposure as `GET /v1/runs/{run}/market` answers it (step 5.23), and the answer
 // the specs give the seeded run, whose two trade dates count none: a second seeded run would read
-// the data the delete spec counts as read by none.
+// the data the delete spec counts as read by none. The schemas are strict, so that an answer of
+// another shape than the server's fails here before a spec compares a page with it.
 
-const days = z.looseObject({
+const why = z.enum([
+  "too_few_days",
+  "market_never_differed",
+  "run_never_differed",
+])
+const days = z.strictObject({
   days: z.number(),
   correlation: z.number().nullable(),
   beta_lots: z.number().nullable(),
-  uncounted: z.string().nullable(),
+  uncounted: why.nullable(),
 })
 /** How a run's days moved with the market's over some of them. */
 export type Days = z.infer<typeof days>
-const held = z.looseObject({
+const held = z.strictObject({
   lots: z.number(),
   net_pnl: z.string(),
   max_drawdown: z.string(),
@@ -22,27 +28,35 @@ const held = z.looseObject({
 })
 /** Buy and hold at one size. */
 export type Held = z.infer<typeof held>
-export const exposure = z.looseObject({
+const sized = z.strictObject({
+  kind: z.literal("sized"),
+  at_one_lot: held,
+  at_run_volatility: held,
+  curve: z.strictObject({
+    time: z.array(z.number()),
+    equity: z.array(z.number()),
+  }),
+})
+const unsized = z.strictObject({
+  kind: z.literal("unsized"),
+  at_one_lot: held,
+  uncounted: why,
+})
+export const exposure = z.strictObject({
   all_days: days.extend({
     explained_share: z.number().nullable(),
     alpha: z.number().nullable(),
   }),
   falling_days: days,
   rising_days: days,
-  buy_and_hold: z.looseObject({
-    at_one_lot: held,
-    at_run_volatility: held.nullable(),
-    uncounted: z.string().nullable(),
-    curve: z
-      .looseObject({ time: z.array(z.number()), equity: z.array(z.number()) })
-      .nullable(),
-  }),
+  buy_and_hold: z.discriminatedUnion("kind", [sized, unsized]),
 })
 /** A run's market exposure as the API answers it. */
 export type Exposure = z.infer<typeof exposure>
 const curve = z.looseObject({ capital: z.number(), time: z.array(z.number()) })
 
-/** The figures the specs give the seeded run, as a run of nineteen trade dates counts them. */
+/** The figures the specs give the seeded run, as a run of nineteen trade dates counts them: the
+ * explained share the correlation squared. */
 export const COUNTED = {
   all_days: {
     days: 19,
@@ -65,8 +79,9 @@ export const COUNTED = {
     uncounted: null,
   },
 } as const
-/** The lots of the given buy and hold at the run's volatility. */
-export const SIZED_LOTS = 0.4925
+/** The lots of the given buy and hold at the run's volatility, the beta over the correlation, as
+ * the server's figures relate them. */
+export const SIZED_LOTS = 0.7377
 
 /** A walk of `points` from `capital` to `capital` plus `made`, each move up to four ticks of ES
  * at $12.50 from a seeded sequence and drawn straight towards its end, so that the given curve
@@ -104,11 +119,11 @@ export async function countedAnswer(
   const { capital, time } = curve.parse(await equity.json())
   const oneLot = real.buy_and_hold.at_one_lot
   const made = Math.round(Number(oneLot.net_pnl) * SIZED_LOTS * 100) / 100
-  const walk = givenWalk(capital, made, time.length)
-  return {
+  return exposure.parse({
     ...real,
     ...COUNTED,
     buy_and_hold: {
+      kind: "sized",
       at_one_lot: oneLot,
       at_run_volatility: {
         lots: SIZED_LOTS,
@@ -117,10 +132,9 @@ export async function countedAnswer(
         longest_drawdown_days: oneLot.longest_drawdown_days,
         sharpe: oneLot.sharpe,
       },
-      uncounted: null,
-      curve: { time, equity: walk },
+      curve: { time, equity: givenWalk(capital, made, time.length) },
     },
-  }
+  })
 }
 
 /** Answer the run's market exposure with `given` in place of the server's. */

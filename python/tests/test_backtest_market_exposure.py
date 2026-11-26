@@ -2,15 +2,18 @@
 from its first decision to its last, without costs, has a correlation of 1 and a beta of one lot,
 and the beta's lots of the market's change plus the alpha is the run's days summed (Done means 3);
 buy and hold at one lot is that run's account, across a roll whose gap the market's day leaves
-out, its drawdown the engine's running drawdown on that walk; the same days a trade date later
-correlate near zero on a random walk; a run that never trades has no correlation; a roll's legs
-on their way leave the old contract's level in the marks; buy and hold at the run's volatility is
-one lot's figures at its lots; and fewer than three days leave nothing to count."""
+out, its drawdown the engine's running drawdown on that walk, and while the roll's legs are on
+their way too; the same days a trade date later correlate near zero on a random walk; a run that
+never trades has no correlation; the figures are the statistics module's on a run of trades; a
+roll's gap comes off at its instant; a crypto pair's lot is a coin; buy and hold at the run's
+volatility is one lot's figures at its lots; and fewer than three days leave nothing to count."""
 
+import os
 import random
 import statistics
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from types import MappingProxyType
 
 import polars as pl
@@ -20,16 +23,28 @@ import fefat as ff
 from fefat.backtest import RunConfig, run_config
 from fefat.backtest import requests as run_requests
 from fefat.backtest import run_inputs as run_documents
-from fefat.backtest.artifacts import read_artifact
-from fefat.backtest.exposure import Comoments, Uncounted, daily_moves, market_values
-from fefat.backtest.record import RollRecord
+from fefat.backtest.artifacts import read_artifact, write_run
+from fefat.backtest.comoments import Comoments, Uncounted
+from fefat.backtest.exposure import (
+    EngineRoll,
+    SizedBuyAndHold,
+    UnsizedBuyAndHold,
+    daily_moves,
+    engine_rolls,
+    market_values,
+)
 from fefat.backtest.schemas import EQUITY
-from fefat.market import fees
+from fefat.config import resolve_paths
+from fefat.market import fees, instruments
+from fefat.market.calendar import sessions_of
 from fefat.market.engine_units import InstrumentParameters, micro_units, money_text
 from fefat.market.fees import TABLES, FeeSchedule, FeeTable, FuturesFee
+from fefat.market.layout import Partition, YearMonth
 from fefat.market.roll_decisions import RollReason
+from fefat.market.store import Store
 from fefat.reference.settings import SlippageTicks
-from generated_minutes import FEBRUARY, write_minutes
+from fefat.reference.units import day_number
+from generated_minutes import FEBRUARY, MINUTE, MINUTES, write_minutes
 from notebook_runs import breakout_both_ways, store_with
 
 ACROSS_THE_ROLL = ("2026-02-03", "2026-02-20")
@@ -73,11 +88,16 @@ def without_costs(monkeypatch: pytest.MonkeyPatch) -> RunConfig:
     return RunConfig(fee_table=NO_FEES.name, slippage_ticks=SlippageTicks(market=0, stop=0))
 
 
+def decisions_of(run: ff.backtest.Run) -> pl.DataFrame:
+    """The run's valued decisions with the market's value at each, as `market_exposure` reads
+    them."""
+    equity = read_artifact(run.folder, "equity")
+    return market_values(equity, run.fills, engine_rolls(run), ES)
+
+
 def days_of(run: ff.backtest.Run) -> pl.DataFrame:
     """The run's and the market's days as `market_exposure` pairs them."""
-    equity = read_artifact(run.folder, "equity")
-    decisions = market_values(equity, run.fills, run.record.rolls, ES)
-    return daily_moves(decisions, micro_units(run.config.capital))
+    return daily_moves(decisions_of(run), micro_units(run.config.capital))
 
 
 def made_over_the_run(run: ff.backtest.Run) -> Decimal:
@@ -136,6 +156,44 @@ def test_buy_and_hold_at_one_lot_is_a_run_long_one_lot_without_costs(
     assert one_lot.lots == 1
 
 
+def without_the_new_fronts_first_minutes(store: Store) -> int:
+    """The generated February store with ESM2026's first five minutes of 02-19's session left out,
+    so that the decision at their close finds the roll's legs still on their way; the session's
+    open, in nanoseconds."""
+    paths = resolve_paths(os.environ)
+    sessions = sessions_of(instruments.get("ES").session_calendar(), paths.cache_dir)
+    opens = sessions.between(date(2026, 2, 19), date(2026, 2, 19)).item(0, "open")
+    partition = Partition(dataset=MINUTES, contract="ESM2026", key=YearMonth.parse("2026-02"))
+    rows = store.scan_partition(partition).collect()
+    store.write_partition(
+        partition, rows.filter(~pl.col("ts_open").is_between(opens, opens + 5 * MINUTE, "left"))
+    )
+    return opens
+
+
+def test_while_a_rolls_legs_are_on_their_way_the_market_keeps_the_old_contracts_level(
+    without_costs: RunConfig,
+) -> None:
+    # The engine review: with the new front silent for the session's first bucket, its decision
+    # finds the legs on their way and values the held lot at the old contract's price, which the
+    # market keeps; at every decision the market is what the lot held without costs is worth.
+    opens = without_the_new_fronts_first_minutes(write_minutes(FEBRUARY))
+    held = ff.backtest.run(HELD_LONG, *ACROSS_THE_ROLL, without_costs)
+    flat = ff.backtest.run(NEVER, *ACROSS_THE_ROLL, without_costs)
+
+    held_market, flat_market = decisions_of(held), decisions_of(flat)
+
+    (roll,) = engine_rolls(held)
+    assert roll.session_open == opens
+    legs = held.fills.filter((pl.col("ts") >= opens) & (pl.col("contract") == roll.rolled_from))
+    waiting = held_market.filter(pl.col("ts").is_between(opens, legs.item(0, "ts"), "left"))
+    assert waiting.height == 1
+    capital = micro_units(held.config.capital)
+    moved = held_market.select(pl.col("market") - pl.col("market").first() + capital)
+    assert moved.to_series().to_list() == held_market.get_column("equity").to_list()
+    assert flat_market.get_column("market").to_list() == held_market["market"].to_list()
+
+
 def test_the_same_days_a_trade_date_later_correlate_near_zero_on_a_random_walk() -> None:
     draws = random.Random(523)
     market = [draws.randint(-40, 40) * 12_500_000 for _ in range(1_001)]
@@ -146,6 +204,8 @@ def test_the_same_days_a_trade_date_later_correlate_near_zero_on_a_random_walk()
     assert (alike.correlation, alike.beta_lots) == (1, 1)
     assert later.correlation is not None
     assert abs(later.correlation) < 0.1
+    with pytest.raises(ValueError, match="Expected days whose correlation counts"):
+        Comoments.of(market[:2], market[:2]).volatility_lots()
 
 
 def test_a_run_that_never_trades_has_no_correlation() -> None:
@@ -159,15 +219,14 @@ def test_a_run_that_never_trades_has_no_correlation() -> None:
     assert every.uncounted == Uncounted.RUN_NEVER_DIFFERED
     assert (every.beta_lots, every.alpha) == (0, 0)
     held = exposure.buy_and_hold
+    assert isinstance(held, UnsizedBuyAndHold)
     assert held.at_one_lot.net_pnl != 0
-    assert (held.at_run_volatility, held.curve) == (None, None)
     assert held.uncounted == Uncounted.RUN_NEVER_DIFFERED
 
 
-def test_buy_and_hold_at_the_runs_volatility_is_one_lots_figures_at_its_lots() -> None:
-    # On a run of trades and costs: its days are its metrics', the beta's lots of the market's
-    # change plus the alpha is its days summed, and the days the market fell, rose, or stood
-    # still are all its days.
+def test_the_figures_are_the_statistics_modules_on_a_run_of_trades() -> None:
+    # The step review: the correlation, the beta, the explained share, and each side's are held
+    # to Python's own statistics, on the days `market_exposure` pairs.
     write_minutes(FEBRUARY)
     run = ff.backtest.run(breakout_both_ways(), *ACROSS_THE_ROLL)
 
@@ -175,9 +234,34 @@ def test_buy_and_hold_at_the_runs_volatility_is_one_lots_figures_at_its_lots() -
 
     days = days_of(run)
     assert days.get_column("run").to_list() == run.equity("1d")["pnl"].to_list()
+    pairs = [
+        (exposure.all_days, days),
+        (exposure.falling_days, days.filter(pl.col("market") < 0)),
+        (exposure.rising_days, days.filter(pl.col("market") > 0)),
+    ]
+    for side, its_days in pairs:
+        market, made = its_days["market"].to_list(), its_days["run"].to_list()
+        assert side.days == len(market) >= 3
+        assert side.correlation == pytest.approx(statistics.correlation(market, made))
+        slope = statistics.covariance(market, made) / statistics.variance(market)
+        assert side.beta_lots == pytest.approx(slope)
+    every = exposure.all_days
+    assert every.correlation is not None
+    assert every.explained_share == pytest.approx(every.correlation**2)
+
+
+def test_buy_and_hold_at_the_runs_volatility_is_one_lots_figures_at_its_lots() -> None:
+    # On a run of trades and costs: the beta's lots of the market's change plus the alpha is its
+    # days summed, and the days the market fell, rose, or stood still are all its days.
+    write_minutes(FEBRUARY)
+    run = ff.backtest.run(breakout_both_ways(), *ACROSS_THE_ROLL)
+
+    exposure = ff.backtest.market_exposure(run)
+
+    days = days_of(run)
     market, made = days.get_column("market").to_list(), days.get_column("run").to_list()
     every, held = exposure.all_days, exposure.buy_and_hold
-    assert every.correlation is not None
+    assert isinstance(held, SizedBuyAndHold)
     assert every.beta_lots is not None
     assert every.alpha is not None
     market_change = float(held.at_one_lot.net_pnl)
@@ -185,7 +269,6 @@ def test_buy_and_hold_at_the_runs_volatility_is_one_lots_figures_at_its_lots() -
     still = sum(1 for moved in market if moved == 0)
     assert exposure.falling_days.days + exposure.rising_days.days + still == every.days
     sized, one_lot = held.at_run_volatility, held.at_one_lot
-    assert sized is not None
     assert sized.lots == pytest.approx(statistics.stdev(made) / statistics.stdev(market))
     for figure in ("net_pnl", "max_drawdown"):
         exact = getattr(one_lot, figure) * Decimal(sized.lots)
@@ -194,7 +277,6 @@ def test_buy_and_hold_at_the_runs_volatility_is_one_lots_figures_at_its_lots() -
         one_lot.longest_drawdown_days,
         one_lot.sharpe,
     )
-    assert held.curve is not None
     curve = ff.backtest.equity_curve(run)
     assert held.curve.time == tuple((curve.get_column("ts") // 10**9).to_list())
     ends = float(run.config.capital + sized.net_pnl)
@@ -215,65 +297,148 @@ def test_fewer_than_three_days_leave_nothing_to_count() -> None:
     for side in (exposure.falling_days, exposure.rising_days):
         assert (side.correlation, side.uncounted) == (None, Uncounted.TOO_FEW_DAYS)
     held = exposure.buy_and_hold
+    assert isinstance(held, UnsizedBuyAndHold)
     assert held.at_one_lot.net_pnl == Decimal(money_text(sum(days_of(run)["market"])))
-    assert (held.at_run_volatility, held.uncounted) == (None, Uncounted.TOO_FEW_DAYS)
+    assert held.uncounted == Uncounted.TOO_FEW_DAYS
+    with pytest.raises(ValueError, match="Expected at least 5 points of the curve, got 4"):
+        ff.backtest.market_exposure(run, max_points=4)
 
 
-MARCH_9_ROLL = RollRecord(
-    trade_date=date(2026, 3, 9),
+def test_a_run_whose_account_no_decision_valued_at_a_mark_is_refused(tmp_path: Path) -> None:
+    # The step review: the refusal 02 section 7 states, of a folder whose marks are all gone.
+    store_with("ohlcv-1m")
+    run = ff.backtest.run(NEVER, "2026-03-05", "2026-03-09")
+    unmarked = read_artifact(run.folder, "equity").with_columns(mark=pl.lit(None, pl.Int64))
+    folder = tmp_path / "runs" / run.hash
+    write_run(folder, {"equity": unmarked, "fills": run.fills}, run.record)
+
+    with pytest.raises(ValueError, match=f"Expected a mark at a decision of run {run.hash[:12]}"):
+        ff.backtest.market_exposure(ff.backtest.Run.open(folder))
+
+
+SESSION_OPEN = 300
+"""The instant of the session the hand-made roll serves from."""
+MARCH_9_ROLL = EngineRoll(
+    trade_date=day_number(date(2026, 3, 9)),
+    session_open=SESSION_OPEN,
     rolled_from="ESH2026",
     contract="ESM2026",
-    gap=Decimal(20),
+    gap=20_000_000_000,
     reason=RollReason.VOLUME,
 )
+MARCH_6, MARCH_9 = date(2026, 3, 6), date(2026, 3, 9)
 
 
-def account(position: int, marks: tuple[str, str, str]) -> pl.DataFrame:
-    """Three decisions, the first before the roll of 03-09 and two after it, holding `position`
-    after the first, at `marks`."""
+def account(position: int, marks: tuple[str, str, str, str]) -> pl.DataFrame:
+    """Four decisions: one before the roll; one at the roll's instant, which a calendar without a
+    break between sessions dates to the trade date before, and which follows the roll
+    (F-CLK-02); and two after it; holding `position` after the first, at `marks`."""
     units = [int(Decimal(mark) * 10**9) for mark in marks]
     return pl.DataFrame(
         {
-            "ts": [100, 200, 400],
-            "trade_date": [date(2026, 3, 6), date(2026, 3, 9), date(2026, 3, 9)],
-            "cash": [50_000_000_000] * 3,
-            "position": [position] * 3,
+            "ts": [100, SESSION_OPEN, 400, 600],
+            "trade_date": [date(2026, 3, 6), date(2026, 3, 6), date(2026, 3, 9), date(2026, 3, 9)],
+            "cash": [50_000_000_000] * 4,
+            "position": [position] * 4,
             "mark": units,
-            "equity": [50_000_000_000] * 3,
+            "equity": [50_000_000_000] * 4,
         },
         schema=EQUITY,
     )
 
 
-def filled(*fills: tuple[int, str]) -> pl.DataFrame:
-    """Fills at their instants on their contracts, all on 03-09, after the roll."""
+def filled(*fills: tuple[int, str, date]) -> pl.DataFrame:
+    """Fills at their instants on their contracts, with the trade dates the engine stamps
+    them with."""
     return pl.DataFrame(
         {
-            "ts": [ts for ts, _ in fills],
-            "contract": [contract for _, contract in fills],
-            "trade_date": [date(2026, 3, 9)] * len(fills),
+            "ts": [ts for ts, _, _ in fills],
+            "contract": [contract for _, contract, _ in fills],
+            "trade_date": [trade_date for _, _, trade_date in fills],
         },
         schema={"ts": pl.Int64, "contract": pl.String, "trade_date": pl.Date},
     )
 
 
 @pytest.mark.parametrize(
-    ("position", "marks", "fills"),
+    ("position", "marks", "fills", "levels"),
     [
-        # Flat at the roll: the mark moved by the gap at once (F-ROL-03).
-        (0, ("5000", "5021", "5022"), filled()),
+        # Flat at the roll: the mark moved by the gap at once (F-ROL-03), at its instant too.
+        (0, ("5000", "5021", "5021", "5022"), filled(), ("5000", "5001", "5001", "5002")),
         # An entry on the new front after the roll, which no leg was waiting for.
-        (0, ("5000", "5021", "5022"), filled((300, "ESM2026"))),
-        # Held: valued at the old contract's price until the close leg filled at 300.
-        (1, ("5000", "5001", "5022"), filled((300, "ESH2026"), (300, "ESM2026"))),
-        # Held, the legs still on their way when the run ended.
-        (1, ("5000", "5001", "5002"), filled()),
+        (
+            0,
+            ("5000", "5021", "5021", "5022"),
+            filled((500, "ESM2026", MARCH_9)),
+            ("5000", "5001", "5001", "5002"),
+        ),
+        # Held: valued at the old contract's price until the close leg filled at 500.
+        (
+            1,
+            ("5000", "5001", "5001", "5022"),
+            filled((500, "ESH2026", MARCH_9), (500, "ESM2026", MARCH_9)),
+            ("5000", "5001", "5001", "5002"),
+        ),
+        # Held, the legs filled on a record at the roll's instant, before its decision.
+        (
+            1,
+            ("5000", "5021", "5021", "5022"),
+            filled((SESSION_OPEN, "ESH2026", MARCH_9), (SESSION_OPEN, "ESM2026", MARCH_9)),
+            ("5000", "5001", "5001", "5002"),
+        ),
+        # Held, the legs still on their way when the run ended, the mark frozen with them.
+        (1, ("5000", "5001", "5001", "5001"), filled(), ("5000", "5001", "5001", "5001")),
+        # The engine review: an entry on the old front's bar closing at the roll's instant,
+        # stamped with the trade date before, comes before the roll (F-ROL-01), and the
+        # close leg after it ends the legs' way.
+        (
+            1,
+            ("5000", "5001", "5021", "5022"),
+            filled(
+                (SESSION_OPEN, "ESH2026", MARCH_6),
+                (350, "ESH2026", MARCH_9),
+                (350, "ESM2026", MARCH_9),
+            ),
+            ("5000", "5001", "5001", "5002"),
+        ),
+        # The same entry, its legs never filling.
+        (
+            1,
+            ("5000", "5001", "5001", "5001"),
+            filled((SESSION_OPEN, "ESH2026", MARCH_6)),
+            ("5000", "5001", "5001", "5001"),
+        ),
     ],
 )
 def test_a_rolls_gap_is_taken_off_the_marks_the_engine_moved_by_it(
-    position: int, marks: tuple[str, str, str], fills: pl.DataFrame
+    position: int,
+    marks: tuple[str, str, str, str],
+    fills: pl.DataFrame,
+    levels: tuple[str, str, str, str],
 ) -> None:
     decisions = market_values(account(position, marks), fills, (MARCH_9_ROLL,), ES)
 
-    worth = [250_000_000_000, 250_050_000_000, 250_100_000_000]
+    worth = [int(Decimal(level) * 50) * 10**6 for level in levels]
     assert decisions.get_column("market").to_list() == worth
+
+
+def test_a_crypto_pairs_lot_is_a_coin() -> None:
+    # The engine review: the market is one unit of what a run's sizes count, a coin of BTC, not
+    # one of the dataset's steps of 0.001.
+    bitcoin = InstrumentParameters(
+        tick=100_000_000, money_per_point=1_000, lot_step=Decimal("0.001")
+    )
+    marked = pl.DataFrame(
+        {
+            "ts": [int(datetime(2026, 3, 7, 1, tzinfo=UTC).timestamp()) * 10**9],
+            "trade_date": [date(2026, 3, 7)],
+            "cash": [50_000_000_000],
+            "position": [0],
+            "mark": [60_000_100_000_000],
+            "equity": [50_000_000_000],
+        }
+    ).cast(EQUITY)
+
+    decisions = market_values(marked, filled(), (), bitcoin)
+
+    assert decisions.get_column("market").to_list() == [60_000_100_000]

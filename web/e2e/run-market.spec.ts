@@ -95,7 +95,7 @@ function sidesText(falling: Days, rising: Days): string {
     const reason = side.uncounted === null ? "" : `, ${lower(why(side))}`
     return `Over the ${countText(side.days, "day")} the market ${moved}: correlation ${correlation}, beta ${beta}${reason}.`
   }
-  return `${one(falling, "fell")} ${one(rising, "rose")}`
+  return `${one(falling, "fell")}\n${one(rising, "rose")}`
 }
 
 /** What a column of the table holds, the run's own figures or buy and hold's at one size. */
@@ -235,6 +235,11 @@ test("a run's market exposure is the API's, beside buy and hold at both sizes", 
     sharpe: metrics.daily.sharpe,
   }
   const held = given.buy_and_hold
+  if (held.kind !== "sized") {
+    throw new Error(
+      "Expected the given buy and hold sized at the run's volatility."
+    )
+  }
   const columns = [run, held.at_one_lot, held.at_run_volatility].map((each) =>
     columnOf(each, currency)
   )
@@ -250,7 +255,7 @@ test("a run's market exposure is the API's, beside buy and hold at both sizes", 
     ).toHaveText(columns.map((column) => column[at]))
   }
   await expect(page.getByTestId("buy-and-hold-note")).toHaveText(
-    `${HELD} At the run's volatility it holds the lots whose days move as much as the run's, which leaves its Sharpe and its spell under a peak those of one lot.`
+    `${HELD} At the run's volatility it holds the lots whose days move as much as the run's; its Sharpe and its spell under a peak stay one lot's.`
   )
   const robustness = await page
     .getByRole("region", { name: "Robustness" })
@@ -283,10 +288,13 @@ test("buy and hold is the equity chart's second line, named in its legend and re
   const { currency } = await answersOf(page, key)
   const given = await countedAnswer(page, key)
   await withExposure(page, key, given)
-  const { at_run_volatility: sized, curve: walk } = given.buy_and_hold
-  if (sized === null || walk === null) {
-    throw new Error("Expected the given buy and hold at the run's volatility.")
+  const held = given.buy_and_hold
+  if (held.kind !== "sized") {
+    throw new Error(
+      "Expected the given buy and hold sized at the run's volatility."
+    )
   }
+  const walk = held.curve
   const last = walk.equity.length - 1
 
   await page.goto(`/runs/run?key=${key}`)
@@ -326,7 +334,7 @@ test("a run of two days counts no exposure, and its chart draws no second line",
   const key = await theSeededKey(page)
   const { answer, currency, metrics } = await answersOf(page, key)
   expect(answer.all_days.uncounted).toBe("too_few_days")
-  expect(answer.buy_and_hold.curve).toBeNull()
+  expect(answer.buy_and_hold.kind).toBe("unsized")
 
   await page.goto(`/runs/run?key=${key}`)
 
@@ -360,13 +368,17 @@ test("a run of two days counts no exposure, and its chart draws no second line",
   )
   await expect(page.getByTestId("equity-buy-and-hold")).toHaveCount(0)
   expect(await pixelsNear(page, await chartSecond(page))).toBeLessThan(20)
+  // The ui-verifier's note: the card as a run of two days shows it, for the pull request.
+  await screenshot(page, "run-market-uncounted")
   expect(errors).toEqual([])
 })
 
-test("while the market exposure is read, its card keeps its room and the equity draws", async ({
+test("while the market exposure is read, its card keeps its room and the chart waits", async ({
   loggedIn: page,
 }) => {
-  // The card's figures arrive after the cards above it, and the equity card under it stays put.
+  // The card's figures arrive after the cards above it, and the equity card under it stays put;
+  // its chart waits for the answer and draws once, so that buy and hold never rescales it (the
+  // design review).
   const key = await theSeededKey(page)
   const given = await countedAnswer(page, key)
   let release = () => {}
@@ -383,17 +395,19 @@ test("while the market exposure is read, its card keeps its room and the equity 
 
   const equity = page.getByRole("region", { name: "Equity" })
   await expect(page.getByTestId("market-reading")).toBeVisible()
-  await expect(equity.locator("canvas").first()).toBeVisible()
+  await expect(page.getByTestId("equity-waiting")).toBeVisible()
+  await expect(equity.locator("canvas")).toHaveCount(0)
   await expect(page.getByTestId("equity-legend-buy-and-hold")).toHaveCount(0)
   const before = await equity.boundingBox()
   release()
   await expect(page.getByTestId("market-figures")).toBeVisible()
+  await expect(equity.locator("canvas").first()).toBeVisible()
   await expect(page.getByTestId("equity-legend-buy-and-hold")).toBeVisible()
   const after = await equity.boundingBox()
   if (before === null || after === null) {
     throw new Error("Expected the equity card drawn, got no box.")
   }
-  expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(24)
+  expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(4)
 })
 
 test("a refused market exposure says why in its card alone", async ({

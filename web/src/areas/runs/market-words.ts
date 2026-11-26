@@ -31,13 +31,14 @@ export function exposureDetail(
   return WHY[uncounted]
 }
 
-/** The line under the stats: the correlation and the beta over the days the market fell, then
- * over those it rose, each None with why where nothing can be counted. */
+/** The two lines under the stats: the correlation and the beta over the days the market fell,
+ * then on a line of its own over those it rose, so that the two read one above the other, each
+ * None with why where nothing can be counted. */
 export function sidesWords(
   falling: DaysExposure,
   rising: DaysExposure
 ): string {
-  return `${sideWords(falling, "fell")} ${sideWords(rising, "rose")}`
+  return `${sideWords(falling, "fell")}\n${sideWords(rising, "rose")}`
 }
 
 function sideWords(side: DaysExposure, moved: "fell" | "rose"): string {
@@ -69,7 +70,7 @@ export function buyAndHoldNote(uncounted: Uncounted | null): string {
   const held =
     "Buy and hold buys at the run's first mark and holds to its last, paying no fee, slippage, or funding."
   if (uncounted === null) {
-    return `${held} At the run's volatility it holds the lots whose days move as much as the run's, which leaves its Sharpe and its spell under a peak those of one lot.`
+    return `${held} At the run's volatility it holds the lots whose days move as much as the run's; its Sharpe and its spell under a peak stay one lot's.`
   }
   return `${held} At the run's volatility it reads None: ${inSentence(WHY[uncounted])}.`
 }

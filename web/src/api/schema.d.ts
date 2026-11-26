@@ -1570,17 +1570,6 @@ export interface components {
             kind: "business-days-before-the-25th";
         };
         /**
-         * BuyAndHold
-         * @description One lot held from the run's first mark to its last, and as many lots as give its days the
-         *     run's volatility, none with its curve where `uncounted` says why.
-         */
-        BuyAndHold: {
-            at_one_lot: components["schemas"]["BuyAndHoldFigures"];
-            at_run_volatility: components["schemas"]["BuyAndHoldFigures"] | null;
-            curve: components["schemas"]["BuyAndHoldCurve"] | null;
-            uncounted: components["schemas"]["Uncounted"] | null;
-        };
-        /**
          * BuyAndHoldCurve
          * @description Buy and hold's equity at the run's volatility at each decision the run's equity curve keeps
          *     (`equity_curve`), one entry a decision: its close in whole seconds since the epoch, as the
@@ -2829,7 +2818,8 @@ export interface components {
          */
         MarketExposure: {
             all_days: components["schemas"]["Exposure"];
-            buy_and_hold: components["schemas"]["BuyAndHold"];
+            /** Buy And Hold */
+            buy_and_hold: components["schemas"]["SizedBuyAndHold"] | components["schemas"]["UnsizedBuyAndHold"];
             falling_days: components["schemas"]["DaysExposure"];
             rising_days: components["schemas"]["DaysExposure"];
         };
@@ -4145,6 +4135,21 @@ export interface components {
             lot: string;
         };
         /**
+         * SizedBuyAndHold
+         * @description One lot held from the run's first mark to its last, and as many lots as give its days the
+         *     run's volatility, with that size's curve.
+         */
+        SizedBuyAndHold: {
+            at_one_lot: components["schemas"]["BuyAndHoldFigures"];
+            at_run_volatility: components["schemas"]["BuyAndHoldFigures"];
+            curve: components["schemas"]["BuyAndHoldCurve"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "sized";
+        };
+        /**
          * SlippageTicks
          * @description Ticks by which market and stop-market fills are worse than their reference (F-SLP-01).
          */
@@ -4583,6 +4588,20 @@ export interface components {
          * @enum {string}
          */
         Uncounted: "too_few_days" | "market_never_differed" | "run_never_differed";
+        /**
+         * UnsizedBuyAndHold
+         * @description One lot held from the run's first mark to its last alone, `uncounted` saying why it has no
+         *     size at the run's volatility.
+         */
+        UnsizedBuyAndHold: {
+            at_one_lot: components["schemas"]["BuyAndHoldFigures"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "unsized";
+            uncounted: components["schemas"]["Uncounted"];
+        };
         /**
          * UploadSource
          * @description A file kept as an upload, named by its id.

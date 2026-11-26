@@ -50,8 +50,9 @@ describe("a market exposure's words", () => {
       uncounted: "too_few_days",
     }
 
+    // The design review: each side on a line of its own, falling above rising.
     expect(sidesWords(COUNTED, rising)).toBe(
-      "Over the 9 days the market fell: correlation 0.81, beta 0.90 lots. Over the 2 days the market rose: correlation None, beta None, needs 3 days."
+      "Over the 9 days the market fell: correlation 0.81, beta 0.90 lots.\nOver the 2 days the market rose: correlation None, beta None, needs 3 days."
     )
     const still: DaysExposure = { ...rising, days: 0 }
     const flat: DaysExposure = {
@@ -61,7 +62,7 @@ describe("a market exposure's words", () => {
       uncounted: "run_never_differed",
     }
     expect(sidesWords(flat, still)).toBe(
-      "Over the 4 days the market fell: correlation None, beta 0.00 lots, the run's days never differed. The market rose on no day."
+      "Over the 4 days the market fell: correlation None, beta 0.00 lots, the run's days never differed.\nThe market rose on no day."
     )
   })
 
@@ -69,7 +70,7 @@ describe("a market exposure's words", () => {
     expect(buyAndHoldLabel(0.4925)).toBe("Buy and hold, 0.49 lots")
     expect(lotsWords(1.25)).toBe("1.25 lots")
     expect(buyAndHoldNote(null)).toBe(
-      "Buy and hold buys at the run's first mark and holds to its last, paying no fee, slippage, or funding. At the run's volatility it holds the lots whose days move as much as the run's, which leaves its Sharpe and its spell under a peak those of one lot."
+      "Buy and hold buys at the run's first mark and holds to its last, paying no fee, slippage, or funding. At the run's volatility it holds the lots whose days move as much as the run's; its Sharpe and its spell under a peak stay one lot's."
     )
     expect(buyAndHoldNote("too_few_days")).toBe(
       "Buy and hold buys at the run's first mark and holds to its last, paying no fee, slippage, or funding. At the run's volatility it reads None: needs 3 days."

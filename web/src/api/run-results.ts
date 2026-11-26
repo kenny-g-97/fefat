@@ -92,12 +92,14 @@ export type MarketExposure = Awaited<ReturnType<typeof readMarketExposure>>
 export type DaysExposure = MarketExposure["falling_days"]
 /** Why a figure of a market exposure reads None. */
 export type Uncounted = NonNullable<DaysExposure["uncounted"]>
-/** Buy and hold at one lot and at the run's volatility, with its curve. */
+/** Buy and hold at one lot and, where the volatility counts, at the run's, told apart by `kind`. */
 export type BuyAndHold = MarketExposure["buy_and_hold"]
+/** Buy and hold at one lot and at the run's volatility, with that size's curve. */
+export type SizedBuyAndHold = Extract<BuyAndHold, { kind: "sized" }>
 /** Buy and hold's figures at one size. */
 export type BuyAndHoldFigures = BuyAndHold["at_one_lot"]
 /** Buy and hold's equity at the run's volatility, at the equity curve's decisions. */
-export type BuyAndHoldCurve = NonNullable<BuyAndHold["curve"]>
+export type BuyAndHoldCurve = SizedBuyAndHold["curve"]
 
 /** A saved run's metrics, its currency, its net P&L as a share of its capital, its fidelity
  * eras, and its warnings. */

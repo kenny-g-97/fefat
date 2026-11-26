@@ -173,9 +173,16 @@ def test_the_market_exposure_is_the_sdks_for_the_same_run(
     assert MarketExposure.model_validate(body) == exposure
     assert body["all_days"]["correlation"] is not None
     held = body["buy_and_hold"]
+    assert held["kind"] == "sized"
     assert held["at_one_lot"]["net_pnl"] == str(exposure.buy_and_hold.at_one_lot.net_pnl)
     equity = client.get(f"/v1/runs/{run.hash}/equity").json()
     assert held["curve"]["time"] == equity["time"]
+    # The step review: max_points reaches the SDK, and buy and hold's curve keeps /equity's points.
+    fewest = client.get(f"/v1/runs/{run.hash}/market", params={"max_points": 5}).json()
+    assert MarketExposure.model_validate(fewest) == ff.backtest.market_exposure(run, 5)
+    kept = client.get(f"/v1/runs/{run.hash}/equity", params={"max_points": 5}).json()
+    assert fewest["buy_and_hold"]["curve"]["time"] == kept["time"]
+    assert len(kept["time"]) <= 5 < len(equity["time"])
 
 
 def test_the_distributions_are_the_sdks(client: TestClient, run: Run) -> None:

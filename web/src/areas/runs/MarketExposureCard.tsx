@@ -40,7 +40,7 @@ export function MarketExposureCard({
       description="This run's days against one lot of the instrument it trades, held long, each roll's gap taken off"
     >
       {market.status === "pending" ? (
-        <div data-testid="market-reading" className="min-h-120" />
+        <div data-testid="market-reading" className="min-h-[30.375rem]" />
       ) : (
         <ResultBody query={market}>
           {(exposure) => (
@@ -52,7 +52,7 @@ export function MarketExposureCard({
                 />
                 <p
                   data-testid="market-sides"
-                  className="text-foreground-secondary"
+                  className="whitespace-pre-line text-foreground-secondary"
                 >
                   {sidesWords(exposure.falling_days, exposure.rising_days)}
                 </p>

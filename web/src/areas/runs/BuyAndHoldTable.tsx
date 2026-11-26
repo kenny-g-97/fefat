@@ -63,10 +63,13 @@ const LOOKS = {
   positive: "text-positive",
   negative: "text-negative",
 } as const
-/** A figure column, 14 rem wide, and the last, widened by the card's edge padding, so that the
- * columns stand still from one run to the next. */
-const COLUMN = "w-56 px-3 text-right"
-const LAST_COLUMN = "w-[14.75rem] pr-6 pl-3 text-right"
+/** A figure column, 12 rem wide as By side's, and the last, widened by the card's edge padding,
+ * so that the columns stand still from one run to the next. */
+const COLUMN = "w-48 px-3 text-right"
+const LAST_COLUMN = "w-[12.75rem] pr-6 pl-3 text-right"
+/** A head of the header's lower row, or one spanning both, set on one line 12 px above the
+ * header's hairline, as a head centred in its 40 px row stands. */
+const LOWER_HEAD = "pb-3 align-bottom"
 
 /** The run beside buy and hold at one lot and at the run's volatility (web/DESIGN.md, Patterns,
  * Market exposure card), each figure the API's, the run's as its metrics hold them, buy and hold's
@@ -77,7 +80,7 @@ export function BuyAndHoldTable({
   metrics,
   currency,
 }: Readonly<{ held: BuyAndHold; metrics: RunMetrics; currency: Currency }>) {
-  const sized = held.at_run_volatility
+  const sized = held.kind === "sized" ? held.at_run_volatility : null
   const columns = [
     { column: "run", figures: runFigures(metrics) },
     { column: "one-lot", figures: held.at_one_lot },
@@ -89,10 +92,10 @@ export function BuyAndHoldTable({
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead rowSpan={2} className="pr-3 pl-6 align-bottom">
+              <TableHead rowSpan={2} className={cn("pr-3 pl-6", LOWER_HEAD)}>
                 Figure
               </TableHead>
-              <TableHead rowSpan={2} className={cn(COLUMN, "align-bottom")}>
+              <TableHead rowSpan={2} className={cn(COLUMN, LOWER_HEAD)}>
                 This run
               </TableHead>
               <TableHead
@@ -104,10 +107,10 @@ export function BuyAndHoldTable({
               </TableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent">
-              <TableHead scope="col" className={COLUMN}>
+              <TableHead scope="col" className={cn(COLUMN, LOWER_HEAD)}>
                 1 lot
               </TableHead>
-              <TableHead scope="col" className={LAST_COLUMN}>
+              <TableHead scope="col" className={cn(LAST_COLUMN, LOWER_HEAD)}>
                 {sized === null ? "Run's volatility" : lotsWords(sized.lots)}
               </TableHead>
             </TableRow>
@@ -143,7 +146,7 @@ export function BuyAndHoldTable({
         data-testid="buy-and-hold-note"
         className="text-xs text-muted-foreground"
       >
-        {buyAndHoldNote(held.uncounted)}
+        {buyAndHoldNote(held.kind === "sized" ? null : held.uncounted)}
       </p>
     </div>
   )
