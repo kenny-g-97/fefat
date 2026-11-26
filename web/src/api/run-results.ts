@@ -58,8 +58,16 @@ export type Histogram = TradeDistributions["pnl"]
 export type MonteCarloAnswer = Awaited<ReturnType<typeof readMonteCarlo>>
 /** Paths of a saved run's trades drawn again with replacement (step 5.20). */
 export type MonteCarlo = Extract<MonteCarloAnswer, { kind: "resampled" }>
-/** The paths' equity at five percentiles after each count of trades, in columns. */
+/** The paths' equity at five percentiles after each count of trades, and the run's own, in
+ * columns. */
 export type EquityFan = MonteCarlo["fan"]
+/** The paths' figures at each whole percent of them, each beside the run's own (step 5.21). */
+export type FiguresByPercent = MonteCarlo["by_percent"]
+/** A figure of the paths that a chart draws against the percent of them. */
+export type PathFigure = keyof FiguresByPercent
+/** One figure of the paths at each whole percent of them from 0 to 100, none where a path has
+ * none, as one that drew no losing trade has no profit factor, and the run's own. */
+export type FigureAtPercents = FiguresByPercent[PathFigure]
 
 /** A saved run's metrics, its currency, its net P&L as a share of its capital, its fidelity
  * eras, and its warnings. */

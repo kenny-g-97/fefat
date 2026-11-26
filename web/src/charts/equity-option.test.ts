@@ -4,6 +4,11 @@ import { contrast, type ThemeTokens } from "./chart-look"
 import { painted, paletteColour } from "./design-palette.test-support"
 import { EQUITY_FILL, equityOption } from "./equity-option"
 
+/** The colour of the dashed line a series carries, as the equity carries the capital's. */
+const markColour = z.object({
+  markLine: z.object({ lineStyle: z.object({ color: z.string() }) }),
+})
+
 /** An axis whose labels a function writes, as ECharts calls it with each tick's value. */
 const labelledAxis = z.object({
   axisLabel: z.object({
@@ -20,6 +25,8 @@ const TOKENS: ThemeTokens = {
   input: "#666666",
   accent: "#1a1a1a",
   brand: "#fc734d",
+  brandSecondary: "#a855f7",
+  foregroundSecondary: "#888888",
   positive: "#10b981",
   negative: "#ff4d6d",
 }
@@ -112,7 +119,12 @@ describe("the equity chart's options", () => {
     expect(equity).not.toHaveProperty("itemStyle")
     // The fill takes the map's colour on either side alone: a colour of its own would override it.
     expect(equity.areaStyle).toEqual({ origin: 50_000, opacity: EQUITY_FILL })
-    expect(equity).toMatchObject({ markLine: { data: [{ yAxis: 50_000 }] } })
+    expect(equity).toMatchObject({
+      markLine: {
+        data: [{ yAxis: 50_000 }],
+        lineStyle: { color: TOKENS.foregroundSecondary, type: "dashed" },
+      },
+    })
     expect(drawdown).toMatchObject({ lineStyle: { color: TOKENS.input } })
   })
 
@@ -133,29 +145,51 @@ describe("the equity chart's options", () => {
   it("draws a run that never leaves its capital in the capital line's grey", () => {
     // A line lying on the capital splits along its width where the colours meet, so a run that
     // never traded would read as green over red from end to end.
-    const flat = { ...CURVE, equity: [50_000, 50_000], drawdown: [0, 0] }
+    const flat = equityOption(
+      { ...CURVE, equity: [50_000, 50_000], drawdown: [0, 0] },
+      "USD",
+      TOKENS
+    )
+    const [line] = Array.isArray(flat.series) ? flat.series : []
+    const grey = markColour.parse(line).markLine.lineStyle.color
 
-    expect(equityOption(flat, "USD", TOKENS).visualMap).toMatchObject({
+    expect(grey).toBe(TOKENS.foregroundSecondary)
+    expect(flat.visualMap).toMatchObject({
       pieces: [
-        { lt: 50_000, color: TOKENS.input },
-        { gte: 50_000, lte: 50_001, color: TOKENS.input },
-        { gt: 50_001, color: TOKENS.input },
+        { lt: 50_000, color: grey },
+        { gte: 50_000, lte: 50_001, color: grey },
+        { gt: 50_001, color: grey },
       ],
     })
   })
 
   it.each(["dark", "light"] as const)(
-    "keeps each sign colour at 3 : 1 against the card and its own fill in the %s theme",
+    "keeps each sign colour and the capital's line at 3 : 1 against the card and the fills in the %s theme",
     (theme) => {
-      // WCAG 1.4.11: the line keeps 3 : 1 on either side of it, the card and the fill it bounds.
+      // WCAG 1.4.11: the line keeps 3 : 1 on either side of it, the card and the fill it bounds,
+      // and the dashed capital, which both fills meet, keeps it against each (step 5.21).
       const token = (name: string) => paletteColour(name, theme)
       const card = token("--card")
+      const themed: ThemeTokens = {
+        ...TOKENS,
+        foregroundSecondary: token("--foreground-secondary"),
+      }
+      const drawn = equityOption(CURVE, "USD", themed).series
+      const [line] = Array.isArray(drawn) ? drawn : []
+      const capital = markColour.parse(line).markLine.lineStyle.color
+      const fills = ["--positive", "--negative"].map((sign) =>
+        painted(token(sign), card, EQUITY_FILL)
+      )
 
-      const ratios = ["--positive", "--negative"].flatMap((sign) => [
-        contrast(token(sign), card),
-        contrast(token(sign), painted(token(sign), card, EQUITY_FILL)),
-      ])
+      const ratios = [
+        ...["--positive", "--negative"].flatMap((sign, at) => [
+          contrast(token(sign), card),
+          contrast(token(sign), fills[at]),
+        ]),
+        ...fills.map((fill) => contrast(capital, fill)),
+      ]
 
+      expect(ratios).toHaveLength(6)
       ratios.forEach((ratio) => expect(ratio).toBeGreaterThanOrEqual(3))
     }
   )

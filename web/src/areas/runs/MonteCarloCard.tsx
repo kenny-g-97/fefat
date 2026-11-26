@@ -4,13 +4,13 @@ import type { Currency } from "@/api/runs"
 import { currencyApart, formatMoney, formatShare } from "@/ui/figures"
 import { Panel } from "@/ui/panel"
 import { Stat } from "@/ui/stat"
-import { MonteCarloFan } from "./MonteCarloFan"
+import { MonteCarloCharts } from "./MonteCarloCharts"
 import { ResultBody } from "./ResultBody"
-import { monteCarloNote, toneOf } from "./result-words"
+import { toneOf } from "./result-words"
 
 /** How a run's outcome could have varied (web/DESIGN.md, Patterns, Monte Carlo card): its trades
  * drawn again with replacement, as the server draws them, its paths' figures beside the run's own
- * and their equity fan, money in `currency`; a run of fewer than two trades says why it has none.
+ * and their charts, money in `currency`; a run of fewer than two trades says why it has none.
  * While the paths are drawn, which a long run's take seconds, the card says so and keeps the room
  * its figures take, so that the cards under it do not jump. */
 export function MonteCarloCard({
@@ -45,12 +45,7 @@ export function MonteCarloCard({
           ) : (
             <div className="flex flex-col gap-6">
               <MonteCarloFigures report={answered} currency={currency} />
-              <MonteCarloFan
-                fan={answered.fan}
-                trades={answered.trades}
-                currency={currency}
-                note={monteCarloNote(answered)}
-              />
+              <MonteCarloCharts report={answered} currency={currency} />
             </div>
           )
         }

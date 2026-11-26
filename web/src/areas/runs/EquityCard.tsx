@@ -113,7 +113,7 @@ function ShownCurve({
           Drawdown
         </li>
         <li className="flex items-center gap-2">
-          <span className="w-4 border-t border-dashed border-input" />
+          <span className="w-4 border-t border-dashed border-foreground-secondary" />
           Capital
         </li>
       </ul>

@@ -1,5 +1,6 @@
-import type { MonteCarlo, SampleSize } from "@/api/run-results"
-import { counted, moneySign } from "@/ui/figures"
+import type { MonteCarlo, PathFigure, SampleSize } from "@/api/run-results"
+import type { Currency } from "@/api/runs"
+import { counted, formatFigure, moneyFigure, moneySign } from "@/ui/figures"
 
 const SAMPLE_SIZES: Readonly<Record<SampleSize, string>> = {
   below_minimum: "under the 30 a sample needs at the least",
@@ -42,4 +43,86 @@ export function monteCarloNote({
   seed,
 }: Pick<MonteCarlo, "paths" | "trades" | "seed">): string {
   return `${counted(paths, "path")} of ${counted(trades, "trade")}, drawn with replacement from seed ${seed}. Drawdowns are of closed trades, and a path keeps no streak across days.`
+}
+
+/** A chart the Monte Carlo card offers: the paths' equity fan, or one of their figures against the
+ * percent of them (step 5.21). */
+export type MonteCarloChart = "equity" | PathFigure
+
+/** The Monte Carlo card's charts as its select offers them, in the prompt's order. */
+export const MONTE_CARLO_CHARTS: readonly Readonly<{
+  value: MonteCarloChart
+  label: string
+}>[] = [
+  { value: "equity", label: "Equity" },
+  { value: "net_pnl", label: "Net P&L" },
+  { value: "max_drawdown", label: "Max drawdown" },
+  { value: "profit_factor", label: "Profit factor" },
+  { value: "average_mae_ticks", label: "Avg. MAE" },
+  { value: "average_mfe_ticks", label: "Avg. MFE" },
+]
+
+/** Each figure of the paths: its name in a sentence, and what it counts in. */
+export const PATH_FIGURES: Readonly<
+  Record<
+    PathFigure,
+    Readonly<{ inWords: string; unit: "money" | "ticks" | "ratio" }>
+  >
+> = {
+  net_pnl: { inWords: "net P&L", unit: "money" },
+  max_drawdown: { inWords: "max drawdown", unit: "money" },
+  profit_factor: { inWords: "profit factor", unit: "ratio" },
+  average_mae_ticks: { inWords: "average MAE", unit: "ticks" },
+  average_mfe_ticks: { inWords: "average MFE", unit: "ticks" },
+}
+
+/** What a run without a losing trade says in place of its own profit factor. */
+export const NO_OWN_PROFIT_FACTOR =
+  "This run had no losing trade, so it has no profit factor"
+
+/** What a figure's chart says in its place where no path drew a losing trade. */
+export const NO_PATH_PROFIT_FACTOR =
+  "No path drew a losing trade, so none has a profit factor."
+
+/** The tone of a figure of the paths: the net P&L in the colour of its sign as the page writes it,
+ * at the cent, as every net P&L on the page stands, so that an amount written as zero, its minus
+ * dropped, takes none; none for a path without the figure, and for every other figure. */
+export function pathFigureTone(
+  figure: PathFigure,
+  value: number | null
+): "positive" | "negative" | undefined {
+  if (figure !== "net_pnl" || value === null) {
+    return undefined
+  }
+  return toneOf(formatFigure(value))
+}
+
+/** A figure of the paths as the page writes it: money in `currency` (D-117), a profit factor at
+ * two decimals as the KPI cards write it, ticks at two decimals with their unit, `12.35 ticks`,
+ * and None where a path has none. */
+export function pathFigureWritten(
+  figure: PathFigure,
+  value: number | null,
+  currency: Currency
+): string {
+  if (value === null) {
+    return "None"
+  }
+  const { unit } = PATH_FIGURES[figure]
+  if (unit === "money") {
+    return moneyFigure(value, currency)
+  }
+  return unit === "ticks" ? `${formatFigure(value)} ticks` : formatFigure(value)
+}
+
+/** Where the paths stand at `percent` of them: `95% of paths at or under this max drawdown`, or,
+ * where the path there has no profit factor, why. */
+export function percentWords(
+  figure: PathFigure,
+  percent: number,
+  value: number | null
+): string {
+  return value === null
+    ? `The path at ${percent}% drew no losing trade, so it has no profit factor`
+    : `${percent}% of paths at or under this ${PATH_FIGURES[figure].inWords}`
 }

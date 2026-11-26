@@ -5,7 +5,7 @@ progress the job's stream gives (`GET /v1/streams/job:<job id>`); `POST /v1/runs
 run would read, before anything runs, and `POST /v1/runs/stress`, a run and the same at more ticks
 of slippage (step 5.6); `GET /v1/runs`, a page of the runs; `GET /v1/runs/{run}`, a run by its id
 or its run key; `GET /v1/runs/{run}/stats`, `/equity`, and `/distribution`, a saved run's results,
-read from its folder (step 5.7), and `/monte-carlo`, its trades drawn again (step 5.20); and
+read from its folder (step 5.7), and `/monte-carlo`, its trades drawn again (steps 5.20, 5.21); and
 `POST /v1/runs/{run}/cancel`. A run's status is
 `succeeded` once its folder is saved, its job's before; a job whose run proved saved under another
 run's row names that row in its result, which a client then follows."""
@@ -321,11 +321,13 @@ def run_monte_carlo(
         ),
     ] = EQUITY_POINTS,
 ) -> MonteCarloAnswer:
-    """A saved run's Monte Carlo (step 5.20): `paths` walks of its trades drawn with replacement
-    from `seed`, their net P&L and closed-trade maximum drawdown at five percentiles beside the
-    run's own walk, the shares of paths that end below the capital and fall deeper than the run,
-    and the equity fan; `too_few_trades`, with why, for a run of fewer than two trades; 409 as
-    `/stats` answers it."""
+    """A saved run's Monte Carlo (steps 5.20 and 5.21): `paths` walks of its trades drawn with
+    replacement from `seed`, their net P&L and closed-trade maximum drawdown at five percentiles
+    beside the run's own walk, the shares of paths that end below the capital and fall deeper than
+    the run, the equity fan with the run's own walk over it, and the paths' net P&L, maximum
+    drawdown, profit factor, and average MAE and MFE in ticks at each whole percent of them beside
+    the run's own; `too_few_trades`, with why, for a run of fewer than two trades; 409 as `/stats`
+    answers it."""
     with _refusals():
         return container.runs.monte_carlo(run, paths, seed, max_points)
 

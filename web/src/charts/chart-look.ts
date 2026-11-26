@@ -9,6 +9,8 @@ export type ThemeTokens = Readonly<{
   input: string
   accent: string
   brand: string
+  brandSecondary: string
+  foregroundSecondary: string
   positive: string
   negative: string
 }>
@@ -45,6 +47,8 @@ const TOKENS: Readonly<Record<keyof ThemeTokens, string>> = {
   input: "--input",
   accent: "--accent",
   brand: "--brand",
+  brandSecondary: "--brand-secondary",
+  foregroundSecondary: "--foreground-secondary",
   positive: "--positive",
   negative: "--negative",
 }
@@ -144,6 +148,8 @@ export function readThemeTokens(): ThemeTokens {
     input: read(TOKENS.input),
     accent: read(TOKENS.accent),
     brand: read(TOKENS.brand),
+    brandSecondary: read(TOKENS.brandSecondary),
+    foregroundSecondary: read(TOKENS.foregroundSecondary),
     positive: read(TOKENS.positive),
     negative: read(TOKENS.negative),
   }

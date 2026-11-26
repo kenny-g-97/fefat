@@ -9,23 +9,25 @@ import {
   FONT,
   GRID_RIGHT,
   labelStrip,
-  moneyAxis,
   NO_LINE,
   pointerOptions,
   type ResultsChartOption,
+  valueAxis,
 } from "./results-chart"
 
 /** The fill of the paths between their 5th and 25th, and 75th and 95th percentiles. */
 export const OUTER_BAND = 0.3
-/** The fill of the paths between their 25th and 75th percentiles. */
-export const INNER_BAND = 0.55
+/** The fill of the paths between their 25th and 75th percentiles, where the run's own purple
+ * keeps 3 : 1 on the dark theme, which 55 % held to 2.75 : 1 (step 5.21). */
+export const INNER_BAND = 0.45
 
 /** The chart of `fan` in the theme's `tokens` (web/DESIGN.md, Patterns, Fan chart), in the equity
- * chart's idiom: the paths' median equity in the accent over a dashed line at the capital, and
- * behind it the middle half of the paths and the middle nine in ten as two greys, by the count of
- * trades made, the value axis written as money in `currency`, the capital in view since every
- * percentile starts there. Nothing animates and there is no zoom; the pointer reads a count, and
- * its figures stand in the page's own readout. */
+ * chart's idiom: the paths' median equity in the accent and the run's own walk over it in the
+ * purple (D-119), over a dashed line at the capital, and behind them the middle half of the paths
+ * and the middle nine in ten as two greys, by the count of trades made, the value axis written as
+ * money in `currency`, the capital in view since every percentile starts there. Nothing animates
+ * and there is no zoom; the pointer reads a count, and its figures stand in the page's own
+ * readout. */
 export function fanOption(
   fan: EquityFan,
   currency: Currency,
@@ -35,7 +37,10 @@ export function fanOption(
     animation: false,
     textStyle: { fontFamily: FONT },
     grid: {
-      left: labelStrip([fan.capital, ...fan.p5, ...fan.p95], currency),
+      left: labelStrip(
+        [fan.capital, ...fan.p5, ...fan.p95, ...fan.own],
+        currency
+      ),
       right: GRID_RIGHT,
       top: 8,
       bottom: 24,
@@ -55,14 +60,14 @@ export function fanOption(
         formatter: (count: number) => formatCount(count),
       },
     },
-    yAxis: { ...moneyAxis(tokens, currency), scale: true },
+    yAxis: { ...valueAxis(tokens, currency), scale: true },
     series: fanSeries(fan, tokens),
   }
 }
 
 /** The bands as layers of one stack over an unfilled base at the 5th percentile, each as tall as
- * the gap between two of the API's percentiles, so that its top stands at the higher, and the
- * median over them. */
+ * the gap between two of the API's percentiles, so that its top stands at the higher, the median
+ * over them, and the run's own walk over all. */
 function fanSeries(fan: EquityFan, tokens: ThemeTokens): LineSeriesOption[] {
   const stacked = (
     name: string,
@@ -103,6 +108,15 @@ function fanSeries(fan: EquityFan, tokens: ThemeTokens): LineSeriesOption[] {
       lineStyle: { color: tokens.brand, width: 1.5 },
       itemStyle: { color: tokens.brand },
       markLine: capitalLine(fan.capital, tokens),
+    },
+    {
+      type: "line",
+      name: "This run",
+      symbol: "circle",
+      showSymbol: false,
+      data: fan.trades_made.map((made, at) => [made, fan.own[at]]),
+      lineStyle: { color: tokens.brandSecondary, width: 1.5 },
+      itemStyle: { color: tokens.brandSecondary },
     },
   ]
 }

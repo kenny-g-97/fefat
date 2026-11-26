@@ -4,15 +4,15 @@ import type { Currency } from "@/api/runs"
 import type { ThemeTokens } from "./chart-look"
 import {
   axisLabels,
-  capitalInView,
   capitalLine,
   FONT,
   GRID_RIGHT,
+  keptInView,
   labelStrip,
-  moneyAxis,
   NO_LINE,
   pointerOptions,
   type ResultsChartOption,
+  valueAxis,
 } from "./results-chart"
 
 const MILLISECONDS_A_SECOND = 1000
@@ -78,7 +78,7 @@ function signColours(
 ): ResultsChartOption["visualMap"] {
   const unitAbove = curve.capital + 1
   const [below, above] = curve.equity.every((value) => value === curve.capital)
-    ? [tokens.input, tokens.input]
+    ? [tokens.foregroundSecondary, tokens.foregroundSecondary]
     : [tokens.negative, tokens.positive]
   return {
     type: "piecewise",
@@ -100,7 +100,7 @@ function equityAxes(
   currency: Currency,
   tokens: ThemeTokens
 ): Pick<ResultsChartOption, "xAxis" | "yAxis"> {
-  const value = moneyAxis(tokens, currency)
+  const value = valueAxis(tokens, currency)
   const time = {
     type: "time",
     axisLine: NO_LINE,
@@ -121,7 +121,7 @@ function equityAxes(
         ...value,
         gridIndex: 0,
         scale: true,
-        ...capitalInView(
+        ...keptInView(
           curve.capital,
           Math.min(...curve.equity),
           Math.max(...curve.equity)
