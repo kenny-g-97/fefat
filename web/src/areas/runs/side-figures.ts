@@ -22,14 +22,22 @@ export type Written = Readonly<{
 }>
 
 /** A row of the table of a run's figures by side: its name, and how it writes a side's figure in
- * `currency`. */
-export type FigureRow = Readonly<{
+ * `currency`, or of another table, its own figures. */
+export type FigureRow<Figures = SideResults> = Readonly<{
   id: string
   label: string
-  written: (side: SideResults, currency: Currency) => Written
+  written: (figures: Figures, currency: Currency) => Written
 }>
 
-const NOTHING: Written = { text: NONE, look: "none" }
+/** What a run made and its risk, the figures a side, a run, and buy and hold each have (step
+ * 5.23). */
+export type ProfitAndRisk = Pick<
+  SideResults,
+  "net_pnl" | "max_drawdown" | "longest_drawdown_days" | "sharpe"
+>
+
+/** A figure where nothing is counted, in body text. */
+export const NOTHING: Written = { text: NONE, look: "none" }
 
 function figure(text: string): Written {
   return { text, look: "figure" }
@@ -71,12 +79,14 @@ function ticks(value: number): string {
   return `${formatFigure(value)} ticks`
 }
 
+const NET_PNL: FigureRow<ProfitAndRisk> = {
+  id: "net-pnl",
+  label: "Net P&L",
+  written: (side, currency) => made(side.net_pnl, currency),
+}
+
 const PROFIT: readonly FigureRow[] = [
-  {
-    id: "net-pnl",
-    label: "Net P&L",
-    written: (side, currency) => made(side.net_pnl, currency),
-  },
+  NET_PNL,
   {
     id: "gross-profit",
     label: "Gross profit",
@@ -184,7 +194,7 @@ const SLIPPAGE: FigureRow = {
   written: (side, currency) => paid(side.slippage, currency),
 }
 
-const RISK: readonly FigureRow[] = [
+const RISK: readonly FigureRow<ProfitAndRisk>[] = [
   {
     id: "max-drawdown",
     label: "Max drawdown",
@@ -200,6 +210,13 @@ const RISK: readonly FigureRow[] = [
     label: "Sharpe",
     written: (side) => orNone(side.sharpe, formatFigure),
   },
+]
+
+/** The rows of a table of what a run made and its risk, as By side writes them: buy and hold's
+ * beside the run's (step 5.23). */
+export const PROFIT_AND_RISK: readonly FigureRow<ProfitAndRisk>[] = [
+  NET_PNL,
+  ...RISK,
 ]
 
 /** A set of the table's rows, set apart from the next. */

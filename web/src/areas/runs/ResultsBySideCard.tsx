@@ -2,16 +2,10 @@ import { cn } from "cn"
 import type { ResultsBySide } from "@/api/run-results"
 import type { Currency } from "@/api/runs"
 import { Panel } from "@/ui/panel"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/ui/table"
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/ui/table"
+import { FigureCell } from "./FigureCell"
 import { CLOSED_TRADES_NOTE, noTradeWords } from "./result-words"
-import { figureGroups, sideFigure, type Written } from "./side-figures"
+import { figureGroups, sideFigure } from "./side-figures"
 
 /** The table's columns, in order: all trades, then each side. */
 const SIDES = [
@@ -19,14 +13,6 @@ const SIDES = [
   { column: "long", heading: "Long" },
   { column: "short", heading: "Short" },
 ] as const
-
-/** The colour of each look of a figure (side-figures.ts). */
-const LOOKS: Readonly<Record<Written["look"], string>> = {
-  positive: "text-positive",
-  negative: "text-negative",
-  figure: "text-foreground",
-  none: "text-foreground-secondary",
-}
 
 /** A run's figures for all its trades, its long trades, and its short trades in one table
  * (web/DESIGN.md, Patterns, Results by side), each figure the API's, money in `currency` and in
@@ -104,22 +90,5 @@ function SetApart() {
     <tr aria-hidden="true">
       <td colSpan={4} className="h-3 p-0" />
     </tr>
-  )
-}
-
-function FigureCell({
-  written,
-  last,
-}: Readonly<{ written: Written; last: boolean }>) {
-  return (
-    <TableCell
-      className={cn(
-        "py-0 text-right",
-        last ? "pr-6 pl-3" : "px-3",
-        LOOKS[written.look]
-      )}
-    >
-      {written.text}
-    </TableCell>
   )
 }

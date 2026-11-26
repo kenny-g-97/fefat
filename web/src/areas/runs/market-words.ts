@@ -1,5 +1,6 @@
 import type { DaysExposure, Uncounted } from "@/api/run-results"
 import { counted, formatFigure } from "@/ui/figures"
+import { figureOrNone } from "./result-words"
 
 /** Why a figure of a run's market exposure reads None, as a stat card's line says it (step 5.23):
  * the API says which, since the client recomputes no figure. */
@@ -8,6 +9,13 @@ const WHY: Readonly<Record<Uncounted, string>> = {
   market_never_differed: "The market's days never differed",
   run_never_differed: "The run's days never differed",
 }
+
+/** Lots at two significant digits, for a size two decimals would write as `0.00`. */
+const SMALL_LOTS = new Intl.NumberFormat("en-US", {
+  maximumSignificantDigits: 2,
+})
+/** The least size two decimals write as other than `0.00`. */
+const LEAST_AT_TWO_DECIMALS = 0.005
 
 /** The words a sentence takes from its middle on: `The run's` reads `the run's`. */
 function inSentence(words: string): string {
@@ -45,18 +53,26 @@ function sideWords(side: DaysExposure, moved: "fell" | "rose"): string {
   if (side.days === 0) {
     return `The market ${moved} on no day.`
   }
-  const figure = (value: number | null) =>
-    value === null ? "None" : formatFigure(value)
-  const beta =
-    side.beta_lots === null ? "None" : `${figure(side.beta_lots)} lots`
+  const beta = side.beta_lots === null ? "None" : lotsWords(side.beta_lots)
   const why =
     side.uncounted === null ? "" : `, ${inSentence(WHY[side.uncounted])}`
-  return `Over the ${counted(side.days, "day")} the market ${moved}: correlation ${figure(side.correlation)}, beta ${beta}${why}.`
+  return `Over the ${counted(side.days, "day")} the market ${moved}: correlation ${figureOrNone(side.correlation)}, beta ${beta}${why}.`
 }
 
-/** Buy and hold's size at the run's volatility, as the table heads its column: `0.49 lots`. */
+/** Lots as a beta or buy and hold's size reads them: `0.49 lots`, or `0.0035 lots`
+ * (`formatLots`). */
 export function lotsWords(lots: number): string {
-  return `${formatFigure(lots)} lots`
+  return `${formatLots(lots)} lots`
+}
+
+/** Lots at two decimals, `0.49`, or at two significant digits where two decimals would write a
+ * size other than none as `0.00`, as a crypto pair's lots, coins, can be: `0.0035` (the ponytail
+ * review). */
+export function formatLots(lots: number): string {
+  if (lots === 0 || Math.abs(lots) >= LEAST_AT_TWO_DECIMALS) {
+    return formatFigure(lots)
+  }
+  return SMALL_LOTS.format(lots)
 }
 
 /** Buy and hold at `lots`, as the legend names it: `Buy and hold, 0.49 lots`. */

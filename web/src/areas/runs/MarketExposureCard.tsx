@@ -14,11 +14,11 @@ import {
 import { Panel } from "@/ui/panel"
 import { Stat } from "@/ui/stat"
 import { BuyAndHoldTable } from "./BuyAndHoldTable"
-import { exposureDetail, sidesWords } from "./market-words"
+import { exposureDetail, formatLots, sidesWords } from "./market-words"
+import { figureOrNone, toneOf } from "./result-words"
 import { ResultBody } from "./ResultBody"
 
 const NONE = "None"
-const CENTS = 100
 
 type MarketExposureCardProps = Readonly<{
   runKey: string
@@ -94,7 +94,7 @@ function ExposureFigures({
         inset
         testId="market-beta"
         label="Beta"
-        value={figureOrNone(every.beta_lots)}
+        value={every.beta_lots === null ? NONE : formatLots(every.beta_lots)}
         unit={every.beta_lots === null ? null : "lots"}
         detail={exposureDetail(every.beta_lots, every)}
       />
@@ -106,7 +106,9 @@ function ExposureFigures({
           every.alpha === null ? NONE : moneyFigure(every.alpha, apart.figure)
         }
         unit={every.alpha === null ? null : apart.code}
-        tone={toneOfAmount(every.alpha)}
+        tone={
+          every.alpha === null ? undefined : toneOf(formatFigure(every.alpha))
+        }
         detail={exposureDetail(every.alpha, every)}
       />
       <Stat
@@ -122,20 +124,4 @@ function ExposureFigures({
       />
     </dl>
   )
-}
-
-function figureOrNone(value: number | null): string {
-  return value === null ? NONE : formatFigure(value)
-}
-
-/** The sign's colour of money the API sends as a float, as it reads at two decimals: none for an
- * amount that rounds to zero, which carries no sign. */
-function toneOfAmount(
-  amount: number | null
-): "positive" | "negative" | undefined {
-  const cents = amount === null ? 0 : Math.round(amount * CENTS)
-  if (cents === 0) {
-    return undefined
-  }
-  return cents > 0 ? "positive" : "negative"
 }

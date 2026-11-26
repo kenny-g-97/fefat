@@ -40,7 +40,7 @@ type HeldLine = Readonly<{ lots: number; curve: BuyAndHoldCurve }>
  * figure is the readout, the equity at the decision under the pointer, or else after the last;
  * and, where the run's market exposure holds it, buy and hold at the run's volatility beside it
  * (step 5.23). The chart draws once the market's answer is in or has failed, so that a second
- * line never rescales a chart already drawn. */
+ * line never rescales a chart just drawn, and stays drawn while a failed answer is read again. */
 export function EquityCard({ runKey, drawdown, currency }: EquityCardProps) {
   const equity = useQuery(runEquityQuery(runKey))
   const market = useQuery(runMarketQuery(runKey))
@@ -51,7 +51,7 @@ export function EquityCard({ runKey, drawdown, currency }: EquityCardProps) {
           <ShownCurve
             curve={curve}
             held={heldLine(market.data, curve)}
-            drawn={market.status !== "pending"}
+            drawn={market.status !== "pending" || market.errorUpdateCount > 0}
             drawdown={drawdown}
             currency={currency}
           />

@@ -432,6 +432,46 @@ test("a refused market exposure says why in its card alone", async ({
   await expect(page.getByTestId("equity-legend-buy-and-hold")).toHaveCount(0)
 })
 
+test("a failed market exposure read again leaves the equity chart drawn", async ({
+  loggedIn: page,
+}) => {
+  // The ponytail review: the chart drew once the first read failed, so Try again, which reads the
+  // answer again, leaves it drawn while the card reads, and its second line joins it after.
+  const key = await theSeededKey(page)
+  const given = await countedAnswer(page, key)
+  const failure = "The market exposure could not be read."
+  let failing = true
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route(`**/v1/runs/${key}/market`, async (route) => {
+    if (failing) {
+      await route.fulfill(problemAnswer(500, failure))
+      return
+    }
+    await held
+    const answered = await route.fetch()
+    await route.fulfill({ response: answered, json: given })
+  })
+
+  await page.goto(`/runs/run?key=${key}`)
+
+  const card = page.getByRole("region", { name: "Market exposure" })
+  const chart = page.getByTestId("equity-chart").locator("canvas").first()
+  await expect(card.getByRole("alert")).toHaveText(failure)
+  await expect(chart).toBeVisible()
+  failing = false
+  await card.getByRole("button", { name: "Try again" }).click()
+
+  await expect(page.getByTestId("market-reading")).toBeVisible()
+  await expect(page.getByTestId("equity-waiting")).toHaveCount(0)
+  await expect(chart).toBeVisible()
+  release()
+  await expect(page.getByTestId("market-figures")).toBeVisible()
+  await expect(page.getByTestId("equity-legend-buy-and-hold")).toBeVisible()
+})
+
 test("the market exposure reads in both themes, under the motion floor", async ({
   loggedIn: page,
 }) => {

@@ -10,14 +10,9 @@ import {
   moneyFigure,
 } from "@/ui/figures"
 import { Stat } from "@/ui/stat"
-import { toneOf } from "./result-words"
+import { figureOrNone, toneOf } from "./result-words"
 
 const NONE = "None"
-
-/** A figure the engine worked out, or None where it could count nothing. */
-function figureOrNone(value: number | null): string {
-  return value === null ? NONE : formatFigure(value)
-}
 
 /** The eight KPI cards of a finished run (web/DESIGN.md, Patterns, Stat card), each figure the
  * API's, money with its currency's sign, and where the engine could count nothing, None with the

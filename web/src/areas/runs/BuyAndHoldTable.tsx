@@ -1,68 +1,11 @@
 import { cn } from "cn"
-import type {
-  BuyAndHold,
-  BuyAndHoldFigures,
-  RunMetrics,
-} from "@/api/run-results"
+import type { BuyAndHold, RunMetrics } from "@/api/run-results"
 import type { Currency } from "@/api/runs"
-import { counted, formatFigure, formatMoney } from "@/ui/figures"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/ui/table"
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/ui/table"
+import { FigureCell } from "./FigureCell"
 import { buyAndHoldNote, lotsWords } from "./market-words"
-import { toneOf } from "./result-words"
+import { NOTHING, PROFIT_AND_RISK, type ProfitAndRisk } from "./side-figures"
 
-/** What a column of the table holds: a run's figures or buy and hold's, as the API gives them. */
-type Figures = Omit<BuyAndHoldFigures, "lots">
-
-/** A figure as a cell writes it, in its sign's colour where it is money made or lost. */
-type Written = Readonly<{ text: string; tone?: "positive" | "negative" }>
-
-const ROWS: readonly Readonly<{
-  id: string
-  label: string
-  written: (figures: Figures, currency: Currency) => Written
-}>[] = [
-  {
-    id: "net-pnl",
-    label: "Net P&L",
-    written: (figures, currency) => ({
-      text: formatMoney(figures.net_pnl, currency),
-      tone: toneOf(figures.net_pnl),
-    }),
-  },
-  {
-    id: "max-drawdown",
-    label: "Max drawdown",
-    written: (figures, currency) => ({
-      text: formatMoney(figures.max_drawdown, currency),
-    }),
-  },
-  {
-    id: "longest-spell",
-    label: "Longest spell under a peak",
-    written: (figures) => ({
-      text: counted(figures.longest_drawdown_days, "day"),
-    }),
-  },
-  {
-    id: "sharpe",
-    label: "Sharpe",
-    written: (figures) => ({
-      text: figures.sharpe === null ? "None" : formatFigure(figures.sharpe),
-    }),
-  },
-]
-
-const LOOKS = {
-  positive: "text-positive",
-  negative: "text-negative",
-} as const
 /** A figure column, 12 rem wide as By side's, and the last, widened by the card's edge padding,
  * so that the columns stand still from one run to the next. */
 const COLUMN = "w-48 px-3 text-right"
@@ -72,9 +15,9 @@ const LAST_COLUMN = "w-[12.75rem] pr-6 pl-3 text-right"
 const LOWER_HEAD = "pb-3 align-bottom"
 
 /** The run beside buy and hold at one lot and at the run's volatility (web/DESIGN.md, Patterns,
- * Market exposure card), each figure the API's, the run's as its metrics hold them, buy and hold's
- * two columns under one heading; buy and hold at the run's volatility reads None where it has no
- * size, which the line under the table says why of. */
+ * Market exposure card), each figure the API's, the run's as its metrics hold them, in By side's
+ * rows and cells, buy and hold's two columns under one heading; buy and hold at the run's
+ * volatility reads None where it has no size, which the line under the table says why of. */
 export function BuyAndHoldTable({
   held,
   metrics,
@@ -116,7 +59,7 @@ export function BuyAndHoldTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {ROWS.map((row) => (
+            {PROFIT_AND_RISK.map((row) => (
               <TableRow
                 key={row.id}
                 data-testid={`buy-and-hold-${row.id}`}
@@ -132,7 +75,9 @@ export function BuyAndHoldTable({
                   <FigureCell
                     key={column}
                     written={
-                      figures === null ? null : row.written(figures, currency)
+                      figures === null
+                        ? NOTHING
+                        : row.written(figures, currency)
                     }
                     last={column === "run-volatility"}
                   />
@@ -153,30 +98,11 @@ export function BuyAndHoldTable({
 }
 
 /** The run's own figures as its metrics hold them, the KPI cards' and the equity chart's. */
-function runFigures(metrics: RunMetrics): Figures {
+function runFigures(metrics: RunMetrics): ProfitAndRisk {
   return {
     net_pnl: metrics.pnl,
     max_drawdown: metrics.drawdown.max_drawdown,
     longest_drawdown_days: metrics.drawdown.longest_drawdown_days,
     sharpe: metrics.daily.sharpe,
   }
-}
-
-function FigureCell({
-  written,
-  last,
-}: Readonly<{ written: Written | null; last: boolean }>) {
-  return (
-    <TableCell
-      className={cn(
-        "py-0 text-right",
-        last ? "pr-6 pl-3" : "px-3",
-        written === null && "text-foreground-secondary",
-        written !== null &&
-          (written.tone === undefined ? "text-foreground" : LOOKS[written.tone])
-      )}
-    >
-      {written === null ? "None" : written.text}
-    </TableCell>
-  )
 }

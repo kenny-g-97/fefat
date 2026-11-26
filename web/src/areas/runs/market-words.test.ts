@@ -4,6 +4,7 @@ import {
   buyAndHoldLabel,
   buyAndHoldNote,
   exposureDetail,
+  formatLots,
   lotsWords,
   sidesWords,
 } from "./market-words"
@@ -74,6 +75,18 @@ describe("a market exposure's words", () => {
     )
     expect(buyAndHoldNote("too_few_days")).toBe(
       "Buy and hold buys at the run's first mark and holds to its last, paying no fee, slippage, or funding. At the run's volatility it reads None: needs 3 days."
+    )
+  })
+
+  it("writes a size two decimals would read as 0.00 at two significant digits", () => {
+    // The ponytail review: a crypto pair's lots are coins, and 0.0035 of one is not 0.00.
+    expect(lotsWords(0.0035)).toBe("0.0035 lots")
+    expect(lotsWords(-0.00312)).toBe("-0.0031 lots")
+    expect(formatLots(0.0001234)).toBe("0.00012")
+    expect(lotsWords(0)).toBe("0.00 lots")
+    expect(lotsWords(0.005)).toBe("0.01 lots")
+    expect(sidesWords({ ...COUNTED, beta_lots: 0.0041 }, COUNTED)).toBe(
+      "Over the 9 days the market fell: correlation 0.81, beta 0.0041 lots.\nOver the 9 days the market rose: correlation 0.81, beta 0.90 lots."
     )
   })
 })
