@@ -4,6 +4,7 @@ import {
   buyAndHoldLabel,
   buyAndHoldNote,
   exposureDetail,
+  lotsWords,
   sidesWords,
 } from "./market-words"
 
@@ -66,6 +67,7 @@ describe("a market exposure's words", () => {
 
   it("names buy and hold by its lots, and says what its size keeps or why it has none", () => {
     expect(buyAndHoldLabel(0.4925)).toBe("Buy and hold, 0.49 lots")
+    expect(lotsWords(1.25)).toBe("1.25 lots")
     expect(buyAndHoldNote(null)).toBe(
       "Buy and hold buys at the run's first mark and holds to its last, paying no fee, slippage, or funding. At the run's volatility it holds the lots whose days move as much as the run's, which leaves its Sharpe and its spell under a peak those of one lot."
     )

@@ -53,9 +53,14 @@ function sideWords(side: DaysExposure, moved: "fell" | "rose"): string {
   return `Over the ${counted(side.days, "day")} the market ${moved}: correlation ${figure(side.correlation)}, beta ${beta}${why}.`
 }
 
-/** Buy and hold at `lots`, as the legend and the table name it: `Buy and hold, 0.49 lots`. */
+/** Buy and hold's size at the run's volatility, as the table heads its column: `0.49 lots`. */
+export function lotsWords(lots: number): string {
+  return `${formatFigure(lots)} lots`
+}
+
+/** Buy and hold at `lots`, as the legend names it: `Buy and hold, 0.49 lots`. */
 export function buyAndHoldLabel(lots: number): string {
-  return `Buy and hold, ${formatFigure(lots)} lots`
+  return `Buy and hold, ${lotsWords(lots)}`
 }
 
 /** What the table of buy and hold says under it: what it holds and pays, and what its size at

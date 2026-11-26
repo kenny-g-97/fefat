@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table"
-import { buyAndHoldLabel, buyAndHoldNote } from "./market-words"
+import { buyAndHoldNote, lotsWords } from "./market-words"
 import { toneOf } from "./result-words"
 
 /** What a column of the table holds: a run's figures or buy and hold's, as the API gives them. */
@@ -63,11 +63,15 @@ const LOOKS = {
   positive: "text-positive",
   negative: "text-negative",
 } as const
+/** A figure column, 14 rem wide, and the last, widened by the card's edge padding, so that the
+ * columns stand still from one run to the next. */
+const COLUMN = "w-56 px-3 text-right"
+const LAST_COLUMN = "w-[14.75rem] pr-6 pl-3 text-right"
 
 /** The run beside buy and hold at one lot and at the run's volatility (web/DESIGN.md, Patterns,
- * Market exposure card), each figure the API's, the run's as its metrics hold them; buy and hold
- * at the run's volatility reads None where it has no size, which the line under the table says
- * why of. */
+ * Market exposure card), each figure the API's, the run's as its metrics hold them, buy and hold's
+ * two columns under one heading; buy and hold at the run's volatility reads None where it has no
+ * size, which the line under the table says why of. */
 export function BuyAndHoldTable({
   held,
   metrics,
@@ -75,36 +79,37 @@ export function BuyAndHoldTable({
 }: Readonly<{ held: BuyAndHold; metrics: RunMetrics; currency: Currency }>) {
   const sized = held.at_run_volatility
   const columns = [
-    { heading: "This run", figures: runFigures(metrics) },
-    { heading: "Buy and hold, 1 lot", figures: held.at_one_lot },
-    {
-      heading:
-        sized === null
-          ? "Buy and hold at the run's volatility"
-          : buyAndHoldLabel(sized.lots),
-      figures: sized,
-    },
-  ]
+    { column: "run", figures: runFigures(metrics) },
+    { column: "one-lot", figures: held.at_one_lot },
+    { column: "run-volatility", figures: sized },
+  ] as const
   return (
     <div className="flex flex-col gap-3">
       <div data-testid="buy-and-hold" className="-mx-6">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="pr-3 pl-6">Figure</TableHead>
-              {columns.map(({ heading }, at) => (
-                <TableHead
-                  key={heading}
-                  className={cn(
-                    "text-right whitespace-normal",
-                    at === columns.length - 1
-                      ? "w-[14.75rem] pr-6 pl-3"
-                      : "w-56 px-3"
-                  )}
-                >
-                  {heading}
-                </TableHead>
-              ))}
+              <TableHead rowSpan={2} className="pr-3 pl-6 align-bottom">
+                Figure
+              </TableHead>
+              <TableHead rowSpan={2} className={cn(COLUMN, "align-bottom")}>
+                This run
+              </TableHead>
+              <TableHead
+                colSpan={2}
+                scope="colgroup"
+                className="pr-6 pl-3 text-center"
+              >
+                Buy and hold
+              </TableHead>
+            </TableRow>
+            <TableRow className="hover:bg-transparent">
+              <TableHead scope="col" className={COLUMN}>
+                1 lot
+              </TableHead>
+              <TableHead scope="col" className={LAST_COLUMN}>
+                {sized === null ? "Run's volatility" : lotsWords(sized.lots)}
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -120,13 +125,13 @@ export function BuyAndHoldTable({
                 >
                   {row.label}
                 </th>
-                {columns.map(({ heading, figures }, at) => (
+                {columns.map(({ column, figures }) => (
                   <FigureCell
-                    key={heading}
+                    key={column}
                     written={
                       figures === null ? null : row.written(figures, currency)
                     }
-                    last={at === columns.length - 1}
+                    last={column === "run-volatility"}
                   />
                 ))}
               </TableRow>
