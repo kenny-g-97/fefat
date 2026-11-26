@@ -40,7 +40,7 @@ MEMORY_BOUND = 512 * 2**20 if sys.platform == "win32" else 2 * 2**30
 their peak above the trades they draw from, where every path's equity at once would be 4 GB: 324
 to 340 MiB on Windows at step 5.20, and 1,228 MiB on CI's Ubuntu, whose allocator in Polars keeps
 the walk's freed blocks resident, a bound by system that you chose at the review of its pull
-request (D-119, `BACKLOG.md`); 379 to 389 MiB on Windows once each drawn trade brought its
+request (D-119, `BACKLOG.md`); 347 to 364 MiB on Windows once each drawn trade brought its
 excursions (step 5.21)."""
 ROUTES_MOST = """
 import sys

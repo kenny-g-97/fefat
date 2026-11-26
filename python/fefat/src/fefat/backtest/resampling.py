@@ -3,11 +3,11 @@ have varied, had its trades come in other draws. Each path draws as many trades 
 with replacement, from one seed, each with its net P&L and its MAE and MFE in ticks, and walks the
 capital through their net P&L in the order drawn, so that its maximum drawdown, the deepest fall of
 its equity below the highest before it, the capital first, is of its closed trades; it sums the
-profit of the winners it drew, the loss of the losers, and their excursions on the way. Beside the
-paths stand the run's own trades walked the same way in the order it made them, since the metrics'
-maximum drawdown marks open trades to market and is not of the same kind; a run's trades are flat
-to flat, each closed before the next opens, so that the order the trades artifact holds them in is
-the order their P&L was made.
+profit of the winners it drew and every trade's excursions on the way, the losers' loss being the
+rest of its equity's change. Beside the paths stand the run's own trades walked the same way in the
+order it made them, since the metrics' maximum drawdown marks open trades to market and is not of
+the same kind; a run's trades are flat to flat, each closed before the next opens, so that the
+order the trades artifact holds them in is the order their P&L was made.
 
 The report gives the net P&L and the maximum drawdown at the 5th, 25th, 50th, 75th, and 95th
 percentiles, each the amount of the path at that rank, the nearest in the paths ordered from the
@@ -58,7 +58,8 @@ paths of a run's 50,000 trades with a fan of 10,000 counts, the route's most, he
 at their peak above the run's trades and took about 17 s on the PC of step 5.20, where blocks of
 1,000,000 held up to 505 MiB in 11 s; on CI's Ubuntu they held 1,228 MiB, Polars' allocator there
 keeping the walk's freed blocks resident, within the memory test's bound for each system. Each
-drawn trade's excursions and the sums by path of step 5.21 took that to 379 to 389 MiB in 21 s."""
+drawn trade's excursions and the sums by path of step 5.21 took that to 347 to 364 MiB in about
+20 s on Windows."""
 DRAWN_COLUMNS = ("pnl", "mae_ticks", "mfe_ticks")
 """What a path draws of each trade from the trades artifact: its net P&L in micro-units and its MAE
 and MFE in ticks."""
@@ -226,16 +227,16 @@ def _fan_counts(trades: int, max_points: int) -> list[int]:
 def _accounts(paths: int, capital: int) -> pl.DataFrame:
     """`paths` accounts at `capital`, one row a path: its `equity`, the `peak` it reached, the
     `deepest` fall below a peak so far, and the sums of the trades it drew so far, the winners'
-    `profit`, the losers' `loss`, and their `mae` and `mfe` in ticks."""
-    none = pl.repeat(0, paths, dtype=pl.Int64)
+    `profit` and every trade's `mae` and `mfe` in ticks; the losers' loss is the rest of the
+    equity's change, `equity - capital - profit`."""
+    zero = pl.repeat(0, paths, dtype=pl.Int64)
     return pl.select(
         equity=pl.repeat(capital, paths, dtype=pl.Int64),
         peak=pl.repeat(capital, paths, dtype=pl.Int64),
-        deepest=none,
-        profit=none,
-        loss=none,
-        mae=none,
-        mfe=none,
+        deepest=zero,
+        profit=zero,
+        mae=zero,
+        mfe=zero,
     )
 
 
@@ -293,7 +294,6 @@ def _accounts_after(accounts: pl.DataFrame, walk: pl.DataFrame) -> pl.DataFrame:
         pl.col("peak").last(),
         (pl.col("peak") - pl.col("equity")).max().alias("deepest"),
         pl.col("pnl").clip(lower_bound=0).sum().alias("profit"),
-        pl.col("pnl").clip(upper_bound=0).sum().alias("loss"),
         pl.col("mae_ticks").sum().alias("mae"),
         pl.col("mfe_ticks").sum().alias("mfe"),
     )
@@ -302,7 +302,6 @@ def _accounts_after(accounts: pl.DataFrame, walk: pl.DataFrame) -> pl.DataFrame:
         "peak",
         deepest=pl.max_horizontal("deepest", accounts.get_column("deepest")),
         profit=pl.col("profit") + accounts.get_column("profit"),
-        loss=pl.col("loss") + accounts.get_column("loss"),
         mae=pl.col("mae") + accounts.get_column("mae"),
         mfe=pl.col("mfe") + accounts.get_column("mfe"),
     )
@@ -382,27 +381,31 @@ def _by_percent(
     return FiguresByPercent(
         net_pnl=money(pl.col("equity") - capital),
         max_drawdown=money(pl.col("deepest")),
-        profit_factor=_profit_factors(accounts, own),
+        profit_factor=_profit_factors(accounts, own, capital),
         average_mae_ticks=average("mae"),
         average_mfe_ticks=average("mfe"),
     )
 
 
-def _profit_factors(accounts: pl.DataFrame, own: pl.DataFrame) -> ProfitFactorByPercent:
-    """The paths' profit factors from their `accounts` at each whole percent of them, those of
-    paths that drew no loser, none, ranked above every other, beside the run's `own` walk's."""
-    factors = pl.Series(
-        [_profit_factor(*sums) for sums in accounts.select("profit", "loss").iter_rows()],
-        dtype=pl.Float64,
-    )
-    ranked = _at_each_percent(factors.sort(nulls_last=True))
+def _profit_factors(
+    accounts: pl.DataFrame, own: pl.DataFrame, capital: int
+) -> ProfitFactorByPercent:
+    """The paths' profit factors from their `accounts` from `capital` at each whole percent of
+    them, those of paths that drew no loser, none, ranked above every other, beside the run's
+    `own` walk's."""
+    ranked = _at_each_percent(_profit_factor_of(accounts, capital).sort(nulls_last=True))
     return ProfitFactorByPercent(
         at_percent=tuple(ranked.to_list()),
-        own=_profit_factor(*own.select("profit", "loss").row(0)),
+        own=_profit_factor_of(own, capital).item(),
     )
 
 
-def _profit_factor(profit: int, loss: int) -> float | None:
-    """The winners' `profit` over the losers' `loss`, each a float first, as `fefat-metrics`
-    divides them, so that the run's own is its metrics'; none where no trade lost."""
-    return None if loss == 0 else float(profit) / float(-loss)
+def _profit_factor_of(accounts: pl.DataFrame, capital: int) -> pl.Series:
+    """Each account's profit factor: the winners' profit over the losers' loss, the rest of its
+    equity's change from `capital`, each a float first, as `fefat-metrics` divides them, so that
+    the run's own is its metrics'; none where no trade lost. Polars divides a column by a column
+    exactly rounded, where it divides by a constant a bit off."""
+    loss = pl.col("equity") - capital - pl.col("profit")
+    return accounts.select(
+        pl.when(loss < 0).then(pl.col("profit").cast(pl.Float64) / (-loss).cast(pl.Float64))
+    ).to_series()
