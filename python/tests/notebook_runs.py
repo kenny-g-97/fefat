@@ -38,9 +38,9 @@ def breakout(stop_ticks: int = 12) -> ff.SignalStrategy:
     )
 
 
-def breakout_both_ways(stop_ticks: int = 8) -> ff.SignalStrategy:
+def breakout_both_ways(stop_ticks: int = 8, lots: int = 1) -> ff.SignalStrategy:
     """`breakout`, and a short on ES's close below the lowest of the 12 closes before it, with
-    the same stop and target: a run of long and short trades."""
+    the same stop and target, each trade `lots` lots: a run of long and short trades."""
     return ff.SignalStrategy(
         instrument="ES",
         timeframe="5m",
@@ -54,7 +54,7 @@ def breakout_both_ways(stop_ticks: int = 8) -> ff.SignalStrategy:
             entry=ff.Market(),
             stop=ff.Stop(ticks=stop_ticks),
             targets=[ff.Target(ticks=2 * stop_ticks)],
-            sizing=ff.Fixed(1),
+            sizing=ff.Fixed(lots),
         ),
     )
 

@@ -4,23 +4,26 @@ the engine or to the run.
 
 Each figure the engine's metrics define is theirs. For all trades they are the run's own, whose
 drawdown, longest spell under a peak, and Sharpe ratio mark open trades to market. For a side they
-are the engine's metrics on its trades and on its closed-trade walk: the capital, then the equity
-after each of its trades in the order they closed, on the trade date of its last exit, and at the
-end of every trade date the run was valued on, so that a day without a trade of the side counts
-nothing in its Sharpe ratio, as the metrics count a flat day, and the walk's peak is its last
-point there, as an account valued at each decision has it.
+are the engine's metrics on its trades and on its closed-trade walk: the capital, then, for every
+trade date the run was valued on, the equity at its start, before its trades, and after each of
+the side's trades that closed on it, in the order they closed, a trade on the trade date of its
+last exit. So a day without a trade of the side counts nothing in its Sharpe ratio, as the metrics
+count a flat day, and the walk's peak is its last point at the peak before a fall, as an account
+valued at each decision has it: a spell under a peak starts on the day the side fell from it, not
+on the day it reached it, since a day at the peak is no day under it.
 
 Beside them stand what the trades hold: the gross profit and the gross loss, the winners' and the
 losers' net P&L, whose ratio is the profit factor; the average win over the size of the average
 loss; the commissions and fees, and a perpetual's funding received; the slippage, each fill's ticks
 of slippage at its lots and the tick's value, rounded up as every amount is (F-FEE-03), a fill
-counted to the trade whose path names it, and one that reverses a position (S-fill-042) to the
-trade it closes at the lots that trade held and to the trade it opens at the rest, as the engine
-shares its fee; the trades a day over the run's trade dates; and the average time from a trade's
-entry to its last exit, breaks and nights counted, and its MAE and MFE in ticks. Sums and closed
-trades alone: a position still open when the run ends is in none of them. A side the run made no
-trade on is none; elsewhere a figure with nothing to count is none, as the metrics leave it, and a
-sum over no trade is zero.
+counted to the trade whose path names it, the trade's entry at the entry's lots and the fill that
+leaves it flat at the lots it held, so that a fill reversing a position (S-fill-042) charges the
+trade it closes for that trade's lots and the trade it opens, when the run closed it, for the rest;
+the trades a day over the run's trade dates; and the average time from a trade's entry to its last
+exit, breaks and nights counted, and its MAE and MFE in ticks. Sums of closed trades alone: a
+position still open when the run ends is in none of them. A side the run made no trade on is none;
+elsewhere a figure with nothing to count is none, as the metrics leave it, and a sum over no trade
+is zero.
 
     sides = ff.backtest.results_by_side(run)
     sides.all_trades.net_pnl, sides.long.slippage, sides.short is None
@@ -47,7 +50,7 @@ from fefat.market.engine_units import (
 )
 from fefat.market.instruments import InstrumentKind
 from fefat.market.schema import FrozenModel
-from fefat.reference.orders import PositionSide
+from fefat.reference.orders import PositionSide, Side
 
 NANOSECONDS_A_MINUTE = 60_000_000_000
 UNREAD_TIME_ZONE = "UTC"
@@ -131,9 +134,9 @@ class SideAccount:
         return Metrics.model_validate_json(fefat_engine.metrics(document))
 
     def walk(self, trades: pl.DataFrame) -> pl.DataFrame:
-        """The account of `trades` alone, `trade_date` and `equity` (module docstring): after each
-        in the order they closed, on the trade date of its last exit, and at the end of each trade
-        date the run was valued on; refused for a trade whose last exit falls on none of them."""
+        """The account of `trades` alone, `trade_date` and `equity` (module docstring): at the start
+        of each trade date the run was valued on, then after each trade that closed on it, in the
+        order they closed; refused for a trade whose last exit falls on none of those dates."""
         dates = self.days.to_frame("trade_date")
         exits = trades.select(pl.col("exit_trade_date").alias("trade_date"), "pnl")
         stray = exits.join(dates, on="trade_date", how="anti")
@@ -142,12 +145,13 @@ class SideAccount:
                 "Expected each trade's last exit on a trade date the run was valued on, got "
                 f"{stray.item(0, 'trade_date')}."
             )
-        after_each = exits.select("trade_date", equity=pl.col("pnl").cum_sum() + self.capital)
         made = exits.group_by("trade_date").agg(pl.col("pnl").sum())
-        at_each_day = dates.join(made, on="trade_date", how="left", maintain_order="left").select(
-            "trade_date", equity=pl.col("pnl").fill_null(0).cum_sum() + self.capital
+        made_before = pl.col("pnl").fill_null(0).cum_sum().shift(1, fill_value=0)
+        at_each_start = dates.join(made, on="trade_date", how="left", maintain_order="left").select(
+            "trade_date", equity=made_before + self.capital
         )
-        return pl.concat([after_each, at_each_day]).sort("trade_date", maintain_order=True)
+        after_each = exits.select("trade_date", equity=pl.col("pnl").cum_sum() + self.capital)
+        return pl.concat([at_each_start, after_each]).sort("trade_date", maintain_order=True)
 
     def figures(self, trades: pl.DataFrame, metrics: Metrics) -> SideResults:
         """The figures of `trades`, charged as `charged_trades` charges them, those the metrics
@@ -171,7 +175,7 @@ class SideAccount:
             fees=_money(trades.get_column("fees")),
             funding=_money(trades.get_column("funding")) if self.perpetual else None,
             slippage=_money(trades.get_column("slippage")),
-            trades_per_day=_ratio(count, self.days.len()),
+            trades_per_day=_ratio(count, metrics.daily.days),
             average_minutes_held=_ratio(held, count * NANOSECONDS_A_MINUTE),
             average_mae_ticks=_ratio(_total(trades.get_column("mae_ticks")), count),
             average_mfe_ticks=_ratio(_total(trades.get_column("mfe_ticks")), count),
@@ -191,7 +195,7 @@ def results_by_side(run: Run) -> ResultsBySide:
         parameters=parameters,
         window=run.record.window,
         fills=fills,
-        days=valued_trade_dates(read_artifact(run.folder, "equity")),
+        days=_valued_trade_dates(read_artifact(run.folder, "equity")),
         perpetual=run.record.instrument.kind == InstrumentKind.PERPETUAL,
     )
     return ResultsBySide(
@@ -209,22 +213,27 @@ def charged_trades(
 ) -> pl.DataFrame:
     """`trades` with `slippage`, what their fills' slippage cost in micro-units, and
     `exit_trade_date`, the trade date of their last exit (module docstring), each fill found by
-    the order and the instant its path names."""
+    the order and the instant its path names, in the order the path holds them."""
     numbered = trades.with_row_index("trade").with_columns(pl.col("trade").cast(pl.Int64))
-    opened = numbered.select(
-        pl.col("entry_order").alias("order"),
-        pl.col("entry_ts").alias("ts"),
-        pl.col("trade").alias("opened"),
-        pl.col("lots").alias("opened_lots"),
+    points = (
+        paths.with_row_index("at")
+        .filter(pl.col("kind") == str(PathPointKind.FILL))
+        .select("at", "trade", "order", "ts")
     )
-    points = paths.filter(pl.col("kind") == str(PathPointKind.FILL)).select("trade", "order", "ts")
-    named = fills.select("order", "ts", "lots", "slippage_ticks", "trade_date")
+    named = fills.select("order", "ts", "side", "lots", "slippage_ticks", "trade_date")
     paired = points.join(named, on=["order", "ts"], how="left", validate="m:1")
     _refuse_unpaired(paired, numbered)
-    shared = pl.col("lots") - pl.col("opened_lots").fill_null(0)
-    lots = pl.when(pl.col("trade") == pl.col("opened")).then("opened_lots").otherwise(shared)
-    tick_lots = paired.join(opened, on=["order", "ts"], how="left").select(
-        "trade", "ts", "trade_date", tick_lots=pl.col("slippage_ticks") * lots
+    held = numbered.select(
+        "trade",
+        "entry_order",
+        "entry_ts",
+        pl.col("lots").alias("entry_lots"),
+        pl.col("side").alias("position"),
+    )
+    tick_lots = (
+        paired.join(held, on="trade", how="left")
+        .sort("at")
+        .select("trade", "at", "trade_date", tick_lots=pl.col("slippage_ticks") * _lots_charged())
     )
     worth = {
         ticks: parameters.worth_of_ticks(ticks, 1)
@@ -232,12 +241,28 @@ def charged_trades(
     }
     charged = tick_lots.group_by("trade").agg(
         slippage=pl.col("tick_lots").replace_strict(worth, return_dtype=pl.Int64).sum(),
-        exit_trade_date=pl.col("trade_date").sort_by("ts").last(),
+        exit_trade_date=pl.col("trade_date").sort_by("at").last(),
     )
     return numbered.join(charged, on="trade", how="left", maintain_order="left").drop("trade")
 
 
-def valued_trade_dates(equity: pl.DataFrame) -> pl.Series:
+def _lots_charged() -> pl.Expr:
+    """The lots a fill on a trade's path is charged at, over a frame in the paths' order: the
+    entry's lots for its entry, which a fill reversing a position opens with the rest of its lots;
+    the lots the trade held before it for the fill that leaves the trade flat, which a reversing
+    fill passes; and the fill's own lots for any other, an exit, an addition, or a roll's leg."""
+    entry = (pl.col("order") == pl.col("entry_order")) & (pl.col("ts") == pl.col("entry_ts"))
+    on_path = pl.when(entry).then(pl.col("entry_lots")).otherwise(pl.col("lots"))
+    with_position = (pl.col("side") == str(Side.BUY)) == (
+        pl.col("position") == str(PositionSide.LONG)
+    )
+    signed = pl.when(with_position).then(on_path).otherwise(-on_path)
+    held_before = signed.cum_sum().shift(1, fill_value=0).over("trade")
+    flattens = pl.col("at") == pl.col("at").max().over("trade")
+    return pl.when(flattens & ~entry).then(held_before).otherwise(on_path)
+
+
+def _valued_trade_dates(equity: pl.DataFrame) -> pl.Series:
     """The trade dates on which `equity`, a run's account after each decision, was valued, in
     order, the days its metrics count."""
     valued = equity.filter(pl.col("equity").is_not_null())
@@ -249,7 +274,7 @@ def _refuse_unpaired(paired: pl.DataFrame, trades: pl.DataFrame) -> None:
     no fill, as a folder another program changed would hold them."""
     lacking = paired.filter(pl.col("lots").is_null())
     if not lacking.is_empty():
-        trade, order = lacking.row(0)[:2]
+        trade, order = lacking.select("trade", "order").row(0)
         raise ValueError(
             "Expected each fill a trade's path names among the run's fills, got order "
             f"{order} on the path of trade {trade} alone."

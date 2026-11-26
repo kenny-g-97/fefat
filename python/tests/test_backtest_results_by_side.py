@@ -128,17 +128,8 @@ def test_a_sides_drawdown_is_the_running_drawdown_of_its_closed_trades() -> None
 def test_a_sides_sharpe_ratio_counts_every_trade_date_of_the_run() -> None:
     # The step's If it fails: a day without a trade of the side counts nothing, as the metrics
     # count a flat day, so that the ratio over the run's four days is not the one over the two
-    # its trades closed on. The walk's peak is its last point at the peak, as an account valued
-    # at each decision has it, so that the spell runs from the second day to the last.
-    days = pl.Series([date(2026, 3, day) for day in (2, 3, 4, 5)], dtype=pl.Date)
-    account = SideAccount(
-        capital=50_000_000_000,
-        parameters=ES,
-        window=Window(start=date(2026, 3, 2), end=date(2026, 3, 5)),
-        fills=pl.DataFrame({"order": [1, 2], "fidelity": ["1m", "1m"]}, schema=PLANTED_FILLS),
-        days=days,
-        perpetual=False,
-    )
+    # its trades closed on.
+    account = planted_account(days=(2, 3, 4, 5))
     trades = planted_trades(pnl=[100_000_000, -40_000_000], exit_days=[2, 4])
 
     metrics = account.metrics_of(trades)
@@ -150,18 +141,47 @@ def test_a_sides_sharpe_ratio_counts_every_trade_date_of_the_run() -> None:
     assert metrics.daily.sharpe == pytest.approx(over_the_run, rel=1e-12)
     assert metrics.daily.sharpe != pytest.approx(its_own)
     assert metrics.drawdown.max_drawdown == Decimal("40")
-    assert metrics.drawdown.longest_drawdown_days == 2
     figures = account.figures(trades, metrics)
     assert figures.trades_per_day == 2 / 4
 
 
+def test_a_sides_spell_under_a_peak_starts_on_the_day_it_fell() -> None:
+    # The engine review: the walk holds the equity at the start of each trade date, so that its
+    # peak is the last day it stood there, as an account valued at each decision dates it. A
+    # side at its peak from Tuesday through the weekend, falling on Monday and back on Tuesday,
+    # spent one day under its peak, not seven (its trades alone) nor four (the day's point after
+    # its trades), and its trough is Monday's.
+    account = planted_account(days=(2, 3, 4, 5, 6, 9, 10))
+    trades = planted_trades(pnl=[100_000_000, -40_000_000, 40_000_000], exit_days=[3, 9, 10])
+
+    metrics = account.metrics_of(trades)
+
+    drawdown = metrics.drawdown
+    assert (drawdown.max_drawdown, drawdown.peak, drawdown.trough) == (
+        Decimal("40"),
+        date(2026, 3, 9),
+        date(2026, 3, 9),
+    )
+    assert drawdown.longest_drawdown_days == 1
+    assert metrics.daily.days == 7
+
+
+def test_a_trade_closing_on_a_day_the_run_was_not_valued_on_is_refused() -> None:
+    account = planted_account(days=(2, 3))
+    trades = planted_trades(pnl=[100_000_000], exit_days=[4])
+
+    with pytest.raises(ValueError, match="valued on, got 2026-03-04"):
+        account.walk(trades)
+
+
 def test_one_tick_of_slippage_on_market_orders_is_paid_at_each_market_fills_lots() -> None:
-    # The step's test: each market fill a trade's path names pays its tick at its lots, beside
-    # what the stops a gap passed recorded against their price (F-STP-04), and the path names
-    # its trade's fills, whose fees are the trade's.
+    # The step's test: each market fill a trade's path names pays its tick at its lots, two of
+    # them, so that a charge without the lots falls short (the step review), beside what the
+    # stops a gap passed recorded against their price (F-STP-04), and the path names its trade's
+    # fills, whose fees are the trade's.
     store_with("ohlcv-1m")
     config = RunConfig(slippage_ticks=SlippageTicks(market=1, stop=0))
-    run = ff.backtest.run(breakout_both_ways(), *WINDOW, config)
+    run = ff.backtest.run(breakout_both_ways(lots=2), *WINDOW, config)
 
     sides = ff.backtest.results_by_side(run)
 
@@ -172,6 +192,7 @@ def test_one_tick_of_slippage_on_market_orders_is_paid_at_each_market_fills_lots
     market = run.orders.filter(pl.col("kind") == "market").get_column("id").to_list()
     at_market = paired.filter(pl.col("order").is_in(market))
     assert run.trades.height > 0
+    assert set(at_market.get_column("lots").to_list()) == {2}
     assert set(at_market.get_column("slippage_ticks").to_list()) == {1}
     others = paired.filter(~pl.col("order").is_in(market))
     gapped = others.filter(pl.col("slippage_ticks") > 0)
@@ -188,35 +209,7 @@ def test_a_fill_that_reverses_a_position_is_shared_by_the_lots_each_trade_takes(
     # pays the fill's tick on its own lots; each exit dates its trade; and where a tick is worth a
     # tenth of a micro-unit on a lot, each fill's part is paid rounded up, against the trader
     # (F-FEE-03): the long's two parts a micro-unit each, the short's two lots one.
-    trades = pl.DataFrame(
-        {"entry_order": [1, 2], "entry_ts": [10, 20], "lots": [1, 2]},
-        schema={"entry_order": pl.UInt64, "entry_ts": pl.Int64, "lots": pl.Int64},
-    )
-    paths = pl.DataFrame(
-        {
-            "trade": [0, 0, 1, 1],
-            "order": [1, 2, 2, 3],
-            "ts": [10, 20, 20, 30],
-            "kind": ["fill"] * 4,
-        },
-        schema={"trade": pl.Int64, "order": pl.UInt64, "ts": pl.Int64, "kind": pl.String},
-    )
-    fills = pl.DataFrame(
-        {
-            "order": [1, 2, 3],
-            "ts": [10, 20, 30],
-            "lots": [1, 3, 2],
-            "slippage_ticks": [1, 1, 0],
-            "trade_date": [date(2026, 3, 2), date(2026, 3, 3), date(2026, 3, 4)],
-        },
-        schema={
-            "order": pl.UInt64,
-            "ts": pl.Int64,
-            "lots": pl.Int64,
-            "slippage_ticks": pl.Int64,
-            "trade_date": pl.Date,
-        },
-    )
+    trades, paths, fills = reversed_long(short_closed=True)
 
     charged = charged_trades(trades, paths, fills, ES)
 
@@ -224,6 +217,16 @@ def test_a_fill_that_reverses_a_position_is_shared_by_the_lots_each_trade_takes(
     assert charged.get_column("exit_trade_date").to_list() == [date(2026, 3, 3), date(2026, 3, 4)]
     tenth = InstrumentParameters(tick=10_000_000, money_per_point=10, lot_step=Decimal("0.00001"))
     assert charged_trades(trades, paths, fills, tenth).get_column("slippage").to_list() == [2, 1]
+
+
+def test_a_reversal_into_a_position_left_open_charges_the_closed_trade_its_own_lots() -> None:
+    # The code and engine reviews: the short the fill opens is still open when the run ends, so
+    # it is no trade, and the long pays the fill's tick on the one lot it held, not on three.
+    trades, paths, fills = reversed_long(short_closed=False)
+
+    charged = charged_trades(trades, paths, fills, ES)
+
+    assert charged.get_column("slippage").to_list() == [25_000_000]
 
 
 def test_a_perpetuals_funding_stands_beside_its_fees() -> None:
@@ -299,3 +302,53 @@ def planted_trades(pnl: list[int], exit_days: list[int]) -> pl.DataFrame:
         },
         schema_overrides={"entry_order": pl.UInt64},
     )
+
+
+def planted_account(days: tuple[int, ...]) -> SideAccount:
+    """A side's account on ES from 50,000, valued on the days of March 2026 in `days`, with the
+    fills its planted trades' entries read their fidelity from."""
+    first, last = date(2026, 3, days[0]), date(2026, 3, days[-1])
+    return SideAccount(
+        capital=50_000_000_000,
+        parameters=ES,
+        window=Window(start=first, end=last),
+        fills=pl.DataFrame({"order": [1, 2, 3], "fidelity": ["1m"] * 3}, schema=PLANTED_FILLS),
+        days=pl.Series([date(2026, 3, day) for day in days], dtype=pl.Date),
+        perpetual=False,
+    )
+
+
+def reversed_long(
+    short_closed: bool,
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """The trades, paths, and fills of a long of one lot that order 1 opens at 10 and order 2
+    reverses at 20, selling three lots, each at a tick of slippage, into a short of two that
+    order 3 closes at 30 without slippage where `short_closed`, and that stays open, no trade,
+    where not."""
+    trades = pl.DataFrame(
+        {"side": ["long", "short"], "entry_order": [1, 2], "entry_ts": [10, 20], "lots": [1, 2]},
+        schema={
+            "side": pl.String,
+            "entry_order": pl.UInt64,
+            "entry_ts": pl.Int64,
+            "lots": pl.Int64,
+        },
+    )
+    paths = pl.DataFrame(
+        {"trade": [0, 0, 1, 1], "order": [1, 2, 2, 3], "ts": [10, 20, 20, 30]},
+        schema={"trade": pl.Int64, "order": pl.UInt64, "ts": pl.Int64},
+    ).with_columns(kind=pl.lit("fill"))
+    fills = pl.DataFrame(
+        {
+            "order": [1, 2, 3],
+            "ts": [10, 20, 30],
+            "side": ["buy", "sell", "buy"],
+            "lots": [1, 3, 2],
+            "slippage_ticks": [1, 1, 0],
+            "trade_date": [date(2026, 3, 2), date(2026, 3, 3), date(2026, 3, 4)],
+        },
+        schema_overrides={"order": pl.UInt64},
+    )
+    if short_closed:
+        return trades, paths, fills
+    return trades.head(1), paths.head(2), fills.head(2)
