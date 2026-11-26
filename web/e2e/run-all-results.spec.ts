@@ -300,7 +300,9 @@ test("every figure of a run's results in full is the API's", async ({
   )
   // The eight KPI cards as the run page shows them, whose figures run-results.spec.ts holds to
   // the API, and the run's key, which tells it apart from another run of its version.
-  await expect(page.getByTestId("key-figures")).toHaveText(kpiCards)
+  await expect
+    .poll(() => page.getByTestId("key-figures").innerText())
+    .toBe(kpiCards)
   await expect(page.getByTestId("run-key")).toHaveText(key.slice(0, 12))
   await expectTheTable(page, sides, currency)
   await expect(page.getByTestId("by-side-funding")).toHaveCount(0)
