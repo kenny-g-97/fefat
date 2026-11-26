@@ -38,6 +38,27 @@ def breakout(stop_ticks: int = 12) -> ff.SignalStrategy:
     )
 
 
+def breakout_both_ways(stop_ticks: int = 8, lots: int = 1) -> ff.SignalStrategy:
+    """`breakout`, and a short on ES's close below the lowest of the 12 closes before it, with
+    the same stop and target, each trade `lots` lots: a run of long and short trades."""
+    return ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        features={
+            "highest": pl.col("close").rolling_max(12).shift(1),
+            "lowest": pl.col("close").rolling_min(12).shift(1),
+        },
+        long_entry=pl.col("close") > pl.col("highest"),
+        short_entry=pl.col("close") < pl.col("lowest"),
+        execution=ff.Execution(
+            entry=ff.Market(),
+            stop=ff.Stop(ticks=stop_ticks),
+            targets=[ff.Target(ticks=2 * stop_ticks)],
+            sizing=ff.Fixed(lots),
+        ),
+    )
+
+
 def scenario_fidelities() -> list[str]:
     """Each scenario file's fidelity as its `fidelity:` line writes it, read apart from
     `fefat.reference.scenarios`, so that a scenario the loader drops still counts."""

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   foundWords,
   parameterWords,
+  resultsLine,
   runDetail,
   runLine,
   tradedWords,
@@ -85,6 +86,23 @@ describe("runLine", () => {
     expect(
       runLine({ ...dates, strategy: null, settings: { instrument: null } })
     ).toBe("No saved version, 2026-03-06 to 2026-03-09")
+  })
+})
+
+describe("resultsLine (step 5.22)", () => {
+  const dates = { start: "2026-03-06", end: "2026-03-09" }
+
+  it("names the strategy with its version, what the run trades, and its dates", () => {
+    expect(
+      resultsLine({
+        ...dates,
+        strategy: VERSION,
+        settings: { instrument: "MNQ" },
+      })
+    ).toBe("demo version 2, MNQ in 5m bars, 2026-03-06 to 2026-03-09")
+    expect(
+      resultsLine({ ...dates, strategy: null, settings: { instrument: "ES" } })
+    ).toBe("No saved version, ES, 2026-03-06 to 2026-03-09")
   })
 })
 

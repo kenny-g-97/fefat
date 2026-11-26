@@ -757,6 +757,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/runs/{run}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Results By Side
+         * @description A saved run's figures for all its trades, its long trades, and its short trades (step
+         *     5.22), each side none where the run made no trade on it; money as decimal text in the run's
+         *     currency; 409 as `/stats` answers it.
+         */
+        get: operations["run_results_by_side_v1_runs__run__results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/runs/{run}/stats": {
         parameters: {
             query?: never;
@@ -3371,6 +3393,16 @@ export interface components {
             trade_date: string;
         };
         /**
+         * ResultsBySide
+         * @description A run's figures for all its trades, and for its long and its short trades, each none where
+         *     the run made no trade on that side.
+         */
+        ResultsBySide: {
+            all_trades: components["schemas"]["SideResults"];
+            long: components["schemas"]["SideResults"] | null;
+            short: components["schemas"]["SideResults"] | null;
+        };
+        /**
          * Robustness
          * @description The robustness summary of a run: what the script read, its five scores, their total and
          *     verdict, its red flags, the sample size the run reaches, the script's profit factor (none
@@ -3928,6 +3960,59 @@ export interface components {
          * @enum {string}
          */
         Severity: "high" | "medium";
+        /**
+         * SideResults
+         * @description The figures of a run's trades of one side, or of all of them (module docstring), money in
+         *     the instrument's currency, the time held in minutes, and the excursions in ticks.
+         */
+        SideResults: {
+            /** Average Loss */
+            average_loss: number | null;
+            /** Average Mae Ticks */
+            average_mae_ticks: number | null;
+            /** Average Mfe Ticks */
+            average_mfe_ticks: number | null;
+            /** Average Minutes Held */
+            average_minutes_held: number | null;
+            /** Average Win */
+            average_win: number | null;
+            /** Expectancy */
+            expectancy: number | null;
+            /** Expectancy R */
+            expectancy_r: number | null;
+            /** Fees */
+            fees: string;
+            /** Funding */
+            funding: string | null;
+            /** Gross Loss */
+            gross_loss: string;
+            /** Gross Profit */
+            gross_profit: string;
+            /** Longest Drawdown Days */
+            longest_drawdown_days: number;
+            /** Losses */
+            losses: number;
+            /** Max Drawdown */
+            max_drawdown: string;
+            /** Net Pnl */
+            net_pnl: string;
+            /** Profit Factor */
+            profit_factor: number | null;
+            /** Sharpe */
+            sharpe: number | null;
+            /** Slippage */
+            slippage: string;
+            /** Trades */
+            trades: number;
+            /** Trades Per Day */
+            trades_per_day: number | null;
+            /** Win Loss Ratio */
+            win_loss_ratio: number | null;
+            /** Win Rate */
+            win_rate: number | null;
+            /** Wins */
+            wins: number;
+        };
         /**
          * SizeUnit
          * @description What one unit of a `size` or `volume` column is: `lot` of `asset`, such as 1 contract
@@ -6622,6 +6707,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MonteCarlo"] | components["schemas"]["TooFewTrades"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    run_results_by_side_v1_runs__run__results_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultsBySide"];
                 };
             };
             /** @description Unauthorized */

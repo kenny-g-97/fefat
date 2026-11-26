@@ -14,7 +14,8 @@ From step 5.3 `run` tells a callable each stage it reaches (`RunStage`): `progre
 `estimated` tells what a run of a window would read before anything runs (step 5.6).
 `equity_curve` downsamples a run's equity, keeping its deepest drawdown, and `trade_distributions`
 counts its trades into histograms (step 5.7); `monte_carlo` walks paths of its trades drawn again
-with replacement (step 5.20), each figure at every whole percent of them (step 5.21).
+with replacement (step 5.20), each figure at every whole percent of them (step 5.21); and
+`results_by_side` gives its figures for all, long, and short trades (step 5.22).
 `RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
 `fefat.backtest.schemas`, and the record is `fefat.backtest.record`. `fidelity_check` works a
 saved run's fidelity check out again (`fefat.backtest.fidelity`, step 2.12), and `reconcile`
@@ -60,6 +61,7 @@ from fefat.backtest.schemas import (
     TRADE_PATHS,
     TRADES,
 )
+from fefat.backtest.sides import ResultsBySide, SideResults, results_by_side
 from fefat.market.fidelity import FidelityEra
 
 __all__ = [
@@ -87,10 +89,12 @@ __all__ = [
     "PeriodOutcome",
     "ProfitFactorByPercent",
     "RefusedCheck",
+    "ResultsBySide",
     "Run",
     "RunConfig",
     "RunRecord",
     "RunStage",
+    "SideResults",
     "TooFewTrades",
     "TradeDistributions",
     "WindowEstimate",
@@ -100,6 +104,7 @@ __all__ = [
     "held_instruments",
     "monte_carlo",
     "reconcile",
+    "results_by_side",
     "run",
     "running_drawdown",
     "saved_runs_in",

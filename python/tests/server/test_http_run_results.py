@@ -2,11 +2,14 @@
 `/distribution` answer what the SDK gives for the same run (Done means 1), the equity in at most
 `max_points` points that keep the true maximum drawdown (Done means 3), and a run whose results
 cannot be read says why, while its row still answers. From step 5.20, `/monte-carlo` answers the
-SDK's too, the same for the same seed, and why for a run of one trade (its Done means 1 and 3)."""
+SDK's too, the same for the same seed, and why for a run of one trade (its Done means 1 and 3);
+from step 5.22, `/results` answers the SDK's figures by side, all trades the run's metrics', and is
+refused as `/stats` is (its Done means 1)."""
 
 import json
 import os
 import shutil
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +20,7 @@ from sqlalchemy import Engine, text, update
 from sqlalchemy.orm import Session
 
 import fefat as ff
-from fefat.backtest import MonteCarlo, Run, TradeDistributions
+from fefat.backtest import MonteCarlo, ResultsBySide, Run, TradeDistributions
 from fefat.backtest.artifacts import RECORD_FILE
 from fefat.backtest.metrics import Metrics
 from fefat.config import resolve_paths
@@ -31,7 +34,7 @@ from test_run_records import a_submission, the_run
 
 NANOSECONDS = 1_000_000_000
 KEY_OF_NO_RUN = "e" * 64
-RESULTS = ["stats", "equity", "distribution", "monte-carlo"]
+RESULTS = ["stats", "equity", "distribution", "monte-carlo", "results"]
 """A saved run's results, each of which a run without readable results refuses alike."""
 
 
@@ -120,6 +123,30 @@ def test_points_out_of_bounds_are_refused(client: TestClient, run: Run, max_poin
     answer = client.get(f"/v1/runs/{run.hash}/equity", params={"max_points": max_points})
 
     assert answer.status_code == 422
+
+
+def test_the_results_by_side_are_the_sdks_and_all_trades_the_metrics(
+    client: TestClient, run: Run
+) -> None:
+    # Done means 1 of step 5.22: API equals SDK, and every figure of all trades the run's metrics
+    # hold is theirs, the money in decimal text; the seeded breakout makes no short trade.
+    answer = client.get(f"/v1/runs/{run.hash}/results")
+
+    assert answer.status_code == 200
+    body = answer.json()
+    assert ResultsBySide.model_validate(body) == ff.backtest.results_by_side(run)
+    assert body["short"] is None
+    every, metrics = body["all_trades"], run.metrics
+    statistics = metrics.trades
+    counts = (every["trades"], every["wins"], every["losses"], every["win_rate"])
+    assert counts == (statistics.trades, statistics.wins, statistics.losses, statistics.win_rate)
+    ratios = (every["profit_factor"], every["expectancy"], every["expectancy_r"])
+    assert ratios == (statistics.profit_factor, statistics.expectancy, statistics.expectancy_r)
+    averages = (every["average_win"], every["average_loss"], every["sharpe"])
+    assert averages == (statistics.average_win, statistics.average_loss, metrics.daily.sharpe)
+    assert Decimal(every["net_pnl"]) == metrics.pnl
+    assert Decimal(every["max_drawdown"]) == metrics.drawdown.max_drawdown
+    assert every["longest_drawdown_days"] == metrics.drawdown.longest_drawdown_days
 
 
 def test_the_distributions_are_the_sdks(client: TestClient, run: Run) -> None:

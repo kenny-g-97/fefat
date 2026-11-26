@@ -19,12 +19,14 @@ from pydantic import JsonValue
 
 from fefat.backtest import (
     MonteCarlo,
+    ResultsBySide,
     Run,
     RunConfig,
     TooFewTrades,
     TradeDistributions,
     equity_curve,
     monte_carlo,
+    results_by_side,
     trade_distributions,
 )
 from fefat.backtest.estimates import estimated, held_instruments
@@ -238,6 +240,13 @@ class Runs:
         opened = self._opened(run)
         with _results_read(opened.hash, self.paths):
             return monte_carlo(opened, paths, seed, max_points)
+
+    def results_by_side(self, run: str) -> ResultsBySide:
+        """The figures of the saved run `run` for all its trades, its long trades, and its short
+        trades (`ff.backtest.results_by_side`, step 5.22), refused as `_opened` refuses."""
+        opened = self._opened(run)
+        with _results_read(opened.hash, self.paths):
+            return results_by_side(opened)
 
     def _opened(self, run: str) -> Run:
         """The folder of the saved run `run`: `NoSuchRunError` where no run has that id or key,

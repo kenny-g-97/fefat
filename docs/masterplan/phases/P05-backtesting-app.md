@@ -19,7 +19,7 @@
 - "Playwright passes on both projects" reads as the desktop project at 1280 by 800, with the dev-proxy project keeping its own specs; no step has a phone layout (D-54); screenshots are copied to `docs/validation/screenshots/<step>/`.
 - The harness's seed (`scripts/e2e_server.py`) grows with the steps: step 5.3 adds the demo strategy and its first run, which later specs call `demo-run-01`.
 
-**Skills.** `software-design-principles` for every step; `designing-architecture` for each new seam: the catalog service (5.1), the strategy library and its index (5.2), the backtest job, the runs' index, and the executor's backtest kind (5.3), and uploads with the import job (5.12); `backtest-expert` for 5.3, 5.7 to 5.10, and 5.20 to 5.22 (D-117, D-119); `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` with `web/DESIGN.md` for the steps that build screens, 5.4 to 5.10, 5.12, 5.13, 5.17 (D-105), 5.19 (D-112), and 5.20 to 5.22 (D-117, D-119), each ending with unslop's audit and the Contemporary skill's checklist (D-77, D-88).
+**Skills.** `software-design-principles` for every step; `designing-architecture` for each new seam: the catalog service (5.1), the strategy library and its index (5.2), the backtest job, the runs' index, and the executor's backtest kind (5.3), and uploads with the import job (5.12); `backtest-expert` for 5.3, 5.7 to 5.10, and 5.20 to 5.23 (D-117, D-119, D-121); `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` with `web/DESIGN.md` for the steps that build screens, 5.4 to 5.10, 5.12, 5.13, 5.17 (D-105), 5.19 (D-112), and 5.20 to 5.23 (D-117, D-119, D-121), each ending with unslop's audit and the Contemporary skill's checklist (D-77, D-88).
 
 **Open decisions for the kickoff** (settled 2026-11-10, D-93)**.** Which of your real strategies to seed as the demo (a simple one you understand well); the metrics you want on the KPI cards first.
 
@@ -1075,6 +1075,49 @@ Not in this step: the exports of the trade log and the executions (step 5.8), th
 #### If it fails
 
 - A side's Sharpe that moves when a flat day is dropped was taken on its own days: every trade date of the run counts, as the metrics count a flat day.
+
+#### Amendment
+
+2026-11-26 (the step's plan, D-122): the plan's calls, which you approved. A side the run made no trade on is none whole, its column None in every row with a line that says so, while a figure of all trades with nothing to count is none as the metrics leave it and a sum over no trade zero; the gross profit and the gross loss are the winners' and the losers' net P&L, which the profit factor divides; and the sums count closed trades alone, so that a position still open when the run ends is in none of them, while all trades' drawdown and Sharpe mark it. A side's metrics are `fefat_engine.metrics` on its trades and on its closed-trade walk, which holds, beside a point after each trade on the trade date of its last exit, one for each trade date the run was valued on, so that the engine counts every one of them as a day. A fill a trade's path names is found by its order and its instant, and its slippage costs its ticks at its lots and the tick's value, rounded up to the micro-unit as every amount is (F-FEE-03), a stop's initial risk sharing the rule (`InstrumentParameters.worth_of_ticks`). The page is opened by All results, a ghost button in the run page's header. While doing the step: a fill that reverses a position (S-fill-042) stands on the paths of both the trade it closes and the trade it opens, the engine sharing it between them, so its slippage is shared by the lots each takes of it, where the plan would have refused it; none of the 39 runs saved on this PC holds one, and a stop a gap passed records its ticks past its price whatever the run's slippage on stops. From the reviews: the walk's point for a trade date stands at its start, at the equity before its trades, where the plan had it at its end, so that a spell under a peak starts on the trade date the side fell from it, and a weekend at the peak is no time under it, which the trades walked alone would count (the engine review); the fill that leaves a trade flat is charged at the lots the trade held, so that a reversal into a position still open when the run ends charges the trade it closes for its own lots alone (the code and engine reviews); and the page reads its names in body text and its figures in heading text, in five sets, its side columns on equal tracks, says under the card's title which side made no trade, shows the run key's chip under its header, and gives All results the text link's arrow (the design review).
+
+### 5.23 Market exposure and buy and hold
+
+Depends on: 5.7 · Plan mode: optional · Reviews: step-reviewer, engine-accuracy-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
+
+#### Purpose
+
+A finished run's page says how much of its result is the market's: how its days moved with the instrument it trades, and what holding that instrument over the same window would have made.
+
+#### Prerequisites
+
+- Step 5.7 merged: the results page, its KPI cards, its equity chart, and its money format (D-116, D-117).
+
+#### Prompt
+
+```text
+Masterplan step 5.23 — Market exposure and buy and hold.
+
+Read docs/masterplan/02-engine-and-data.md §7 (the results model) and §9 (research tools), and web/DESIGN.md (Run page, Stat card, Equity chart, Charts). Your request of 2026-11-26 asked for it (D-121): how a run's returns relate to the market it trades, and how it compares with buy and hold. Implement `ff.backtest.market_exposure(run)` in `fefat.backtest`, worked out from a saved run's own artifacts, with no change to the engine or to a saved run and no read of the store. The market is one lot of the instrument held long, valued at each decision's mark, which the `equity` artifact holds whether or not the run held a position, each roll's gap in the record taken off, so that a roll is no move of the market. Over the trade dates the run was valued on, the run's days as the metrics count them and the market's, each the change of its value at the trade date's last decision, give: their correlation, near zero where the run's days are its own; the beta in lots, the lots held long whose days the run's moved like, the covariance over the market's variance, in lots since a futures account's return in percent is of a capital that is only a reference; the share of the run's variance the market explains, the correlation squared; the alpha in the currency, the run's days summed less what the beta's lots of the market made over them; and the correlation and the beta again over the days the market fell and over the days it rose. Buy and hold is one lot held from the run's first mark to its last: its net P&L, its maximum drawdown and longest spell under a peak after each decision, the capital first, as the run's are measured, and its Sharpe on its days as the metrics define it, at one lot and at the lots whose days have the run's volatility, with its equity at each decision for the chart; it pays no fee, slippage, or funding, which the page says. Where fewer than three days, a market that never moved, or too few falling or rising days leave nothing to count, a figure is none with why, as the metrics leave one. Serve it as `GET /v1/runs/{run}/market`, refused as `/stats` is. Build the Market exposure card on the run page after the Robustness summary: four stat cards, the correlation, the beta in lots, the alpha, and the share explained, each naming its days; one line for the falling and the rising days; and a table of the run beside buy and hold at both sizes. On the equity chart, Buy and hold is a second line in the cyan at the run's volatility, named in the legend and read in the readout. Money as the page writes it (D-117).
+
+Contract tests: the API equals `ff.backtest.market_exposure` for the same run (pytest), and the page's figures equal the API's (Playwright). Tests: a run long one lot from its first decision to its last, without costs, has a correlation of 1 and a beta of one lot, and the same days a trade date later correlate near zero on a random walk; a run that never trades has no correlation; across a roll the market's day leaves the gap out; the beta's lots of the market's change plus the alpha is the run's days summed; buy and hold's drawdown is the engine's `running_drawdown` on its walk.
+
+Not in this step: a market other than the instrument the run trades (step 7.14), rolling windows and bootstrap intervals (step 11.6), a risk-free rate, returns in percent of a notional, buy and hold's costs (`BACKLOG.md`).
+```
+
+#### Done means
+
+1. Contract tests pass (API equals SDK; DOM equals API).
+2. Playwright passes on both projects with screenshots.
+3. A run long one lot throughout, without costs, has a correlation of 1 and a beta of one lot, and the beta's lots of the market's change plus the alpha is the run's days summed (tests).
+
+#### Your checks
+
+- Open a real run: the card's correlation and beta equal `ff.backtest.market_exposure(run)` in a notebook for the same run key, and the cyan line ends at the capital plus buy and hold's net P&L at the run's volatility.
+
+#### If it fails
+
+- A correlation that moves when one series is read on its own calendar was taken on two: both are the run's own trade dates.
+- Should a run's marks stand still while it is flat, take the market from the store's bars under the pinned-data check `Run.explain` uses, and record it in an Amendment.
 
 ## Phase exit
 

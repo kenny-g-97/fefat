@@ -32,3 +32,7 @@ export const runSearch = z.object({
   id: z.string().min(1).max(64).optional().catch(undefined),
   job: z.string().min(1).max(64).optional().catch(undefined),
 })
+
+/** A saved run's results in full (step 5.22): the run by its key alone, since only a saved run
+ * has results. */
+export const allResultsSearch = runSearch.pick({ key: true })

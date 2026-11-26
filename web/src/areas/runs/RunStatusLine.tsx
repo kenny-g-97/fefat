@@ -34,12 +34,7 @@ export function RunStatusLine({ run, cached, found }: RunStatusLineProps) {
         <span className="text-foreground-secondary">
           {`Created ${formatInstant(run.created_at)}`}
         </span>
-        <span className="flex items-center gap-2 text-foreground-secondary">
-          Run key
-          <IdentityChip testId="run-key">
-            {run.run_key.slice(0, KEY_DIGITS)}
-          </IdentityChip>
-        </span>
+        <RunKey runKey={run.run_key} />
       </div>
       {found !== null && (
         <p data-testid="run-found" className="text-foreground-secondary">
@@ -47,5 +42,18 @@ export function RunStatusLine({ run, cached, found }: RunStatusLineProps) {
         </p>
       )}
     </div>
+  )
+}
+
+/** A saved run's key, named, its first twelve digits in its identity chip: what tells apart two
+ * runs of one version on one window (step 5.22). */
+export function RunKey({ runKey }: Readonly<{ runKey: string }>) {
+  return (
+    <span className="flex items-center gap-2 text-foreground-secondary">
+      Run key
+      <IdentityChip testId="run-key">
+        {runKey.slice(0, KEY_DIGITS)}
+      </IdentityChip>
+    </span>
   )
 }

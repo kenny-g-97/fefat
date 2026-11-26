@@ -41,6 +41,7 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-11-19 — Deleting an instrument's stored data (D-107, ADR-0023, your request after checking step 5.17's pull request): a new step 5.18 deletes one provider's data of a root from the instrument's page, after a confirmation that says what goes and counts the saved runs that read it, and from the command line. Its row stands after 5.17's, so that it runs before 5.16. No step ID changed.
 - 2026-11-21 — The builder's revisit and strategy export (D-110, from your check of step 5.5's pull request): the Feature Lab comes first, then the rule builder (6.7) revisits the Strategies pages and makes new strategies from the library's features and their combinations. Three new steps after 6.9 export a builder-made strategy to backtest it on another platform: 6.10 NinjaScript, 6.11 Pine Script, and 6.12 MQL5, with MQL4 waiting in `BACKLOG.md`. No step ID changed.
 - 2026-11-25 — Your review of step 5.20's pull request (D-119): the Monte Carlo's memory test bounds its route's most by system, 512 MiB on Windows and 2 GiB elsewhere, where CI's Ubuntu held 1,228 MiB; and a run's equity chart turns green above its capital and red below, filled to its line, both in that pull request. Two new steps follow 5.20: 5.21 draws each of the Monte Carlo's figures against the percent of paths, with the run's own path over the fan in purple, and 5.22 gives a run's results in full for all, long, and short trades on a page of their own. The exports of the trade log and the executions join step 5.8. No step ID changed.
+- 2026-11-26 — Market exposure and portfolio backtests (D-121, your request with step 5.22): a run's page gains its market exposure, the correlation and the beta of its days with its instrument held long and the alpha left over, beside buy and hold, in a new step 5.23 whose row stands after 5.22's, and step 11.6's robustness page shows them again with intervals; a portfolio of D-76 is set up and run from a page and read in full, with each member in or out, its market exposure, where its risk sits, and its correlations by day, by week, and over time, in new steps 7.14 to 7.16, on which step 8.1 now depends. No step ID changed.
 
 ## Steps
 
@@ -111,7 +112,8 @@ Phase kickoffs and exits are tracked in the second table.
 | 5.7 | Results: metrics, equity, distributions | P5 | done | #80 | 2026-11-24 | A finished run's page opens on its results (D-116): eight KPI cards with the net P&L in percent of the capital, the robustness summary, an equity and drawdown chart over ECharts 6.1.0, breakdowns, the fidelity check, and five histograms, every figure from three new routes over the run's folder. A bucket keeps three extremes, so that the maximum drawdown survives. From your review (D-117): every cash value with its currency's sign, Commissions and fees with each table's charge, and step 5.20 for a Monte Carlo. No migration. |
 | 5.20 | Monte Carlo on the run page | P5 | done | #81 | 2026-11-25 | A finished run's page ends its results with a Monte Carlo (D-118): 1,000 paths of its trades drawn with replacement from seed 0, the median net P&L, the chance of a net loss, and the median and 95th-percentile closed-trade drawdown beside the run's own, as stat cards, and the paths' equity fan, every figure from `GET /v1/runs/{run}/monte-carlo`. Polars, no numpy; a walk by blocks of trade counts holds the route's most near 340 MiB on Windows. No migration, no new dependency. From your review (D-119): the memory bound by system, the equity chart in the sign colours, and steps 5.21 and 5.22. |
 | 5.21 | The Monte Carlo's charts | P5 | done | #82 | 2026-11-26 | The Monte Carlo card's select chooses its chart (D-120): Equity, the fan with the run's own walk over it in the purple (D-119), or Net P&L, Max drawdown, Profit factor, Avg. MAE, or Avg. MFE against the percent of paths, each at every whole percent beside the run's own, its readout resting on the median path, every figure from `GET /v1/runs/{run}/monte-carlo`'s new `by_percent` and `fan.own`. Every line keeps 3 : 1 against what it crosses: the fan's middle band takes 45 % and the capital line body text's grey, in the equity chart too. The route's most holds 347 to 364 MiB on Windows. No migration, no new dependency. |
-| 5.22 | Results in full, by side | P5 | todo | | | |
+| 5.22 | Results in full, by side | P5 | done | #83 | 2026-11-26 | `ff.backtest.results_by_side` and `GET /v1/runs/{run}/results` (D-122): every figure for all, long, and short trades, a side's from the engine's metrics on its closed-trade walk, its spell under a peak from the trade date of its fall, a reversing fill charged by the lots each trade held; the All results page from the run page's header; and the plan's additions of D-121, steps 5.23 and 7.14 to 7.16 |
+| 5.23 | Market exposure and buy and hold | P5 | todo | | | Runs after 5.22, before 5.8 (D-121) |
 | 5.8 | Trade table | P5 | todo | | | |
 | 5.9 | Trade review chart | P5 | todo | | | |
 | 5.10 | Run comparison, version diff, reproduce-run check | P5 | todo | | | |
@@ -142,6 +144,9 @@ Phase kickoffs and exits are tracked in the second table.
 | 7.11 | More presets, end to end | P7 | todo | | | |
 | 7.12 | Portfolio backtest file and analysis | P7 | todo | | | |
 | 7.13 | Portfolio page | P7 | todo | | | |
+| 7.14 | Portfolio analysis in full | P7 | todo | | | |
+| 7.15 | Set up and run a portfolio backtest | P7 | todo | | | |
+| 7.16 | The portfolio page in full | P7 | todo | | | |
 | 8.1 | Runtime spike: tool loop, streaming, append-only transcript, caching, compaction | P8 | todo | | | |
 | 8.2 | Sessions, API key storage, usage ledger, budgets, settings page | P8 | todo | | | |
 | 8.3 | Tool registry and read tools | P8 | todo | | | |
@@ -228,7 +233,7 @@ Phase kickoffs and exits are tracked in the second table.
 | App on the phone over Tailscale | 4.6 | deferred (D-54) |
 | Web MVP | 5.13 | |
 | Feature lab and builder | 6.9 | |
-| Prop simulator on saved backtests, imported trade logs, and portfolios of them | 7.13 | |
+| Prop simulator on saved backtests, imported trade logs, and portfolios of them | 7.16 | |
 | In-app agent | 8.11 | |
 | Event strategies | 9.6 | |
 | Alternative data | 10.7 | |

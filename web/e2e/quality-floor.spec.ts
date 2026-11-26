@@ -34,7 +34,8 @@ const PATHS = [
   "/no-such-page",
 ]
 
-/** `PATHS` and the page of the seeded run, whose address the server's list gives (step 5.6). */
+/** `PATHS`, and the page of the seeded run and that of its results in full, whose address the
+ * server's list gives (steps 5.6 and 5.22). */
 async function everyPath(page: Page): Promise<readonly string[]> {
   const answer = await page.request.get("/v1/runs", {
     params: { status: "succeeded" },
@@ -44,7 +45,11 @@ async function everyPath(page: Page): Promise<readonly string[]> {
   if (seeded === undefined) {
     throw new Error("Expected the seed's saved run, got none.")
   }
-  return [...PATHS, `/runs/run?key=${seeded.run_key}`]
+  return [
+    ...PATHS,
+    `/runs/run?key=${seeded.run_key}`,
+    `/runs/run/results?key=${seeded.run_key}`,
+  ]
 }
 
 test("no page scrolls sideways at 1280 px or logs an error", async ({

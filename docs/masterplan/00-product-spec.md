@@ -26,8 +26,9 @@ FEAT ("feature engineering for algorithmic trading"; FEFAT in the code and in th
 - FEFAT has its **own engine** (Rust core, Python interface). It is deterministic: the same inputs always produce identical results.
 - **Strategy versions are immutable.** Every backtest run pins the strategy version, its parameters, the feature versions it uses, the data snapshot, and the engine version. A run can always be reproduced, and every run stays linked to its strategy version forever.
 - **Accuracy:** signals are decided at bar close; orders, stops, and targets are simulated on the finest data available inside each bar (ticks, else 1-second bars, else 1-minute bars, or coarser bars for imported data that has nothing finer). Every fill carries a fidelity tag. Fill rules are written down in plain language and enforced by tests.
-- **Analysis:** metrics, equity curves, distributions, a trade table, and a trade review chart that shows entries, exits, stops, targets, and the indicators the strategy used. Any trade can be "explained": replayed event by event through the readable reference engine.
+- **Analysis:** metrics, equity curves, distributions, how a run's days move with the market it trades and what buying and holding that market made (D-121), a trade table, and a trade review chart that shows entries, exits, stops, targets, and the indicators the strategy used. Any trade can be "explained": replayed event by event through the readable reference engine.
 - **Comparison:** runs can be compared side by side, and strategy versions can be diffed.
+- **Portfolios:** several strategies on their instruments are backtested as one: you choose the strategies, their instruments and data, run them from one page, and read the portfolio as a whole, with its strategies' correlation, its sensitivity to the market, and its results with or without each strategy (D-76, D-121). The strategies run apart and are merged on one timeline, so that one never reacts to another's loss.
 - **Every run is ready for prop simulation:** besides its trade log, each run stores every trade's intrabar path (how its open profit and loss moved inside the trade), so any saved backtest can be tested against prop rules later without re-running it.
 - The agent can analyse a run with you, propose an edit, and (after your approval) create a new version and start the next backtest.
 
@@ -112,6 +113,9 @@ FEAT ("feature engineering for algorithmic trading"; FEFAT in the code and in th
 | Rule set | A prop firm plan expressed as data. |
 | Prop strategy | Account-level decisions over time for prop accounts: accounts, sizing, payouts, allocation. |
 | Backtest file | An existing backtest with its full trade log — a saved FEFAT run, or a trade log imported from another platform: the input of a prop simulation. |
+| Portfolio | Two or more backtest files, saved runs or imported trade logs of any strategies and instruments, each with a size multiplier, merged on one timeline into one backtest file and read as one (D-76, D-121). |
+| Market exposure | How a run's or a portfolio's days move with a market: their correlation, the beta, the lots of the market held long whose days they moved like, and the alpha, what their profit and loss leaves over that (D-121). |
+| Buy and hold | The market held long from a run's first price to its last, the benchmark its result is set beside (D-121). |
 | Trade path | The compact record of how price moved while a trade was open (its favourable and adverse extremes, with a mark every minute and at every fill), stored by every FEFAT run so prop rules can be checked later without re-running. |
 | Path fidelity | How precisely a backtest file describes what happened inside its trades, recorded per trade: `tbbo`, `trades`, `1s`, `1m`, or a coarser bar timeframe from FEFAT runs; `enriched`, `excursions`, or `close-only` for imported trade logs. |
 | Proposal | A change suggested by the agent, pending your accept or reject. |

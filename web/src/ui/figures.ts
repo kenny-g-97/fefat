@@ -210,6 +210,45 @@ function isWhole(scaled: number): boolean {
   return Math.abs(scaled - Math.round(scaled)) < 1e-6
 }
 
+const MINUTES_AN_HOUR = 60
+const MINUTES_A_DAY = 1440
+
+/** A time the API sends in minutes, in its two largest units, in words, rounded to the smaller:
+ * `45 minutes`, `1 hour 30 minutes`, `3 days 4 hours`, and `Under a minute` short of half of one
+ * (web/DESIGN.md, Figures). */
+export function formatDuration(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes < 0) {
+    throw new Error(
+      `Expected a count of minutes at or above zero, got ${minutes}.`
+    )
+  }
+  const whole = Math.round(minutes)
+  if (whole === 0) {
+    return "Under a minute"
+  }
+  if (whole < MINUTES_AN_HOUR) {
+    return counted(whole, "minute")
+  }
+  if (whole < MINUTES_A_DAY) {
+    return inTwoUnits(whole, MINUTES_AN_HOUR, "hour", "minute")
+  }
+  const hours = Math.round(minutes / MINUTES_AN_HOUR)
+  return inTwoUnits(hours, MINUTES_A_DAY / MINUTES_AN_HOUR, "day", "hour")
+}
+
+/** `count` of a smaller unit as whole larger units of `per` and the rest, the rest left out at
+ * none: `1 hour 30 minutes`, `2 days`. */
+function inTwoUnits(
+  count: number,
+  per: number,
+  larger: string,
+  smaller: string
+): string {
+  const rest = count % per
+  const whole = counted(Math.floor(count / per), larger)
+  return rest === 0 ? whole : `${whole} ${counted(rest, smaller)}`
+}
+
 /** A count of `noun`, with its thousands apart and the noun's `plural` where it is not one:
  * `1 session`, `2,760 records`, `3 mismatches`. */
 export function counted(

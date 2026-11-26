@@ -245,6 +245,10 @@ Not in this step: agent tools.
 
 - Shared bootstrap code must live in one module used by both Phase 7 and this step; duplicated implementations drift.
 
+#### Amendment
+
+2026-11-26 (your request of that date, D-121): the robustness report and page also hold step 5.23's market exposure and comparison with buy and hold, with what one reading cannot say. The day-block bootstrap draws the run's days and the market's together, a day's pair never split, and gives the 5th and 95th percentiles of the correlation and of the beta, so that a correlation near zero reads as orthogonal only where its interval holds zero; and the correlation and the beta over a rolling window of trade dates draw as a chart. A portfolio backtest file (step 7.12) is taken by the day-block bootstrap as a run is, its days drawn whole across its members so that their correlation survives; the stresses that run a strategy again, costs, slippage, and parameter neighbourhoods, stay a run's.
+
 ### 11.7 Agent tools for studies
 
 Depends on: 11.6 · Plan mode: optional · Reviews: step-reviewer · Security: yes · Model hint: default

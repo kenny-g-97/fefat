@@ -80,3 +80,30 @@ export function shareText(share: number): string {
 export function edgeText(edge: number): string {
   return EDGE.format(edge)
 }
+
+/** A count with its unit, the unit in the plural where the count is not one: `3 days`. */
+export function countText(count: number, unit: string): string {
+  return `${count.toLocaleString("en-US")} ${unit}${count === 1 ? "" : "s"}`
+}
+
+/** A time the API sends in minutes, in its two largest units, rounded to the smaller: `45
+ * minutes`, `1 hour 30 minutes`, `3 days 4 hours`, and `Under a minute` short of half of one. */
+export function durationText(minutes: number): string {
+  const whole = Math.round(minutes)
+  if (whole === 0) {
+    return "Under a minute"
+  }
+  if (whole < 60) {
+    return countText(whole, "minute")
+  }
+  if (whole < 1440) {
+    const rest = whole % 60
+    const hours = countText(Math.floor(whole / 60), "hour")
+    return rest === 0 ? hours : `${hours} ${countText(rest, "minute")}`
+  }
+  const inHours = Math.round(minutes / 60)
+  const days = countText(Math.floor(inHours / 24), "day")
+  return inHours % 24 === 0
+    ? days
+    : `${days} ${countText(inHours % 24, "hour")}`
+}

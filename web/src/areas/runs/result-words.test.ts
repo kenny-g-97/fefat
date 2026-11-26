@@ -5,6 +5,7 @@ import {
   hourLabel,
   MONTE_CARLO_CHARTS,
   monteCarloNote,
+  noTradeWords,
   pathFigureTone,
   pathFigureWritten,
   percentWords,
@@ -12,6 +13,7 @@ import {
   signed,
   toneOf,
 } from "./result-words"
+import { SIDE } from "./side-results.sample"
 
 describe("the words of a run's results", () => {
   it("writes an hour of the day with its minutes", () => {
@@ -109,6 +111,21 @@ describe("the words of a run's results", () => {
     )
     expect(percentWords("profit_factor", 98, null)).toBe(
       "The path at 98% drew no losing trade, so it has no profit factor"
+    )
+  })
+})
+
+describe("noTradeWords (step 5.22)", () => {
+  it("says which side made no trade, and nothing where both traded", () => {
+    expect(noTradeWords({ long: SIDE, short: SIDE })).toBeUndefined()
+    expect(noTradeWords({ long: SIDE, short: null })).toBe(
+      "This run made no short trade, so the Short column reads None."
+    )
+    expect(noTradeWords({ long: null, short: SIDE })).toBe(
+      "This run made no long trade, so the Long column reads None."
+    )
+    expect(noTradeWords({ long: null, short: null })).toBe(
+      "This run made no trade, so the Long and Short columns read None."
     )
   })
 })
