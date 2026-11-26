@@ -14,8 +14,10 @@ From step 5.3 `run` tells a callable each stage it reaches (`RunStage`): `progre
 `estimated` tells what a run of a window would read before anything runs (step 5.6).
 `equity_curve` downsamples a run's equity, keeping its deepest drawdown, and `trade_distributions`
 counts its trades into histograms (step 5.7); `monte_carlo` walks paths of its trades drawn again
-with replacement (step 5.20), each figure at every whole percent of them (step 5.21); and
-`results_by_side` gives its figures for all, long, and short trades (step 5.22).
+with replacement (step 5.20), each figure at every whole percent of them (step 5.21);
+`results_by_side` gives its figures for all, long, and short trades (step 5.22); and
+`market_exposure` how its days moved with one lot of its instrument held long, beside buy and
+hold (step 5.23).
 `RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
 `fefat.backtest.schemas`, and the record is `fefat.backtest.record`. `fidelity_check` works a
 saved run's fidelity check out again (`fefat.backtest.fidelity`, step 2.12), and `reconcile`
@@ -25,6 +27,7 @@ waits for fill exports.
 from fefat.backtest.distributions import Histogram, TradeDistributions, trade_distributions
 from fefat.backtest.equity_curves import equity_curve
 from fefat.backtest.estimates import WindowEstimate, estimated, held_instruments
+from fefat.backtest.exposure import MarketExposure, market_exposure
 from fefat.backtest.fidelity import fidelity_check
 from fefat.backtest.metrics import (
     FidelityCheck,
@@ -84,6 +87,7 @@ __all__ = [
     "FigureByPercent",
     "FiguresByPercent",
     "Histogram",
+    "MarketExposure",
     "MonteCarlo",
     "Percentiles",
     "PeriodOutcome",
@@ -102,6 +106,7 @@ __all__ = [
     "estimated",
     "fidelity_check",
     "held_instruments",
+    "market_exposure",
     "monte_carlo",
     "reconcile",
     "results_by_side",
