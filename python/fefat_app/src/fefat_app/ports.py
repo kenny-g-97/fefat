@@ -8,8 +8,9 @@ dispatcher the fourth and fifth (step 4.4), their models in `fefat_app.job_model
 the executor the sixth (step 4.5), its specs and
 results in `fefat_app.execution`, the library's index the seventh (step 5.2), its rows in
 `fefat_app.library`, the runs' records the eighth (step 5.3), their models in
-`fefat_app.runs`, and the import wizard's uploads the ninth (step 5.12), their models in
-`fefat_app.imports`; the blob store, the agent's runtime, and the licence arrive with the steps
+`fefat_app.runs`, the import wizard's uploads the ninth (step 5.12), their models in
+`fefat_app.imports`, and the reads of a run's artifacts the tenth (step 5.8), their models in
+`fefat_app.trades`; the blob store, the agent's runtime, and the licence arrive with the steps
 that first use them."""
 
 from collections.abc import AsyncIterator, Callable, Mapping
@@ -39,6 +40,7 @@ from fefat_app.runs import (
     Submitted,
     SubmittedRun,
 )
+from fefat_app.trades import QueryAnswer, RawTrades, TradesAsked
 
 type Clock = Callable[[], datetime]
 """Now, as an aware instant in UTC: the system's clock in the server, a settable one in tests."""
@@ -410,4 +412,22 @@ class UploadRecords(Protocol):
 
     def remove(self, upload_id: UUID) -> None:
         """Remove the folder of `upload_id`, once its import has written."""
+        ...
+
+
+class ArtifactQueries(Protocol):
+    """Reads of a saved run's artifacts in its folder through a query engine of their own, which
+    never opens the app's database (step 5.8, D-93): a page of the run's trades, and the trader's
+    one SELECT over its artifacts."""
+
+    def trades(self, folder: Path, asked: TradesAsked) -> RawTrades:
+        """The trades of the run in `folder` that `asked` keeps, in its order, after its cursor,
+        at most its limit, with how many its filters keep; `FileNotFoundError` where an artifact
+        is gone and `UnreadableArtifactError` where one does not read."""
+        ...
+
+    def select(self, folder: Path, sql: str) -> QueryAnswer:
+        """The answer of the one SELECT `sql` over the artifacts of the run in `folder`, each a
+        view by its name in the instrument's units; `QueryRefusedError` for any other statement,
+        for one the engine refuses, and for an answer past the reader's caps."""
         ...

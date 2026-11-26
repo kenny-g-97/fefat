@@ -731,6 +731,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/runs/{run}/executions.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Executions File
+         * @description Every fill of the saved run, one row an execution, in the order the run made them, as
+         *     `<strategy>-<run key's first twelve digits>-executions.csv`.
+         */
+        get: operations["run_executions_file_v1_runs__run__executions_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/runs/{run}/market": {
         parameters: {
             query?: never;
@@ -783,6 +804,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/runs/{run}/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Run
+         * @description The answer of one SELECT over the saved run's artifacts, each a view in the instrument's
+         *     units, at most 10,000 rows of at most 4 MiB within 10 seconds; 400 in DuckDB's words or for
+         *     any other statement or a larger answer.
+         */
+        post: operations["query_run_v1_runs__run__query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/runs/{run}/results": {
         parameters: {
             query?: never;
@@ -819,6 +862,49 @@ export interface paths {
          *     409 for a run not saved yet, a folder that is gone, or one this engine does not read.
          */
         get: operations["run_statistics_v1_runs__run__stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/runs/{run}/trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Trades
+         * @description A page of the saved run's trades that the filters keep, in the order asked, ties by their
+         *     row, a trade without the sort's figure last, after the trade the cursor ends on, with how
+         *     many trades the filters keep; 400 for a cursor no page of this order gave.
+         */
+        get: operations["run_trades_v1_runs__run__trades_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/runs/{run}/trades.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Trades File
+         * @description Every trade of the saved run that the filters keep, in the order asked, a row each as a
+         *     page gives it, as `<strategy>-<run key's first twelve digits>-trades.csv`.
+         */
+        get: operations["run_trades_file_v1_runs__run__trades_csv_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3222,6 +3308,13 @@ export interface components {
             version: number;
         };
         /**
+         * PnlSign
+         * @description The trades whose net P&L is above zero, below it, or zero (`02` §7: a win is above zero,
+         *     a loss below).
+         * @enum {string}
+         */
+        PnlSign: "positive" | "negative" | "zero";
+        /**
          * PositionSide
          * @enum {string}
          */
@@ -3366,6 +3459,28 @@ export interface components {
          * @enum {string}
          */
         QualityStatus: "clean" | "flagged" | "unchecked" | "stale";
+        /**
+         * QueryAnswer
+         * @description What one SELECT over a run's artifacts answered (step 5.8): its columns, and its rows,
+         *     each a value a column, an instant as ISO 8601 text in UTC, a decimal as its text, and a whole
+         *     number past 2^53, or a float that is no number, as text, so that none changes in a browser.
+         */
+        QueryAnswer: {
+            /** Columns */
+            columns: components["schemas"]["QueryColumn"][];
+            /** Rows */
+            rows: components["schemas"]["JsonValue"][][];
+        };
+        /**
+         * QueryColumn
+         * @description A column of a query's answer, named and typed as DuckDB gives it, such as `DECIMAL(29,9)`.
+         */
+        QueryColumn: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+        };
         /**
          * RedFlag
          * @description A red flag that fires, with the script's message.
@@ -3653,6 +3768,15 @@ export interface components {
             next_cursor: string | null;
             /** Runs */
             runs: (components["schemas"]["SubmittedRun"] | components["schemas"]["SavedRun"])[];
+        };
+        /**
+         * RunQuery
+         * @description One SELECT over a run's artifacts, each a view by its name: `trades`, `fills`, `orders`,
+         *     `log`, `costs`, `trade_paths`, `equity`, `equity_daily`, and `signals`.
+         */
+        RunQuery: {
+            /** Sql */
+            sql: string;
         };
         /**
          * RunStatistics
@@ -4160,6 +4284,12 @@ export interface components {
             stop: number;
         };
         /**
+         * SortOrder
+         * @description Lowest first or highest first, a trade without the sort's figure last either way.
+         * @enum {string}
+         */
+        SortOrder: "asc" | "desc";
+        /**
          * Source
          * @description A source of market data as the guide describes it; `terms_page` is null where the source
          *     publishes no terms page, and `licence_scope` is copied into every dataset imported from it.
@@ -4541,6 +4671,107 @@ export interface components {
             /** Trades Without R Multiple */
             trades_without_r_multiple: number;
         };
+        /**
+         * TradePage
+         * @description A page of a run's trades (step 5.8): its trades, the cursor of the next page, None on the
+         *     last, and how many trades the filters keep in all.
+         */
+        TradePage: {
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Total */
+            total: number;
+            /** Trades */
+            trades: components["schemas"]["TradeRow"][];
+        };
+        /**
+         * TradeRow
+         * @description A trade of a run as the table and its export show it (step 5.8): its row in the trades
+         *     artifact, which its path names, and its entry order, the trade's id for `Run.explain` (step
+         *     5.9); every column of the artifact but the strategy's features, its instants as ISO 8601 in
+         *     UTC, its prices as decimal text in the instrument's units and its money in the run's
+         *     currency, its time held in minutes, and its R figures None without a stop; its entry order's
+         *     first fill's fidelity; and whether a fill of its path is ambiguous.
+         */
+        TradeRow: {
+            /** Ambiguous */
+            ambiguous: boolean;
+            /** Entry Contract */
+            entry_contract: string;
+            /** Entry Decision */
+            entry_decision: string;
+            /** Entry Order */
+            entry_order: number;
+            /** Entry Price */
+            entry_price: string;
+            /**
+             * Entry Trade Date
+             * Format: date
+             */
+            entry_trade_date: string;
+            /** Entry Ts */
+            entry_ts: string;
+            /** Exit Contract */
+            exit_contract: string;
+            /** Exit Price */
+            exit_price: string | null;
+            exit_reason: components["schemas"]["OrderRole"];
+            /** Exit Ts */
+            exit_ts: string;
+            /** Exits */
+            exits: number;
+            /** Fees */
+            fees: string;
+            /** Fidelity */
+            fidelity: string;
+            /** Funding */
+            funding: string;
+            /** Gross Pnl */
+            gross_pnl: string;
+            /** Held Minutes */
+            held_minutes: number;
+            /** Initial Risk */
+            initial_risk: string | null;
+            /** Initial Risk Ticks */
+            initial_risk_ticks: number | null;
+            /** Lots */
+            lots: number;
+            /** Mae */
+            mae: string;
+            /** Mae R */
+            mae_r: number | null;
+            /** Mae Ticks */
+            mae_ticks: number;
+            /** Max Drawdown */
+            max_drawdown: string;
+            /** Max Drawdown Ticks */
+            max_drawdown_ticks: number;
+            /** Mfe */
+            mfe: string;
+            /** Mfe R */
+            mfe_r: number | null;
+            /** Mfe Ticks */
+            mfe_ticks: number;
+            /** Path Fidelity */
+            path_fidelity: string;
+            /** Pnl */
+            pnl: string;
+            /** R Multiple */
+            r_multiple: number | null;
+            /** Rolls */
+            rolls: number;
+            side: components["schemas"]["PositionSide"];
+            /** Trade */
+            trade: number;
+        };
+        /**
+         * TradeSort
+         * @description What the trades are ordered by: the entry's or the exit's instant, the net P&L, the R
+         *     multiple, none without a stop, the time held, or the adverse or the favourable excursion in
+         *     ticks; each a column of `RawTrade`.
+         * @enum {string}
+         */
+        TradeSort: "entry_ts" | "exit_ts" | "pnl" | "r_multiple" | "held" | "mae_ticks" | "mfe_ticks";
         /**
          * TradeStatistics
          * @description The statistics of a run's trades, money in the instrument's currency.
@@ -6815,6 +7046,65 @@ export interface operations {
             };
         };
     };
+    run_executions_file_v1_runs__run__executions_csv_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A CSV file of the fills, to download. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     run_market_exposure_v1_runs__run__market_get: {
         parameters: {
             query?: {
@@ -6943,6 +7233,87 @@ export interface operations {
             };
         };
     };
+    query_run_v1_runs__run__query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunQuery"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueryAnswer"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     run_results_by_side_v1_runs__run__results_get: {
         parameters: {
             query?: never;
@@ -7021,6 +7392,156 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunStatistics"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    run_trades_v1_runs__run__trades_get: {
+        parameters: {
+            query?: {
+                side?: components["schemas"]["PositionSide"] | null;
+                exit_reason?: components["schemas"]["OrderRole"] | null;
+                start?: string | null;
+                end?: string | null;
+                pnl_sign?: components["schemas"]["PnlSign"] | null;
+                fidelity?: string | null;
+                ambiguous?: boolean | null;
+                sort?: components["schemas"]["TradeSort"];
+                order?: components["schemas"]["SortOrder"];
+                /** @description The `next_cursor` of the page before. */
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradePage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    run_trades_file_v1_runs__run__trades_csv_get: {
+        parameters: {
+            query?: {
+                side?: components["schemas"]["PositionSide"] | null;
+                exit_reason?: components["schemas"]["OrderRole"] | null;
+                start?: string | null;
+                end?: string | null;
+                pnl_sign?: components["schemas"]["PnlSign"] | null;
+                fidelity?: string | null;
+                ambiguous?: boolean | null;
+                sort?: components["schemas"]["TradeSort"];
+                order?: components["schemas"]["SortOrder"];
+            };
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A CSV file of the trades, to download. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
                 };
             };
             /** @description Unauthorized */

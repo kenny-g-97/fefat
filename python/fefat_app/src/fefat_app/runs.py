@@ -301,6 +301,12 @@ class ResultsRefusedError(ValueError):
     folder gone, or a folder this engine does not read (step 5.7)."""
 
 
+class UnreadableArtifactError(Exception):
+    """An artifact of a saved run's folder that DuckDB could not read, damaged or not the Parquet
+    the engine writes (step 5.8), which the results refuse as they refuse a file Polars cannot
+    read."""
+
+
 class RunCursorError(ValueError):
     """A page's cursor the list did not give."""
 

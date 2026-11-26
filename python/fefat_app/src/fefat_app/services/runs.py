@@ -60,6 +60,7 @@ from fefat_app.runs import (
     SavedRunFound,
     StressedRuns,
     SubmittedRun,
+    UnreadableArtifactError,
 )
 from fefat_app.services.code_runs import BACKTEST_LIMITS, looked_up_run
 from fefat_app.services.jobs import MAX_ATTEMPTS, Jobs
@@ -258,6 +259,14 @@ class Runs:
         with _results_read(opened.hash, self.paths):
             return market_exposure(opened, max_points)
 
+    @contextmanager
+    def reading(self, run: str) -> Generator[Run]:
+        """The folder of the saved run `run`, refused as `_opened` refuses, and what reading its
+        files refuses in the block refused as `_results_read` refuses (step 5.8)."""
+        opened = self._opened(run)
+        with _results_read(opened.hash, self.paths):
+            yield opened
+
     def _opened(self, run: str) -> Run:
         """The folder of the saved run `run`: `NoSuchRunError` where no run has that id or key,
         and `ResultsRefusedError` for a run not saved yet, a folder that is gone, and a folder
@@ -331,7 +340,7 @@ def _results_read(run_key: str, paths: FefatPaths) -> Generator[None]:
     run = f"run {run_key[:12]}"
     try:
         yield
-    except (FileNotFoundError, PolarsError) as unreadable:
+    except (FileNotFoundError, PolarsError, UnreadableArtifactError) as unreadable:
         raise ResultsRefusedError(_unreadable_folder(folder, paths.home, run)) from unreadable
     except ValueError as refused:
         raise ResultsRefusedError(str(refused).replace(str(folder), run)) from refused

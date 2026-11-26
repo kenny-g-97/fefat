@@ -14,6 +14,7 @@ from sqlalchemy import Engine
 
 from fefat.config import FefatPaths, Settings, load_settings
 from fefat.market.store import Store
+from fefat_app.artifact_queries import DuckDbQueries
 from fefat_app.credentials import KeyringCredentialStore
 from fefat_app.database.access_records import AccessTables
 from fefat_app.database.job_records import JobTables
@@ -34,6 +35,7 @@ from fefat_app.services.logins import LoginAttempts, Logins
 from fefat_app.services.runs import Runs
 from fefat_app.services.stored_data import StoredDataDeletions
 from fefat_app.services.strategies import SavedStrategies
+from fefat_app.services.trade_table import TradeTable
 from fefat_app.uploads import UploadFolders
 
 
@@ -45,8 +47,8 @@ class Container:
     executor of the trader's code, whose warm runner `opened_container` ends, the data
     catalog over the store in the data folder (step 5.1) and the deletes of its data
     (step 5.18), the library's strategies and
-    features over their index (step 5.2), the runs (step 5.3), and the import wizard over the
-    workspace's uploads (step 5.12)."""
+    features over their index (step 5.2), the runs (step 5.3), the import wizard over the
+    workspace's uploads (step 5.12), and the runs' trades and queries (step 5.8)."""
 
     settings: Settings
     paths: FefatPaths
@@ -63,6 +65,7 @@ class Container:
     features: SavedFeatures
     runs: Runs
     imports: Imports
+    trade_table: TradeTable
 
 
 def credential_store() -> CredentialStore:
@@ -78,7 +81,8 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
     runner for the previews, one for the workspace, neither starting a process before its first
     job or execution, and the store of the data folder, built once, which holds its folder
     alone, so that it sees every file an import writes (D-93); the library's services and the
-    runs share the executor and the index of the workspace's versions (steps 5.2 and 5.3)."""
+    runs share the executor and the index of the workspace's versions (steps 5.2 and 5.3), and
+    the runs' trades read their artifacts through DuckDB (step 5.8)."""
     records = AccessTables(engine)
     clock = partial(datetime.now, UTC)
     job_records = JobTables(engine)
@@ -89,6 +93,7 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
     executor = SubprocessExecutor(paths, warm_previews=True)
     library = LibraryTables(engine, paths)
     store = Store(paths.data_dir)
+    runs = Runs(RunTables(engine, paths), library, executor, jobs, paths, clock)
     return Container(
         settings=settings,
         paths=paths,
@@ -105,8 +110,9 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
         ),
         strategies=SavedStrategies(library, executor, paths.strategies_dir),
         features=SavedFeatures(library, executor, paths.features_dir),
-        runs=Runs(RunTables(engine, paths), library, executor, jobs, paths, clock),
+        runs=runs,
         imports=Imports(executor, jobs, UploadFolders(paths.uploads_dir, clock), paths, settings),
+        trade_table=TradeTable(runs, DuckDbQueries()),
     )
 
 

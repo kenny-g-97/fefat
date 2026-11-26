@@ -28,6 +28,7 @@ from fefat_app.http import (
     runs,
     strategies,
     streams,
+    trades,
     uploads,
 )
 from fefat_app.http.body_limits import BodyLimits
@@ -80,6 +81,7 @@ def build_api() -> FastAPI:
         strategies.router,
         features.router,
         runs.router,
+        trades.router,
         docs.router,
     ):
         api.include_router(router)

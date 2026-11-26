@@ -18,6 +18,7 @@ from sqlalchemy import Engine
 import fefat as ff
 from fefat.config import Settings, resolve_paths
 from fefat.market.store import Store
+from fefat_app.artifact_queries import DuckDbQueries
 from fefat_app.container import Container
 from fefat_app.credentials import KeyringCredentialStore
 from fefat_app.database.access_records import AccessTables
@@ -40,6 +41,7 @@ from fefat_app.services.logins import LoginAttempts, Logins
 from fefat_app.services.runs import Runs
 from fefat_app.services.stored_data import StoredDataDeletions
 from fefat_app.services.strategies import SavedStrategies
+from fefat_app.services.trade_table import TradeTable
 from fefat_app.uploads import UploadFolders
 from local_server import LOOPBACK, STARTED_AT, SettableClock, running_runners
 from memory_keyring import MemoryKeyring
@@ -97,6 +99,7 @@ def container(
     library = LibraryTables(engine, paths)
     settings = Settings()
     uploads = UploadFolders(paths.uploads_dir, clock)
+    runs = Runs(RunTables(engine, paths), library, warm_executor, jobs, paths, clock)
     try:
         yield Container(
             settings=settings,
@@ -114,8 +117,9 @@ def container(
             ),
             strategies=SavedStrategies(library, warm_executor, paths.strategies_dir),
             features=SavedFeatures(library, warm_executor, paths.features_dir),
-            runs=Runs(RunTables(engine, paths), library, warm_executor, jobs, paths, clock),
+            runs=runs,
             imports=Imports(warm_executor, jobs, uploads, paths, settings),
+            trade_table=TradeTable(runs, DuckDbQueries()),
         )
     finally:
         dispatcher.close()

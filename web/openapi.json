@@ -4993,6 +4993,16 @@
         "title": "PinnedFeature",
         "type": "object"
       },
+      "PnlSign": {
+        "description": "The trades whose net P&L is above zero, below it, or zero (`02` \u00a77: a win is above zero,\na loss below).",
+        "enum": [
+          "positive",
+          "negative",
+          "zero"
+        ],
+        "title": "PnlSign",
+        "type": "string"
+      },
       "PositionSide": {
         "enum": [
           "long",
@@ -5270,6 +5280,53 @@
         ],
         "title": "QualityStatus",
         "type": "string"
+      },
+      "QueryAnswer": {
+        "description": "What one SELECT over a run's artifacts answered (step 5.8): its columns, and its rows,\neach a value a column, an instant as ISO 8601 text in UTC, a decimal as its text, and a whole\nnumber past 2^53, or a float that is no number, as text, so that none changes in a browser.",
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/QueryColumn"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "columns",
+          "rows"
+        ],
+        "title": "QueryAnswer",
+        "type": "object"
+      },
+      "QueryColumn": {
+        "description": "A column of a query's answer, named and typed as DuckDB gives it, such as `DECIMAL(29,9)`.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "QueryColumn",
+        "type": "object"
       },
       "RedFlag": {
         "additionalProperties": false,
@@ -5944,6 +6001,23 @@
           "next_cursor"
         ],
         "title": "RunPage",
+        "type": "object"
+      },
+      "RunQuery": {
+        "additionalProperties": false,
+        "description": "One SELECT over a run's artifacts, each a view by its name: `trades`, `fills`, `orders`,\n`log`, `costs`, `trade_paths`, `equity`, `equity_daily`, and `signals`.",
+        "properties": {
+          "sql": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "RunQuery",
         "type": "object"
       },
       "RunStatistics": {
@@ -7131,6 +7205,15 @@
         "title": "SlippageTicks",
         "type": "object"
       },
+      "SortOrder": {
+        "description": "Lowest first or highest first, a trade without the sort's figure last either way.",
+        "enum": [
+          "asc",
+          "desc"
+        ],
+        "title": "SortOrder",
+        "type": "string"
+      },
       "Source": {
         "additionalProperties": false,
         "description": "A source of market data as the guide describes it; `terms_page` is null where the source\npublishes no terms page, and `licence_scope` is copied into every dataset imported from it.",
@@ -8081,6 +8164,274 @@
         ],
         "title": "TradeDistributions",
         "type": "object"
+      },
+      "TradePage": {
+        "description": "A page of a run's trades (step 5.8): its trades, the cursor of the next page, None on the\nlast, and how many trades the filters keep in all.",
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "trades": {
+            "items": {
+              "$ref": "#/components/schemas/TradeRow"
+            },
+            "title": "Trades",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trades",
+          "next_cursor",
+          "total"
+        ],
+        "title": "TradePage",
+        "type": "object"
+      },
+      "TradeRow": {
+        "description": "A trade of a run as the table and its export show it (step 5.8): its row in the trades\nartifact, which its path names, and its entry order, the trade's id for `Run.explain` (step\n5.9); every column of the artifact but the strategy's features, its instants as ISO 8601 in\nUTC, its prices as decimal text in the instrument's units and its money in the run's\ncurrency, its time held in minutes, and its R figures None without a stop; its entry order's\nfirst fill's fidelity; and whether a fill of its path is ambiguous.",
+        "properties": {
+          "ambiguous": {
+            "title": "Ambiguous",
+            "type": "boolean"
+          },
+          "entry_contract": {
+            "title": "Entry Contract",
+            "type": "string"
+          },
+          "entry_decision": {
+            "title": "Entry Decision",
+            "type": "string"
+          },
+          "entry_order": {
+            "title": "Entry Order",
+            "type": "integer"
+          },
+          "entry_price": {
+            "title": "Entry Price",
+            "type": "string"
+          },
+          "entry_trade_date": {
+            "format": "date",
+            "title": "Entry Trade Date",
+            "type": "string"
+          },
+          "entry_ts": {
+            "title": "Entry Ts",
+            "type": "string"
+          },
+          "exit_contract": {
+            "title": "Exit Contract",
+            "type": "string"
+          },
+          "exit_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Price"
+          },
+          "exit_reason": {
+            "$ref": "#/components/schemas/OrderRole"
+          },
+          "exit_ts": {
+            "title": "Exit Ts",
+            "type": "string"
+          },
+          "exits": {
+            "title": "Exits",
+            "type": "integer"
+          },
+          "fees": {
+            "title": "Fees",
+            "type": "string"
+          },
+          "fidelity": {
+            "title": "Fidelity",
+            "type": "string"
+          },
+          "funding": {
+            "title": "Funding",
+            "type": "string"
+          },
+          "gross_pnl": {
+            "title": "Gross Pnl",
+            "type": "string"
+          },
+          "held_minutes": {
+            "title": "Held Minutes",
+            "type": "number"
+          },
+          "initial_risk": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Risk"
+          },
+          "initial_risk_ticks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Risk Ticks"
+          },
+          "lots": {
+            "title": "Lots",
+            "type": "integer"
+          },
+          "mae": {
+            "title": "Mae",
+            "type": "string"
+          },
+          "mae_r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mae R"
+          },
+          "mae_ticks": {
+            "title": "Mae Ticks",
+            "type": "integer"
+          },
+          "max_drawdown": {
+            "title": "Max Drawdown",
+            "type": "string"
+          },
+          "max_drawdown_ticks": {
+            "title": "Max Drawdown Ticks",
+            "type": "integer"
+          },
+          "mfe": {
+            "title": "Mfe",
+            "type": "string"
+          },
+          "mfe_r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfe R"
+          },
+          "mfe_ticks": {
+            "title": "Mfe Ticks",
+            "type": "integer"
+          },
+          "path_fidelity": {
+            "title": "Path Fidelity",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "string"
+          },
+          "r_multiple": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R Multiple"
+          },
+          "rolls": {
+            "title": "Rolls",
+            "type": "integer"
+          },
+          "side": {
+            "$ref": "#/components/schemas/PositionSide"
+          },
+          "trade": {
+            "title": "Trade",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trade",
+          "entry_order",
+          "side",
+          "lots",
+          "entry_trade_date",
+          "entry_decision",
+          "entry_ts",
+          "entry_price",
+          "entry_contract",
+          "exit_ts",
+          "exit_price",
+          "exit_reason",
+          "exit_contract",
+          "exits",
+          "rolls",
+          "held_minutes",
+          "pnl",
+          "gross_pnl",
+          "fees",
+          "funding",
+          "initial_risk_ticks",
+          "initial_risk",
+          "r_multiple",
+          "mae_ticks",
+          "mfe_ticks",
+          "mae",
+          "mfe",
+          "mae_r",
+          "mfe_r",
+          "max_drawdown_ticks",
+          "max_drawdown",
+          "fidelity",
+          "path_fidelity",
+          "ambiguous"
+        ],
+        "title": "TradeRow",
+        "type": "object"
+      },
+      "TradeSort": {
+        "description": "What the trades are ordered by: the entry's or the exit's instant, the net P&L, the R\nmultiple, none without a stop, the time held, or the adverse or the favourable excursion in\nticks; each a column of `RawTrade`.",
+        "enum": [
+          "entry_ts",
+          "exit_ts",
+          "pnl",
+          "r_multiple",
+          "held",
+          "mae_ticks",
+          "mfe_ticks"
+        ],
+        "title": "TradeSort",
+        "type": "string"
       },
       "TradeStatistics": {
         "additionalProperties": false,
@@ -11876,6 +12227,92 @@
         ]
       }
     },
+    "/v1/runs/{run}/executions.csv": {
+      "get": {
+        "description": "Every fill of the saved run, one row an execution, in the order the run made them, as\n`<strategy>-<run key's first twelve digits>-executions.csv`.",
+        "operationId": "run_executions_file_v1_runs__run__executions_csv_get",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "A CSV file of the fills, to download."
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run Executions File",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/v1/runs/{run}/market": {
       "get": {
         "description": "A saved run's market exposure (step 5.23): the correlation, the beta in lots, the share of\nits variance explained, and the alpha in its currency of its days with one lot of its\ninstrument held long, each roll's gap taken off, over all its days and again over those the\nmarket fell and rose, each none with why where nothing can be counted; and buy and hold at\none lot and at the run's volatility, with that size's equity at the decisions `/equity`\nkeeps. Money as decimal text, the alpha and the curve as numbers; 409 as `/stats` answers\nit.",
@@ -12119,6 +12556,122 @@
         ]
       }
     },
+    "/v1/runs/{run}/query": {
+      "post": {
+        "description": "The answer of one SELECT over the saved run's artifacts, each a view in the instrument's\nunits, at most 10,000 rows of at most 4 MiB within 10 seconds; 400 in DuckDB's words or for\nany other statement or a larger answer.",
+        "operationId": "query_run_v1_runs__run__query_post",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Query Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/v1/runs/{run}/results": {
       "get": {
         "description": "A saved run's figures for all its trades, its long trades, and its short trades (step\n5.22), each side none where the run made no trade on it; money as decimal text in the run's\ncurrency; 409 as `/stats` answers it.",
@@ -12286,6 +12839,483 @@
           }
         ],
         "summary": "Run Statistics",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run}/trades": {
+      "get": {
+        "description": "A page of the saved run's trades that the filters keep, in the order asked, ties by their\nrow, a trade without the sort's figure last, after the trade the cursor ends on, with how\nmany trades the filters keep; 400 for a cursor no page of this order gave.",
+        "operationId": "run_trades_v1_runs__run__trades_get",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "side",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PositionSide"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Side"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exit_reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/OrderRole"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exit Reason"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pnl_sign",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PnlSign"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pnl Sign"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fidelity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fidelity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ambiguous",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ambiguous"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TradeSort",
+              "default": "entry_ts"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SortOrder",
+              "default": "asc"
+            }
+          },
+          {
+            "description": "The `next_cursor` of the page before.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `next_cursor` of the page before.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TradePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run Trades",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run}/trades.csv": {
+      "get": {
+        "description": "Every trade of the saved run that the filters keep, in the order asked, a row each as a\npage gives it, as `<strategy>-<run key's first twelve digits>-trades.csv`.",
+        "operationId": "run_trades_file_v1_runs__run__trades_csv_get",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "side",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PositionSide"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Side"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exit_reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/OrderRole"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exit Reason"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pnl_sign",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PnlSign"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pnl Sign"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fidelity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fidelity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ambiguous",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ambiguous"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TradeSort",
+              "default": "entry_ts"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SortOrder",
+              "default": "asc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "A CSV file of the trades, to download."
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run Trades File",
         "tags": [
           "runs"
         ]
