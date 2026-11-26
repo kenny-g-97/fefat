@@ -147,8 +147,8 @@ def test_a_sides_sharpe_ratio_counts_every_trade_date_of_the_run() -> None:
 
 def test_a_sides_spell_under_a_peak_starts_on_the_day_it_fell() -> None:
     # The engine review: the walk holds the equity at the start of each trade date, so that its
-    # peak is the last day it stood there, as an account valued at each decision dates it. A
-    # side at its peak from Tuesday through the weekend, falling on Monday and back on Tuesday,
+    # peak is the last trade date it stood there before the fall. A side at its peak from
+    # Tuesday through the weekend, falling on Monday and back on Tuesday,
     # spent one day under its peak, not seven (its trades alone) nor four (the day's point after
     # its trades), and its trough is Monday's.
     account = planted_account(days=(2, 3, 4, 5, 6, 9, 10))

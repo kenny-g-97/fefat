@@ -8,9 +8,9 @@ are the engine's metrics on its trades and on its closed-trade walk: the capital
 trade date the run was valued on, the equity at its start, before its trades, and after each of
 the side's trades that closed on it, in the order they closed, a trade on the trade date of its
 last exit. So a day without a trade of the side counts nothing in its Sharpe ratio, as the metrics
-count a flat day, and the walk's peak is its last point at the peak before a fall, as an account
-valued at each decision has it: a spell under a peak starts on the day the side fell from it, not
-on the day it reached it, since a day at the peak is no day under it.
+count a flat day, and the walk's peak is its last point at the peak before a fall: a spell under a
+peak starts on the trade date the side fell from it, not on the one it reached it, since a day at
+the peak is no day under it.
 
 Beside them stand what the trades hold: the gross profit and the gross loss, the winners' and the
 losers' net P&L, whose ratio is the profit factor; the average win over the size of the average
