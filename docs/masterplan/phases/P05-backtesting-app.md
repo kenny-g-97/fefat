@@ -1076,6 +1076,10 @@ Not in this step: the exports of the trade log and the executions (step 5.8), th
 
 - A side's Sharpe that moves when a flat day is dropped was taken on its own days: every trade date of the run counts, as the metrics count a flat day.
 
+#### Amendment
+
+2026-11-26 (the step's plan, D-122): the plan's calls, which you approved. A side the run made no trade on is none whole, its column None in every row with a line that says so, while a figure of all trades with nothing to count is none as the metrics leave it and a sum over no trade zero; the gross profit and the gross loss are the winners' and the losers' net P&L, which the profit factor divides; and the sums count closed trades alone, so that a position still open when the run ends is in none of them, while all trades' drawdown and Sharpe mark it. A side's metrics are `fefat_engine.metrics` on its trades and on its closed-trade walk, which holds, beside a point after each trade on the trade date of its last exit, one at the end of each trade date the run was valued on, so that the engine counts every one of them as a day. A fill a trade's path names is found by its order and its instant, and its slippage costs its ticks at its lots and the tick's value, rounded up to the micro-unit as every amount is (F-FEE-03), a stop's initial risk sharing the rule (`InstrumentParameters.worth_of_ticks`). The page is opened by All results, a ghost button in the run page's header. While doing the step: a fill that reverses a position (S-fill-042) stands on the paths of both the trade it closes and the trade it opens, the engine sharing it between them, so its slippage is shared by the lots each takes of it, where the plan would have refused it; none of the 39 runs saved on this PC holds one, and a stop a gap passed records its ticks past its price whatever the run's slippage on stops.
+
 ### 5.23 Market exposure and buy and hold
 
 Depends on: 5.7 · Plan mode: optional · Reviews: step-reviewer, engine-accuracy-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
