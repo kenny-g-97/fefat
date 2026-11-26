@@ -316,6 +316,21 @@ def test_a_run_whose_account_no_decision_valued_at_a_mark_is_refused(tmp_path: P
         ff.backtest.market_exposure(ff.backtest.Run.open(folder))
 
 
+def test_two_decisions_at_one_instant_are_refused(tmp_path: Path) -> None:
+    # The code review: buy and hold's curve pairs its decisions with the account's one to one.
+    store_with("ohlcv-1m")
+    run = ff.backtest.run(NEVER, "2026-03-05", "2026-03-09")
+    equity = read_artifact(run.folder, "equity")
+    twice = pl.concat([equity, equity.head(1)]).sort("ts")
+    folder = tmp_path / "runs" / run.hash
+    write_run(folder, {"equity": twice, "fills": run.fills}, run.record)
+
+    with pytest.raises(
+        ValueError, match=f"Expected one decision at each instant of run {run.hash[:12]}, got 2"
+    ):
+        ff.backtest.market_exposure(ff.backtest.Run.open(folder))
+
+
 SESSION_OPEN = 300
 """The instant of the session the hand-made roll serves from."""
 MARCH_9_ROLL = EngineRoll(
@@ -326,18 +341,24 @@ MARCH_9_ROLL = EngineRoll(
     gap=20_000_000_000,
     reason=RollReason.VOLUME,
 )
-MARCH_6, MARCH_9 = date(2026, 3, 6), date(2026, 3, 9)
+MARCH_6, MARCH_9, MARCH_10 = date(2026, 3, 6), date(2026, 3, 9), date(2026, 3, 10)
+Marks = tuple[str | None, str, str, str]
 
 
-def account(position: int, marks: tuple[str, str, str, str]) -> pl.DataFrame:
+def account(
+    position: int,
+    marks: Marks,
+    trade_dates: tuple[date, date, date, date] = (MARCH_6, MARCH_6, MARCH_9, MARCH_9),
+) -> pl.DataFrame:
     """Four decisions: one before the roll; one at the roll's instant, which a calendar without a
     break between sessions dates to the trade date before, and which follows the roll
-    (F-CLK-02); and two after it; holding `position` after the first, at `marks`."""
-    units = [int(Decimal(mark) * 10**9) for mark in marks]
+    (F-CLK-02); and two after it; holding `position` after the first, at `marks`, none before
+    the first tradeable price."""
+    units = [None if mark is None else int(Decimal(mark) * 10**9) for mark in marks]
     return pl.DataFrame(
         {
             "ts": [100, SESSION_OPEN, 400, 600],
-            "trade_date": [date(2026, 3, 6), date(2026, 3, 6), date(2026, 3, 9), date(2026, 3, 9)],
+            "trade_date": list(trade_dates),
             "cash": [50_000_000_000] * 4,
             "position": [position] * 4,
             "mark": units,
@@ -408,18 +429,62 @@ def filled(*fills: tuple[int, str, date]) -> pl.DataFrame:
             filled((SESSION_OPEN, "ESH2026", MARCH_6)),
             ("5000", "5001", "5001", "5001"),
         ),
+        # No tradeable price before the roll: the market stands at its first mark until then.
+        (0, (None, "5021", "5021", "5022"), filled(), ("5001", "5001", "5001", "5002")),
     ],
 )
 def test_a_rolls_gap_is_taken_off_the_marks_the_engine_moved_by_it(
     position: int,
-    marks: tuple[str, str, str, str],
+    marks: Marks,
     fills: pl.DataFrame,
     levels: tuple[str, str, str, str],
 ) -> None:
     decisions = market_values(account(position, marks), fills, (MARCH_9_ROLL,), ES)
 
-    worth = [int(Decimal(level) * 50) * 10**6 for level in levels]
-    assert decisions.get_column("market").to_list() == worth
+    assert decisions.get_column("market").to_list() == worth_of(levels)
+
+
+def worth_of(levels: tuple[str, str, str, str]) -> list[int]:
+    """One ES lot's value at each of `levels`, in micro-units."""
+    return [int(Decimal(level) * 50) * 10**6 for level in levels]
+
+
+MARCH_10_ROLL = EngineRoll(
+    trade_date=day_number(MARCH_10),
+    session_open=500,
+    rolled_from="ESM2026",
+    contract="ESU2026",
+    gap=10_000_000_000,
+    reason=RollReason.VOLUME,
+)
+"""A second roll, at the open of the session the last decision is in."""
+
+
+@pytest.mark.parametrize(
+    ("position", "marks", "fills"),
+    [
+        # Flat: each gap off the marks from its own instant on.
+        (0, ("5000", "5021", "5022", "5033"), filled()),
+        # Held: the first roll's legs filled at 350; the second's still on their way at the end.
+        (
+            1,
+            ("5000", "5001", "5022", "5023"),
+            filled((350, "ESH2026", MARCH_9), (350, "ESM2026", MARCH_9)),
+        ),
+    ],
+)
+def test_each_of_two_rolls_takes_its_own_gap_off(
+    position: int, marks: Marks, fills: pl.DataFrame
+) -> None:
+    # The ponytail review: the gaps add up, each roll's legs judged by its own trade date.
+    decisions = market_values(
+        account(position, marks, (MARCH_6, MARCH_6, MARCH_9, MARCH_10)),
+        fills,
+        (MARCH_9_ROLL, MARCH_10_ROLL),
+        ES,
+    )
+
+    assert decisions.get_column("market").to_list() == worth_of(("5000", "5001", "5002", "5003"))
 
 
 def test_a_crypto_pairs_lot_is_a_coin() -> None:

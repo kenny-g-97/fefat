@@ -143,16 +143,9 @@ class EngineRoll(FrozenModel):
 
 def market_exposure(run: Run, max_points: int = EQUITY_POINTS) -> MarketExposure:
     """`run`'s market exposure and buy and hold beside it (module docstring), buy and hold's curve
-    at the decisions an equity curve of `max_points` keeps; refused for a run whose account no
-    decision valued at a mark, and for fewer points than a curve keeps."""
-    parameters = instrument_parameters(run.record.instrument)
-    equity = read_artifact(run.folder, "equity")
-    decisions = market_values(equity, run.fills, engine_rolls(run), parameters)
-    if decisions.is_empty() or decisions.get_column("market").null_count() > 0:
-        raise ValueError(
-            f"Expected a mark at a decision of run {run.hash[:12]}, got none: its account was "
-            "never valued at a tradeable price."
-        )
+    at the decisions an equity curve of `max_points` keeps; refused for fewer points than a curve
+    keeps, and as `_valued_decisions` refuses a run."""
+    decisions = _valued_decisions(run)
     capital = micro_units(run.config.capital)
     kept = downsampled_equity(decisions, capital, max_points).get_column("ts")
     days = daily_moves(decisions, capital)
@@ -165,12 +158,33 @@ def market_exposure(run: Run, max_points: int = EQUITY_POINTS) -> MarketExposure
     )
 
 
+def _valued_decisions(run: Run) -> pl.DataFrame:
+    """`run`'s decisions with the market's value at each (`market_values`), refused for two
+    decisions at one instant, which the engine never writes and buy and hold's curve could not
+    pair with the account's, and for an account no decision valued at a mark."""
+    equity = read_artifact(run.folder, "equity")
+    shared = equity.filter(pl.col("ts").is_duplicated())
+    if not shared.is_empty():
+        raise ValueError(
+            f"Expected one decision at each instant of run {run.hash[:12]}, got {shared.height} "
+            f"at instants another shares, the first at ts {shared.item(0, 'ts')}."
+        )
+    parameters = instrument_parameters(run.record.instrument)
+    decisions = market_values(equity, run.fills, engine_rolls(run), parameters)
+    if decisions.is_empty() or decisions.get_column("market").null_count() > 0:
+        raise ValueError(
+            f"Expected a mark at a decision of run {run.hash[:12]}, got none: its account was "
+            "never valued at a tradeable price."
+        )
+    return decisions
+
+
 def engine_rolls(run: Run) -> tuple[EngineRoll, ...]:
     """The rolls the engine applied in `run`, as its config holds them."""
     rolls = run.record.engine_config.get("rolls")
     if rolls is None:
         raise ValueError(f"Expected the rolls in the config of run {run.hash[:12]}, got none.")
-    return tuple(EngineRoll.model_validate(dict(roll)) for roll in rolls)
+    return tuple(EngineRoll.model_validate(roll) for roll in rolls)
 
 
 def market_values(
