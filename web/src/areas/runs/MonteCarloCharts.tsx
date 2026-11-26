@@ -1,11 +1,11 @@
 import { useState } from "react"
 import type { MonteCarlo } from "@/api/run-results"
 import type { Currency } from "@/api/runs"
+import { picked } from "@/ui/choices"
 import { Picker } from "@/ui/picker"
 import { MonteCarloFan } from "./MonteCarloFan"
 import { MonteCarloPercentile } from "./MonteCarloPercentile"
 import {
-  chartNamed,
   MONTE_CARLO_CHARTS,
   type MonteCarloChart,
   monteCarloNote,
@@ -29,7 +29,7 @@ export function MonteCarloCharts({
           label="Chart"
           value={chart}
           options={MONTE_CARLO_CHARTS}
-          onChange={(value) => setChart(chartNamed(value))}
+          onChange={(value) => setChart(picked(MONTE_CARLO_CHARTS, value))}
           className="w-44"
         />
       </div>

@@ -69,15 +69,16 @@ export function valueAxis(tokens: ThemeTokens, currency: Currency | null) {
 }
 
 /** The bounds that keep `level`, such as the capital or the run's own figure, in view of an axis
- * whose values run from `lowest` to `highest`. */
+ * whose values run from `lowest` to `highest`, rounded outward to a whole number, since ECharts
+ * labels a bound it is given and the label strip makes room for whole numbers (`labelStrip`). */
 export function keptInView(
   level: number,
   lowest: number,
   highest: number
 ): Readonly<{ min?: number; max?: number }> {
   return {
-    ...(level < lowest ? { min: level } : {}),
-    ...(level > highest ? { max: level } : {}),
+    ...(level < lowest ? { min: Math.floor(level) } : {}),
+    ...(level > highest ? { max: Math.ceil(level) } : {}),
   }
 }
 
@@ -101,12 +102,14 @@ export function pointerOptions(
   }
 }
 
-/** A dashed line at `capital` in the field border's grey, which nothing points at. */
+/** A dashed line at `capital` in body text's grey, which nothing points at, and which keeps 3 : 1
+ * against the fan's bands and the equity's fills, where the field border's grey fell to 2.19 : 1
+ * on the fan's middle band (step 5.21). */
 export function capitalLine(
   capital: number,
   tokens: ThemeTokens
 ): LineSeriesOption["markLine"] {
-  return dashedAt(capital, tokens.input, 1)
+  return dashedAt(capital, tokens.foregroundSecondary, 1)
 }
 
 /** A dashed line at the run's `own` figure in the purple, the builder's exception to the cyan

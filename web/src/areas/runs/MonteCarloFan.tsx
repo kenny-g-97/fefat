@@ -70,7 +70,7 @@ export function MonteCarloFan({ fan, trades, currency }: MonteCarloFanProps) {
           </span>
         </p>
       </div>
-      <ul className="flex gap-5 text-xs text-foreground-secondary">
+      <ul className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-foreground-secondary">
         <li className="flex items-center gap-2">
           <span
             data-slot="chart-mark"
@@ -88,19 +88,19 @@ export function MonteCarloFan({ fan, trades, currency }: MonteCarloFanProps) {
         <li className="flex items-center gap-2">
           <span
             data-slot="chart-mark"
-            className="size-2.5 rounded-xl bg-input/45"
+            className="size-2.5 rounded-xl bg-input/45 inset-ring-1 inset-ring-input"
           />
           Middle 50%
         </li>
         <li className="flex items-center gap-2">
           <span
             data-slot="chart-mark"
-            className="size-2.5 rounded-xl bg-input/30"
+            className="size-2.5 rounded-xl bg-input/30 inset-ring-1 inset-ring-input"
           />
           Middle 90%
         </li>
         <li className="flex items-center gap-2">
-          <span className="w-4 border-t border-dashed border-input" />
+          <span className="w-4 border-t border-dashed border-foreground-secondary" />
           Capital
         </li>
       </ul>

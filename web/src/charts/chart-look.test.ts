@@ -17,6 +17,7 @@ const DARK: ThemeTokens = {
   accent: "#1a1a1a",
   brand: "#fc734d",
   brandSecondary: "#a855f7",
+  foregroundSecondary: "#888888",
   positive: "#10b981",
   negative: "#ff4d6d",
 }

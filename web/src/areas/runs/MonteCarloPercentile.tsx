@@ -1,4 +1,5 @@
 import { lazyRouteComponent } from "@tanstack/react-router"
+import { cn } from "cn"
 import { Suspense, useState } from "react"
 import type { FigureAtPercents, PathFigure } from "@/api/run-results"
 import type { Currency } from "@/api/runs"
@@ -7,6 +8,7 @@ import {
   NO_OWN_PROFIT_FACTOR,
   NO_PATH_PROFIT_FACTOR,
   PATH_FIGURES,
+  pathFigureTone,
   pathFigureWritten,
   percentWords,
 } from "./result-words"
@@ -39,12 +41,23 @@ export function MonteCarloPercentile({
   const at = pointed === null ? RESTING_PERCENT : pointed
   const value = shown.at_percent[at]
   const { inWords, unit } = PATH_FIGURES[figure]
+  const toned = (figureValue: number | null) => {
+    const tone = pathFigureTone(figure, figureValue)
+    return cn(
+      "text-foreground",
+      tone === "positive" && "text-positive",
+      tone === "negative" && "text-negative"
+    )
+  }
   return (
     <>
       <div className="flex flex-col gap-1">
         <p
           data-testid="percentile-figure"
-          className="pr-48 text-3xl font-bold tracking-tight text-foreground"
+          className={cn(
+            "pr-48 text-3xl font-bold tracking-tight",
+            toned(value)
+          )}
         >
           {pathFigureWritten(figure, value, currency)}
         </p>
@@ -57,14 +70,14 @@ export function MonteCarloPercentile({
           ) : (
             <>
               This run{" "}
-              <span className="font-semibold text-foreground">
+              <span className={cn("font-semibold", toned(shown.own))}>
                 {pathFigureWritten(figure, shown.own, currency)}
               </span>
             </>
           )}
         </p>
       </div>
-      <ul className="flex gap-5 text-xs text-foreground-secondary">
+      <ul className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-foreground-secondary">
         <li className="flex items-center gap-2">
           <span
             data-slot="chart-mark"

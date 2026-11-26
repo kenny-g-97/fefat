@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
+import { picked } from "@/ui/choices"
 import { NO_BREAK_SPACE } from "@/ui/figures"
 import {
-  chartNamed,
   hourLabel,
   MONTE_CARLO_CHARTS,
   monteCarloNote,
+  pathFigureTone,
   pathFigureWritten,
   percentWords,
   sampleSizeWords,
@@ -66,10 +67,21 @@ describe("the words of a run's results", () => {
       "Avg. MAE",
       "Avg. MFE",
     ])
-    expect(chartNamed("max_drawdown")).toBe("max_drawdown")
-    expect(() => chartNamed("sharpe")).toThrow(
-      `Expected one of the Monte Carlo's charts, got "sharpe".`
-    )
+    expect(picked(MONTE_CARLO_CHARTS, "max_drawdown")).toBe("max_drawdown")
+    expect(() => picked(MONTE_CARLO_CHARTS, "sharpe")).toThrow(/got sharpe\./)
+  })
+
+  it("tones the paths' net P&L by its sign, and no other figure", () => {
+    // The design review: every net P&L on the page stands in its sign's colour.
+    expect(pathFigureTone("net_pnl", -2721.56)).toBe("negative")
+    expect(pathFigureTone("net_pnl", 480)).toBe("positive")
+    expect(pathFigureTone("net_pnl", 0)).toBeUndefined()
+    // The design review's second round: -0.004 reads "$0.00", whose minus the page drops.
+    expect(pathFigureTone("net_pnl", -0.004)).toBeUndefined()
+    expect(pathFigureWritten("net_pnl", -0.004, "USD")).toBe("$0.00")
+    expect(pathFigureTone("net_pnl", -0.005)).toBe("negative")
+    expect(pathFigureTone("max_drawdown", 2721.56)).toBeUndefined()
+    expect(pathFigureTone("profit_factor", null)).toBeUndefined()
   })
 
   it("writes a figure of the paths as the page writes money, ticks, and a profit factor", () => {

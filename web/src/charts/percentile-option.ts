@@ -19,8 +19,10 @@ import {
  * the accent from the lowest path to the highest, a gap where a path has none, as one that drew no
  * losing trade has no profit factor, and the run's own as a dashed line in the purple (D-119),
  * kept in view; the value axis written as money in `currency`, or as plain figures where it is
- * null. Nothing animates and there is no zoom; the pointer reads a percent, and its figures stand
- * in the page's own readout. */
+ * null. Under them an unseen line holds a point at every percent, as the fan's unfilled base
+ * does, so that the crosshair the keys place stands over a path without a figure too. Nothing
+ * animates and there is no zoom; the pointer reads a percent, and its figures stand in the page's
+ * own readout. */
 export function percentileOption(
   figure: FigureAtPercents,
   currency: Currency | null,
@@ -34,6 +36,7 @@ export function percentileOption(
     )
   }
   const own = figure.own
+  const lowest = Math.min(...held)
   return {
     animation: false,
     textStyle: { fontFamily: FONT },
@@ -61,11 +64,17 @@ export function percentileOption(
     yAxis: {
       ...valueAxis(tokens, currency),
       scale: true,
-      ...(own === null
-        ? {}
-        : keptInView(own, Math.min(...held), Math.max(...held))),
+      ...(own === null ? {} : keptInView(own, lowest, Math.max(...held))),
     },
     series: [
+      {
+        type: "line",
+        name: "Every percent",
+        silent: true,
+        symbol: "none",
+        data: atPercent.map((_, percent) => [percent, lowest]),
+        lineStyle: { opacity: 0 },
+      },
       {
         type: "line",
         name: "Paths",

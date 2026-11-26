@@ -33,6 +33,7 @@ const TOKENS: ThemeTokens = {
   accent: "#1a1a1a",
   brand: "#fc734d",
   brandSecondary: "#a855f7",
+  foregroundSecondary: "#888888",
   positive: "#10b981",
   negative: "#ff4d6d",
 }
@@ -49,15 +50,16 @@ const FACTORS = {
   own: null,
 }
 
-function onlySeries(figure: typeof DRAWDOWN | typeof FACTORS) {
+/** The chart's series of `figure`: the unseen base at every percent, then the paths' line. */
+function seriesOf(figure: typeof DRAWDOWN | typeof FACTORS) {
   const { series } = percentileOption(figure, null, TOKENS)
   return Array.isArray(series) ? series : []
 }
 
 describe("a Monte Carlo figure's chart against the percent of its paths", () => {
   it("draws the API's figure at each percent in the accent, a gap where a path has none", () => {
-    const [drawdown] = onlySeries(DRAWDOWN)
-    const [factors] = onlySeries(FACTORS)
+    const [, drawdown] = seriesOf(DRAWDOWN)
+    const [, factors] = seriesOf(FACTORS)
 
     expect(points.parse(drawdown.data)).toEqual(
       PERCENTS.map((percent) => [percent, DRAWDOWN.at_percent[percent]])
@@ -75,24 +77,46 @@ describe("a Monte Carlo figure's chart against the percent of its paths", () => 
 
   it("marks the run's own figure as a dashed line in the purple, and none where it has none", () => {
     // D-119: the run's own stands in the purple, the builder's exception to the cyan.
-    const [drawdown] = onlySeries(DRAWDOWN)
+    const [, drawdown] = seriesOf(DRAWDOWN)
 
     const marked = markedSeries.parse(drawdown)
 
     expect(marked.markLine.data).toEqual([{ yAxis: 1730.25 }])
     expect(marked.markLine.lineStyle.color).toBe(TOKENS.brandSecondary)
-    expect(onlySeries(FACTORS)[0]).not.toHaveProperty("markLine")
+    expect(seriesOf(FACTORS)[1]).not.toHaveProperty("markLine")
   })
 
-  it("keeps the run's own figure in view where it stands past every path", () => {
-    const above = { ...DRAWDOWN, own: 5000 }
-    const below = { ...DRAWDOWN, own: 100 }
+  it("holds an unseen point at every percent, where the keys' crosshair stands over a gap", () => {
+    // The lean review: the keys show the tip on the first series, and ECharts hides its
+    // crosshair at a point without a value, as a path without a profit factor has.
+    const [base] = seriesOf(FACTORS)
+
+    expect(points.parse(base.data)).toEqual(
+      PERCENTS.map((percent) => [percent, 0.5])
+    )
+    expect(base).toMatchObject({
+      silent: true,
+      symbol: "none",
+      lineStyle: { opacity: 0 },
+    })
+    expect(base).not.toHaveProperty("areaStyle")
+  })
+
+  it("keeps the run's own figure in view where it stands past every path, at a whole number", () => {
+    // The lean review: ECharts labels the bound it is given, and the strip holds whole numbers,
+    // so 1,334.56 USDT at the axis's end lost its first digit.
+    const above = { ...DRAWDOWN, own: 5000.25 }
+    const below = { ...DRAWDOWN, own: 100.75 }
+    const whole = { ...DRAWDOWN, own: 5000 }
 
     expect(percentileOption(above, null, TOKENS).yAxis).toMatchObject({
-      max: 5000,
+      max: 5001,
     })
     expect(percentileOption(below, null, TOKENS).yAxis).toMatchObject({
       min: 100,
+    })
+    expect(percentileOption(whole, null, TOKENS).yAxis).toMatchObject({
+      max: 5000,
     })
     const within = percentileOption(DRAWDOWN, null, TOKENS).yAxis
     expect(within).not.toHaveProperty("max")

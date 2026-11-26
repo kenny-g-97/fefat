@@ -381,7 +381,9 @@ test("every figure of the Monte Carlo card is the API's", async ({
   await page.evaluate(() => document.documentElement.classList.add("dark"))
 
   // Step 5.21: each figure against the percent of paths, at the median path while nothing is
-  // pointed at, beside the run's own.
+  // pointed at, beside the run's own; a change of chart keeps the card's height (the reviews).
+  const cardHeight = async () => (await card.boundingBox())?.height
+  const withTheFan = await cardHeight()
   for (const figure of PATH_FIGURES) {
     await chooseChart(page, card, figure.label)
     await expectPercentReadout(
@@ -395,6 +397,7 @@ test("every figure of the Monte Carlo card is the API's", async ({
       card.getByTestId("percentile-chart").locator("canvas").first()
     ).toBeVisible()
     await expect(card.getByTestId("fan-chart")).toHaveCount(0)
+    expect(await cardHeight()).toBe(withTheFan)
   }
   await expect(card.getByTestId("monte-carlo-note")).toBeVisible()
   await chooseChart(page, card, "Max drawdown")
@@ -595,6 +598,30 @@ test("a path without a profit factor stands above every other, and the readout s
   await page.keyboard.press("ArrowLeft")
   await expectPercentReadout(card, figure, shown, 96, currency)
   await chart.blur()
+  await expectPercentReadout(card, figure, shown, RESTING_PERCENT, currency)
+  // The pointer reaches them too, as the pattern promises (the reviews of step 5.21).
+  await chart.scrollIntoViewIfNeeded()
+  const box = await chart.boundingBox()
+  if (box === null) {
+    throw new Error("Expected the chart drawn, got no box.")
+  }
+  const words = card.getByTestId("percentile-words")
+  await page.mouse.move(box.x + box.width - 20, box.y + box.height * 0.5)
+  await expect(words).toHaveText(
+    /^The path at (9[7-9]|100)% drew no losing trade/
+  )
+  const pointedPercent = /^The path at (\d+)%/.exec(await words.innerText())
+  if (pointedPercent === null) {
+    throw new Error("Expected the readout to name a percent, got none.")
+  }
+  await expectPercentReadout(
+    card,
+    figure,
+    shown,
+    Number(pointedPercent[1]),
+    currency
+  )
+  await page.mouse.move(box.x + box.width / 2, box.y - 60)
   await expectPercentReadout(card, figure, shown, RESTING_PERCENT, currency)
   await expect(
     page.getByTestId("equity-chart").locator("canvas").first()

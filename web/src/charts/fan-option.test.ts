@@ -7,6 +7,14 @@ import { fanOption, INNER_BAND, OUTER_BAND } from "./fan-option"
 /** A series' points, each a count of trades and an amount. */
 const points = z.array(z.tuple([z.number(), z.number()]))
 
+/** A line series' colour, as the option holds it. */
+const lineColour = z.object({ lineStyle: z.object({ color: z.string() }) })
+
+/** The colour of the dashed line a series carries, as the median carries the capital's. */
+const markColour = z.object({
+  markLine: z.object({ lineStyle: z.object({ color: z.string() }) }),
+})
+
 /** An axis whose labels a function writes, as ECharts calls it with each tick's value. */
 const labelledAxis = z.object({
   axisLabel: z.object({
@@ -24,6 +32,7 @@ const TOKENS: ThemeTokens = {
   accent: "#1a1a1a",
   brand: "#fc734d",
   brandSecondary: "#a855f7",
+  foregroundSecondary: "#888888",
   positive: "#10b981",
   negative: "#ff4d6d",
 }
@@ -92,7 +101,10 @@ describe("the Monte Carlo fan's options", () => {
     ])
     expect(median).toMatchObject({
       lineStyle: { color: TOKENS.brand },
-      markLine: { data: [{ yAxis: 50_000 }] },
+      markLine: {
+        data: [{ yAxis: 50_000 }],
+        lineStyle: { color: TOKENS.foregroundSecondary, type: "dashed" },
+      },
     })
   })
 
@@ -137,22 +149,35 @@ describe("the Monte Carlo fan's options", () => {
   })
 
   it.each(["dark", "light"] as const)(
-    "keeps the median and the run's own at 3 : 1 against either band in the %s theme",
+    "keeps every line it draws at 3 : 1 against either band in the %s theme",
     (theme) => {
-      // The design review: WCAG 1.4.11, a line keeps 3 : 1 against any band it crosses
+      // The design reviews: WCAG 1.4.11, a line keeps 3 : 1 against any band it crosses
       // (web/DESIGN.md, Charts); at 60 % the middle band left the median 2.95 : 1 in the light
-      // theme, and at 55 % the run's own purple 2.75 : 1 in the dark one (step 5.21).
+      // theme, at 55 % the run's own purple 2.75 : 1 in the dark one, and the dashed capital in the
+      // field border's grey stood at 2.19 : 1 on the middle band (step 5.21).
       const token = (name: string) => paletteColour(name, theme)
+      const themed: ThemeTokens = {
+        ...TOKENS,
+        card: token("--card"),
+        input: token("--input"),
+        brand: token("--brand"),
+        brandSecondary: token("--brand-secondary"),
+        foregroundSecondary: token("--foreground-secondary"),
+      }
+      const drawn = fanOption(FAN, "USD", themed).series
+      const [median, own] = (Array.isArray(drawn) ? drawn : []).slice(4)
+      const capital = markColour.parse(median).markLine.lineStyle.color
+      const colours = [median, own].map(
+        (line) => lineColour.parse(line).lineStyle.color
+      )
 
-      const ratios = ["--brand", "--brand-secondary"].flatMap((line) =>
+      const ratios = [...colours, capital].flatMap((colour) =>
         [OUTER_BAND, INNER_BAND].map((fill) =>
-          contrast(
-            token(line),
-            painted(token("--input"), token("--card"), fill)
-          )
+          contrast(colour, painted(themed.input, themed.card, fill))
         )
       )
 
+      expect(ratios).toHaveLength(6)
       ratios.forEach((ratio) => expect(ratio).toBeGreaterThanOrEqual(3))
     }
   )

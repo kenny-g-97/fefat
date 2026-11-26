@@ -84,15 +84,17 @@ export const NO_OWN_PROFIT_FACTOR =
 export const NO_PATH_PROFIT_FACTOR =
   "No path drew a losing trade, so none has a profit factor."
 
-/** The chart a select's `value` names. */
-export function chartNamed(value: string): MonteCarloChart {
-  const chosen = MONTE_CARLO_CHARTS.find((chart) => chart.value === value)
-  if (chosen === undefined) {
-    throw new Error(
-      `Expected one of the Monte Carlo's charts, got ${JSON.stringify(value)}.`
-    )
+/** The tone of a figure of the paths: the net P&L in the colour of its sign as the page writes it,
+ * at the cent, as every net P&L on the page stands, so that an amount written as zero, its minus
+ * dropped, takes none; none for a path without the figure, and for every other figure. */
+export function pathFigureTone(
+  figure: PathFigure,
+  value: number | null
+): "positive" | "negative" | undefined {
+  if (figure !== "net_pnl" || value === null) {
+    return undefined
   }
-  return chosen.value
+  return toneOf(formatFigure(value))
 }
 
 /** A figure of the paths as the page writes it: money in `currency` (D-117), a profit factor at

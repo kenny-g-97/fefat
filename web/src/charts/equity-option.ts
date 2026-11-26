@@ -78,7 +78,7 @@ function signColours(
 ): ResultsChartOption["visualMap"] {
   const unitAbove = curve.capital + 1
   const [below, above] = curve.equity.every((value) => value === curve.capital)
-    ? [tokens.input, tokens.input]
+    ? [tokens.foregroundSecondary, tokens.foregroundSecondary]
     : [tokens.negative, tokens.positive]
   return {
     type: "piecewise",
