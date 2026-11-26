@@ -1119,6 +1119,10 @@ Not in this step: a market other than the instrument the run trades (step 7.14),
 - A correlation that moves when one series is read on its own calendar was taken on two: both are the run's own trade dates.
 - Should a run's marks stand still while it is flat, take the market from the store's bars under the pinned-data check `Run.explain` uses, and record it in an Amendment.
 
+#### Amendment
+
+2026-11-26 (the step's plan, D-123): the plan's calls, which you approved. The market is the run's own marks, one lot floored to the micro-unit as the engine values a position, each roll's gap taken off from the trade date its new front serves from, but on the decisions the engine valued at the old contract's price while the roll's legs were on their way, up to the first fill on the contract rolled from or to the run's end; both series' days stand on the run's own trade dates, worked out in whole numbers and divided once; fewer than three days, or a series whose days never differed, leave a figure none with the reason as a word the page writes; buy and hold at the run's volatility scales one lot's net P&L and drawdown and keeps its spell under a peak and Sharpe ratio; its curve stands at the decisions `/equity` keeps; and the cyan of a chart's second series is a token of its own, `--chart-2`, `#155e75` in the light theme. While doing the step: the roll rule reads the record's rolls by trade date and the fills' contracts, where the plan would have read the engine's config by instant; a run long one lot without costs runs through a fee table of no fees that its test registers; and the page's counted figures are drawn from an answer the spec gives the seeded run, where the plan seeded a second run on MES, which would have read the data the delete spec checks as read by no run.
+
 ## Phase exit
 
 ```text
