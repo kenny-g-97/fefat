@@ -731,6 +731,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/runs/{run}/market": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Market Exposure
+         * @description A saved run's market exposure (step 5.23): the correlation, the beta in lots, the share of
+         *     its variance explained, and the alpha in its currency of its days with one lot of its
+         *     instrument held long, each roll's gap taken off, over all its days and again over those the
+         *     market fell and rose, each none with why where nothing can be counted; and buy and hold at
+         *     one lot and at the run's volatility, with that size's equity at the decisions `/equity`
+         *     keeps. Money as decimal text, the alpha and the curve as numbers; 409 as `/stats` answers
+         *     it.
+         */
+        get: operations["run_market_exposure_v1_runs__run__market_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/runs/{run}/monte-carlo": {
         parameters: {
             query?: never;
@@ -1544,6 +1570,45 @@ export interface components {
             kind: "business-days-before-the-25th";
         };
         /**
+         * BuyAndHold
+         * @description One lot held from the run's first mark to its last, and as many lots as give its days the
+         *     run's volatility, none with its curve where `uncounted` says why.
+         */
+        BuyAndHold: {
+            at_one_lot: components["schemas"]["BuyAndHoldFigures"];
+            at_run_volatility: components["schemas"]["BuyAndHoldFigures"] | null;
+            curve: components["schemas"]["BuyAndHoldCurve"] | null;
+            uncounted: components["schemas"]["Uncounted"] | null;
+        };
+        /**
+         * BuyAndHoldCurve
+         * @description Buy and hold's equity at the run's volatility at each decision the run's equity curve keeps
+         *     (`equity_curve`), one entry a decision: its close in whole seconds since the epoch, as the
+         *     run's curve is served, and the equity in the instrument's currency.
+         */
+        BuyAndHoldCurve: {
+            /** Equity */
+            equity: number[];
+            /** Time */
+            time: number[];
+        };
+        /**
+         * BuyAndHoldFigures
+         * @description Buy and hold at `lots` (module docstring), money in the instrument's currency.
+         */
+        BuyAndHoldFigures: {
+            /** Longest Drawdown Days */
+            longest_drawdown_days: number;
+            /** Lots */
+            lots: number;
+            /** Max Drawdown */
+            max_drawdown: string;
+            /** Net Pnl */
+            net_pnl: string;
+            /** Sharpe */
+            sharpe: number | null;
+        };
+        /**
          * CalendarId
          * @description A built-in session calendar: CME Globex's equity index, energy, and metals groups, and
          *     crypto's 24x7 UTC days (`fefat.market.builtin_calendars`).
@@ -1845,6 +1910,20 @@ export interface components {
             trade_date: string;
         };
         /**
+         * DaysExposure
+         * @description How the run's days moved with the market's over `days` of them: the correlation and the
+         *     beta in lots, each none where `uncounted` says why.
+         */
+        DaysExposure: {
+            /** Beta Lots */
+            beta_lots: number | null;
+            /** Correlation */
+            correlation: number | null;
+            /** Days */
+            days: number;
+            uncounted: components["schemas"]["Uncounted"] | null;
+        };
+        /**
          * DeletionPreview
          * @description What a delete of a provider's data of a root removes, as its dataset's page says it before
          *     it asks: how many of FEAT's copies of the files it was imported from go, so that those files
@@ -1980,6 +2059,25 @@ export interface components {
             instrument?: string | null;
             /** Provider */
             provider?: string | null;
+        };
+        /**
+         * Exposure
+         * @description How the run's days moved with the market's over all of them, with the share of the run's
+         *     variance the market explains and the alpha in the currency, each none where `uncounted` says
+         *     why.
+         */
+        Exposure: {
+            /** Alpha */
+            alpha: number | null;
+            /** Beta Lots */
+            beta_lots: number | null;
+            /** Correlation */
+            correlation: number | null;
+            /** Days */
+            days: number;
+            /** Explained Share */
+            explained_share: number | null;
+            uncounted: components["schemas"]["Uncounted"] | null;
         };
         /**
          * FeatureCode
@@ -2723,6 +2821,17 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /**
+         * MarketExposure
+         * @description A run's market exposure over all its days, the days the market fell, and the days it rose,
+         *     with buy and hold beside it (module docstring).
+         */
+        MarketExposure: {
+            all_days: components["schemas"]["Exposure"];
+            buy_and_hold: components["schemas"]["BuyAndHold"];
+            falling_days: components["schemas"]["DaysExposure"];
+            rising_days: components["schemas"]["DaysExposure"];
         };
         /**
          * MergeSeen
@@ -4468,6 +4577,12 @@ export interface components {
              */
             kind: "trades";
         };
+        /**
+         * Uncounted
+         * @description Why a figure of a market exposure is none.
+         * @enum {string}
+         */
+        Uncounted: "too_few_days" | "market_never_differed" | "run_never_differed";
         /**
          * UploadSource
          * @description A file kept as an upload, named by its id.
@@ -6641,6 +6756,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EquityCurve"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    run_market_exposure_v1_runs__run__market_get: {
+        parameters: {
+            query?: {
+                /** @description The most points of buy and hold's curve, at the decisions `/equity` keeps in as many. */
+                max_points?: number;
+            };
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketExposure"];
                 };
             };
             /** @description Unauthorized */

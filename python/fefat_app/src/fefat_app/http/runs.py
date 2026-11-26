@@ -25,7 +25,7 @@ from pydantic import (
     model_validator,
 )
 
-from fefat.backtest import ResultsBySide, RunConfig, TradeDistributions
+from fefat.backtest import MarketExposure, ResultsBySide, RunConfig, TradeDistributions
 from fefat.backtest.equity_curves import EQUITY_POINTS, FEWEST_POINTS
 from fefat.backtest.resampling import MONTE_CARLO_PATHS, MONTE_CARLO_SEED, MonteCarloAnswer
 from fefat.market.contracts import parse_contract_name
@@ -339,6 +339,31 @@ def run_results_by_side(run: RunAddress, container: ContainerDependency) -> Resu
     currency; 409 as `/stats` answers it."""
     with _refusals():
         return container.runs.results_by_side(run)
+
+
+@router.get("/runs/{run}/market", responses=problem_responses(401, 404, 409, 422))
+def run_market_exposure(
+    run: RunAddress,
+    container: ContainerDependency,
+    max_points: Annotated[
+        int,
+        Query(
+            ge=FEWEST_POINTS,
+            le=MOST_EQUITY_POINTS,
+            description="The most points of buy and hold's curve, at the decisions `/equity` "
+            "keeps in as many.",
+        ),
+    ] = EQUITY_POINTS,
+) -> MarketExposure:
+    """A saved run's market exposure (step 5.23): the correlation, the beta in lots, the share of
+    its variance explained, and the alpha in its currency of its days with one lot of its
+    instrument held long, each roll's gap taken off, over all its days and again over those the
+    market fell and rose, each none with why where nothing can be counted; and buy and hold at
+    one lot and at the run's volatility, with that size's equity at the decisions `/equity`
+    keeps. Money as decimal text, the alpha and the curve as numbers; 409 as `/stats` answers
+    it."""
+    with _refusals():
+        return container.runs.market_exposure(run, max_points)
 
 
 @router.post("/runs/{run}/cancel", responses=problem_responses(401, 403, 404, 422))
