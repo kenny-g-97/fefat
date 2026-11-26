@@ -49,8 +49,8 @@ export function ResultsBySideCard({
                 <TableHead
                   key={column}
                   className={cn(
-                    "w-48 text-right",
-                    column === "short" ? "pr-6 pl-3" : "px-3"
+                    "text-right",
+                    column === "short" ? "w-[12.75rem] pr-6 pl-3" : "w-48 px-3"
                   )}
                 >
                   {heading}
@@ -58,11 +58,9 @@ export function ResultsBySideCard({
               ))}
             </TableRow>
           </TableHeader>
-          {groups.map((group) => (
-            <TableBody
-              key={group.id}
-              className="border-t-12 border-t-transparent first-of-type:border-t-0"
-            >
+          {groups.map((group, at) => (
+            <TableBody key={group.id}>
+              {at > 0 && <SetApart />}
               {group.rows.map((row) => (
                 <TableRow
                   key={row.id}
@@ -95,6 +93,17 @@ export function ResultsBySideCard({
         {CLOSED_TRADES_NOTE}
       </p>
     </Panel>
+  )
+}
+
+/** The 12 px between two sets of rows: a row of its own, with no hairline, no hover, and nothing
+ * a screen reader reads, since a collapsed border between the sets would take its room from the
+ * rows beside it (the design review). */
+function SetApart() {
+  return (
+    <tr aria-hidden="true">
+      <td colSpan={4} className="h-3 p-0" />
+    </tr>
   )
 }
 

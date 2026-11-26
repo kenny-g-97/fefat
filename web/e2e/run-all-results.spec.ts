@@ -342,17 +342,30 @@ test("a run of both sides reads each side's figures, money in its sign's colour"
   await expect(
     page.getByTestId("by-side-net-pnl").getByRole("rowheader")
   ).toHaveText("Net P&L")
-  // The design review: five sets of rows, set apart, the side columns on equal tracks.
-  await expect(
-    page.getByTestId("results-by-side").locator("tbody")
-  ).toHaveCount(5)
-  const widths = await page
-    .getByTestId("results-by-side")
-    .locator("thead th")
-    .evaluateAll((heads) =>
-      heads.slice(1).map((head) => head.getBoundingClientRect().width)
+  // The design review: five sets of rows, each 12 px from the next while every row keeps its
+  // 40 px, and the three sides' figures evenly apart, the last column widened by the card's edge.
+  const table = page.getByTestId("results-by-side")
+  await expect(table.locator("tbody")).toHaveCount(5)
+  const rowHeights = await table
+    .locator("tbody tr:not([aria-hidden])")
+    .evaluateAll((rows) =>
+      rows.map((row) => row.getBoundingClientRect().height)
     )
-  expect(new Set(widths).size).toBe(1)
+  expect(new Set(rowHeights)).toEqual(new Set([40]))
+  const gaps = await table
+    .locator("tbody tr[aria-hidden]")
+    .evaluateAll((rows) =>
+      rows.map((row) => row.getBoundingClientRect().height)
+    )
+  expect(gaps).toEqual([12, 12, 12, 12])
+  const edges = await table.locator("thead th").evaluateAll((heads) =>
+    heads.slice(1).map((head) => {
+      const right = head.getBoundingClientRect().right
+      return right - Number.parseFloat(getComputedStyle(head).paddingRight)
+    })
+  )
+  const [first, second, third] = edges
+  expect(Math.abs(third - second - (second - first))).toBeLessThan(0.5)
   await page.mouse.move(700, 36)
   await screenshot(page, "run-all-results-both-sides")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
