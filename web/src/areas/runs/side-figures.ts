@@ -8,15 +8,17 @@ import {
   formatMoney,
   formatShare,
   moneyFigure,
+  moneySign,
 } from "@/ui/figures"
-import { toneOf } from "./result-words"
 
 const NONE = "None"
 
-/** A figure as its cell writes it, in its sign's colour where it is money made or lost. */
+/** A figure as its cell writes it, and how it reads: money made or lost in its sign's colour, any
+ * other figure in heading text, and None, where nothing is counted, in body text, so that an
+ * empty column falls back (web/DESIGN.md, Patterns, Results by side). */
 export type Written = Readonly<{
   text: string
-  tone: "positive" | "negative" | undefined
+  look: "positive" | "negative" | "figure" | "none"
 }>
 
 /** A row of the table of a run's figures by side: its name, and how it writes a side's figure in
@@ -27,33 +29,42 @@ export type FigureRow = Readonly<{
   written: (side: SideResults, currency: Currency) => Written
 }>
 
-function plain(text: string): Written {
-  return { text, tone: undefined }
+const NOTHING: Written = { text: NONE, look: "none" }
+
+function figure(text: string): Written {
+  return { text, look: "figure" }
 }
 
-/** Money made or lost, as the API's decimal text, in its sign's colour. */
+/** Money made or lost, as the API's decimal text, in its sign's colour, a zero in heading text. */
 function made(text: string, currency: Currency): Written {
-  return { text: formatMoney(text, currency), tone: toneOf(text) }
+  return { text: formatMoney(text, currency), look: signLook(text) }
 }
 
 /** An average of money made or lost, a float, in the colour of its sign at the cent. */
 function madeOnAverage(value: number | null, currency: Currency): Written {
   if (value === null) {
-    return plain(NONE)
+    return NOTHING
   }
   return {
     text: moneyFigure(value, currency),
-    tone: toneOf(formatFigure(value)),
+    look: signLook(formatFigure(value)),
   }
 }
 
-/** Money paid or held, as the API's decimal text, in no colour: a cost or a drawdown. */
+/** How money written as `text` reads: in its sign's colour, a zero, never signed, in heading
+ * text. */
+function signLook(text: string): Written["look"] {
+  const sign = moneySign(text)
+  return sign === "zero" ? "figure" : sign
+}
+
+/** Money paid or held, as the API's decimal text, in heading text: a cost or a drawdown. */
 function paid(text: string, currency: Currency): Written {
-  return plain(formatMoney(text, currency))
+  return figure(formatMoney(text, currency))
 }
 
 function orNone(value: number | null, write: (value: number) => string) {
-  return plain(value === null ? NONE : write(value))
+  return value === null ? NOTHING : figure(write(value))
 }
 
 function ticks(value: number): string {
@@ -87,17 +98,17 @@ const TRADES: readonly FigureRow[] = [
   {
     id: "trades",
     label: "Trades",
-    written: (side) => plain(formatCount(side.trades)),
+    written: (side) => figure(formatCount(side.trades)),
   },
   {
     id: "wins",
     label: "Wins",
-    written: (side) => plain(formatCount(side.wins)),
+    written: (side) => figure(formatCount(side.wins)),
   },
   {
     id: "losses",
     label: "Losses",
-    written: (side) => plain(formatCount(side.losses)),
+    written: (side) => figure(formatCount(side.losses)),
   },
   {
     id: "win-rate",
@@ -162,9 +173,9 @@ const FEES: FigureRow = {
 
 const FUNDING: FigureRow = {
   id: "funding",
-  label: "Funding",
+  label: "Funding received",
   written: (side, currency) =>
-    side.funding === null ? plain(NONE) : made(side.funding, currency),
+    side.funding === null ? NOTHING : made(side.funding, currency),
 }
 
 const SLIPPAGE: FigureRow = {
@@ -182,7 +193,7 @@ const RISK: readonly FigureRow[] = [
   {
     id: "longest-spell",
     label: "Longest spell under a peak",
-    written: (side) => plain(counted(side.longest_drawdown_days, "day")),
+    written: (side) => figure(counted(side.longest_drawdown_days, "day")),
   },
   {
     id: "sharpe",
@@ -191,11 +202,20 @@ const RISK: readonly FigureRow[] = [
   },
 ]
 
-/** The table's rows, in the order a trader reads them: what the run made, its trades, their
- * averages, what they paid, a perpetual's funding among it, and their risk. */
-export function figureRows(perpetual: boolean): readonly FigureRow[] {
+/** A set of the table's rows, set apart from the next. */
+export type FigureGroup = Readonly<{ id: string; rows: readonly FigureRow[] }>
+
+/** The table's rows in the five sets a trader reads them in: what the run made, its trades, their
+ * averages, what they paid, a perpetual's funding received among it, and their risk. */
+export function figureGroups(perpetual: boolean): readonly FigureGroup[] {
   const costs = perpetual ? [FEES, FUNDING, SLIPPAGE] : [FEES, SLIPPAGE]
-  return [...PROFIT, ...TRADES, ...AVERAGES, ...costs, ...RISK]
+  return [
+    { id: "profit", rows: PROFIT },
+    { id: "trades", rows: TRADES },
+    { id: "averages", rows: AVERAGES },
+    { id: "costs", rows: costs },
+    { id: "risk", rows: RISK },
+  ]
 }
 
 /** `row`'s figure of `side` as its cell writes it, None for a side the run made no trade on. */
@@ -204,5 +224,5 @@ export function sideFigure(
   row: FigureRow,
   currency: Currency
 ): Written {
-  return side === null ? plain(NONE) : row.written(side, currency)
+  return side === null ? NOTHING : row.written(side, currency)
 }

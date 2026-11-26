@@ -226,10 +226,13 @@ describe("formatDuration (step 5.22)", () => {
 
   it("refuses a time below zero or past every count", () => {
     expect(() => formatDuration(-1)).toThrow(
-      "Expected minutes at or above zero, got -1."
+      "Expected a count of minutes at or above zero, got -1."
     )
     expect(() => formatDuration(Number.NaN)).toThrow(
-      "Expected minutes at or above zero, got NaN."
+      "Expected a count of minutes at or above zero, got NaN."
+    )
+    expect(() => formatDuration(Number.POSITIVE_INFINITY)).toThrow(
+      "Expected a count of minutes at or above zero, got Infinity."
     )
   })
 })

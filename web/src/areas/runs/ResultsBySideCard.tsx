@@ -10,8 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table"
-import { sidesNote } from "./result-words"
-import { figureRows, sideFigure, type Written } from "./side-figures"
+import { CLOSED_TRADES_NOTE, noTradeWords } from "./result-words"
+import { figureGroups, sideFigure, type Written } from "./side-figures"
 
 /** The table's columns, in order: all trades, then each side. */
 const SIDES = [
@@ -20,17 +20,26 @@ const SIDES = [
   { column: "short", heading: "Short" },
 ] as const
 
+/** The colour of each look of a figure (side-figures.ts). */
+const LOOKS: Readonly<Record<Written["look"], string>> = {
+  positive: "text-positive",
+  negative: "text-negative",
+  figure: "text-foreground",
+  none: "text-foreground-secondary",
+}
+
 /** A run's figures for all its trades, its long trades, and its short trades in one table
  * (web/DESIGN.md, Patterns, Results by side), each figure the API's, money in `currency` and in
- * its sign's colour where it is a profit or a loss (D-117); a side the run made no trade on reads
- * None, and the line under the table says why, and that a side's risk is of its closed trades. */
+ * its sign's colour where it is a profit or a loss (D-117), its rows in five sets set apart; a
+ * side the run made no trade on reads None, which the line under the title explains, and the line
+ * at the foot says that a side's risk is of its closed trades. */
 export function ResultsBySideCard({
   results,
   currency,
 }: Readonly<{ results: ResultsBySide; currency: Currency }>) {
-  const rows = figureRows(results.all_trades.funding !== null)
+  const groups = figureGroups(results.all_trades.funding !== null)
   return (
-    <Panel title="By side">
+    <Panel title="By side" description={noTradeWords(results)}>
       <div data-testid="results-by-side" className="-mx-6">
         <Table>
           <TableHeader>
@@ -40,7 +49,7 @@ export function ResultsBySideCard({
                 <TableHead
                   key={column}
                   className={cn(
-                    "text-right",
+                    "w-48 text-right",
                     column === "short" ? "pr-6 pl-3" : "px-3"
                   )}
                 >
@@ -49,36 +58,41 @@ export function ResultsBySideCard({
               ))}
             </TableRow>
           </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow
-                key={row.id}
-                data-testid={`by-side-${row.id}`}
-                className="h-10 hover:bg-muted"
-              >
-                <th
-                  scope="row"
-                  className="py-0 pr-3 pl-6 text-left font-medium whitespace-nowrap text-foreground"
+          {groups.map((group) => (
+            <TableBody
+              key={group.id}
+              className="border-t-12 border-t-transparent first-of-type:border-t-0"
+            >
+              {group.rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  data-testid={`by-side-${row.id}`}
+                  className="h-10 hover:bg-muted"
                 >
-                  {row.label}
-                </th>
-                {SIDES.map(({ column }) => (
-                  <FigureCell
-                    key={column}
-                    written={sideFigure(results[column], row, currency)}
-                    last={column === "short"}
-                  />
-                ))}
-              </TableRow>
-            ))}
-          </TableBody>
+                  <th
+                    scope="row"
+                    className="py-0 pr-3 pl-6 text-left font-normal whitespace-nowrap text-foreground-secondary"
+                  >
+                    {row.label}
+                  </th>
+                  {SIDES.map(({ column }) => (
+                    <FigureCell
+                      key={column}
+                      written={sideFigure(results[column], row, currency)}
+                      last={column === "short"}
+                    />
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          ))}
         </Table>
       </div>
       <p
         data-testid="results-by-side-note"
         className="text-xs text-muted-foreground"
       >
-        {sidesNote(results)}
+        {CLOSED_TRADES_NOTE}
       </p>
     </Panel>
   )
@@ -91,10 +105,9 @@ function FigureCell({
   return (
     <TableCell
       className={cn(
-        "py-0 text-right text-foreground-secondary",
+        "py-0 text-right",
         last ? "pr-6 pl-3" : "px-3",
-        written.tone === "positive" && "text-positive",
-        written.tone === "negative" && "text-negative"
+        LOOKS[written.look]
       )}
     >
       {written.text}

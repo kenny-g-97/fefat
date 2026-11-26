@@ -287,23 +287,29 @@ test("every figure of a run's results in full is the API's", async ({
   expect(sides.short).toBeNull()
 
   await page.goto(`/runs/run?key=${key}`)
+  const onTheRunPage = page.getByTestId("key-figures")
+  await expect(onTheRunPage).toContainText(
+    moneyText(sides.all_trades.net_pnl, currency)
+  )
+  const kpiCards = await onTheRunPage.innerText()
   await page.getByTestId("all-results").click()
 
   await expect(page).toHaveURL(`/runs/run/results?key=${key}`)
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "All results"
   )
-  await expect(page.getByTestId("kpi-pnl")).toContainText(
-    moneyText(sides.all_trades.net_pnl, currency)
-  )
-  await expect(page.getByTestId("kpi-trades")).toContainText(
-    String(sides.all_trades.trades)
-  )
+  // The eight KPI cards as the run page shows them, whose figures run-results.spec.ts holds to
+  // the API, and the run's key, which tells it apart from another run of its version.
+  await expect(page.getByTestId("key-figures")).toHaveText(kpiCards)
+  await expect(page.getByTestId("run-key")).toHaveText(key.slice(0, 12))
   await expectTheTable(page, sides, currency)
   await expect(page.getByTestId("by-side-funding")).toHaveCount(0)
-  await expect(page.getByTestId("results-by-side-note")).toHaveText(
-    `${CLOSED} This run made no short trade, so its column reads None.`
-  )
+  await expect(
+    page.getByText(
+      "This run made no short trade, so the Short column reads None."
+    )
+  ).toBeVisible()
+  await expect(page.getByTestId("results-by-side-note")).toHaveText(CLOSED)
   await page.mouse.move(700, 36)
   await screenshot(page, "run-all-results")
   expect(errors).toEqual([])
@@ -321,6 +327,7 @@ test("a run of both sides reads each side's figures, money in its sign's colour"
 
   await expectTheTable(page, BOTH_SIDES, currency)
   await expect(page.getByTestId("results-by-side-note")).toHaveText(CLOSED)
+  await expect(page.getByText(/made no (long|short)? ?trade/)).toHaveCount(0)
   await expect(page.getByTestId("kpi-pnl")).toContainText(
     moneyText("430", currency)
   )
@@ -329,9 +336,21 @@ test("a run of both sides reads each side's figures, money in its sign's colour"
   await expect(pnl.nth(2)).toHaveClass(/text-negative/)
   const fees = page.getByTestId("by-side-fees").getByRole("cell")
   await expect(fees.nth(0)).not.toHaveClass(/text-(positive|negative)/)
+  await expect(fees.nth(0)).toHaveClass(/text-foreground(?!-)/)
   await expect(
     page.getByTestId("by-side-net-pnl").getByRole("rowheader")
   ).toHaveText("Net P&L")
+  // The design review: five sets of rows, set apart, the side columns on equal tracks.
+  await expect(
+    page.getByTestId("results-by-side").locator("tbody")
+  ).toHaveCount(5)
+  const widths = await page
+    .getByTestId("results-by-side")
+    .locator("thead th")
+    .evaluateAll((heads) =>
+      heads.slice(1).map((head) => head.getBoundingClientRect().width)
+    )
+  expect(new Set(widths).size).toBe(1)
   await page.mouse.move(700, 36)
   await screenshot(page, "run-all-results-both-sides")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
@@ -357,7 +376,8 @@ test("a run's results in full read in both themes, under the motion floor", asyn
 test("Back to the run, then Back to Runs, keep the list as it was filtered", async ({
   loggedIn: page,
 }) => {
-  await page.goto("/runs?strategy=demo")
+  // Succeeded runs alone, since a run of demo that failed has no results to open.
+  await page.goto("/runs?strategy=demo&status=succeeded")
   await expect(page.getByTestId("run-strategy").first()).toHaveText("demo")
   await page.getByTestId("run-row").last().click()
   await expect(page.getByTestId("run-page-status")).toBeVisible()
@@ -369,6 +389,32 @@ test("Back to the run, then Back to Runs, keep the list as it was filtered", asy
   await expect(page.getByTestId("run-page-status")).toBeVisible()
   await page.getByRole("link", { name: "Back to Runs" }).click()
   await expect(page).toHaveURL(/strategy=demo/)
+  await expect(page).toHaveURL(/status=succeeded/)
+})
+
+test("All results and Back to the run show the keyboard's focus", async ({
+  loggedIn: page,
+}) => {
+  // The quality floor on the page's own controls (the UI verification): each reached by the
+  // keyboard takes the app's outline.
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  const key = await theSeededKey(page)
+  await page.goto(`/runs/run?key=${key}`)
+  const allResults = page.getByTestId("all-results")
+  await allResults.focus()
+  await page.keyboard.press("Shift+Tab")
+  await page.keyboard.press("Tab")
+  await expect(allResults).toBeFocused()
+  await expect(allResults).toHaveCSS("outline-style", "solid")
+
+  await page.keyboard.press("Enter")
+  const back = page.getByRole("link", { name: "Back to the run" })
+  await expect(page.getByTestId("results-by-side")).toBeVisible()
+  await back.focus()
+  await page.keyboard.press("Shift+Tab")
+  await page.keyboard.press("Tab")
+  await expect(back).toBeFocused()
+  await expect(back).toHaveCSS("outline-style", "solid")
 })
 
 test("a run whose figures by side are refused says why under its KPI cards", async ({

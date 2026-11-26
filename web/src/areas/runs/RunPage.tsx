@@ -5,6 +5,7 @@ import {
   useNavigate,
   useSearch,
 } from "@tanstack/react-router"
+import { ArrowRight } from "lucide-react"
 import { useEffect } from "react"
 import { isActive, jobsQuery } from "@/api/jobs"
 import { isRefusal } from "@/api/problems"
@@ -40,7 +41,8 @@ function BackToRuns() {
 const BACK = <BackToRuns />
 
 /** The run's results in full (step 5.22), a page of its own: a ghost button, since it leads to
- * more of the same run rather than doing anything, carrying the way back to the list. */
+ * more of the same run rather than doing anything, its arrow saying that it leads to a page, as a
+ * text link's does, carrying the way back to the list. */
 function AllResultsLink({ runKey }: Readonly<{ runKey: string }>) {
   return (
     <Button variant="ghost" asChild>
@@ -51,6 +53,7 @@ function AllResultsLink({ runKey }: Readonly<{ runKey: string }>) {
         data-testid="all-results"
       >
         All results
+        <ArrowRight className="size-4" />
       </Link>
     </Button>
   )

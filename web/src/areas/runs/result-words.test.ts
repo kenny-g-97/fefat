@@ -5,11 +5,11 @@ import {
   hourLabel,
   MONTE_CARLO_CHARTS,
   monteCarloNote,
+  noTradeWords,
   pathFigureTone,
   pathFigureWritten,
   percentWords,
   sampleSizeWords,
-  sidesNote,
   signed,
   toneOf,
 } from "./result-words"
@@ -115,21 +115,17 @@ describe("the words of a run's results", () => {
   })
 })
 
-describe("sidesNote (step 5.22)", () => {
-  const closed =
-    "A side's max drawdown, longest spell under a peak, and Sharpe are of its closed trades, walked from the capital in the order they closed; those of all trades mark open trades to market."
-  const side = SIDE
-
-  it("says a side's risk is of its closed trades, and which side made no trade", () => {
-    expect(sidesNote({ long: side, short: side })).toBe(closed)
-    expect(sidesNote({ long: side, short: null })).toBe(
-      `${closed} This run made no short trade, so its column reads None.`
+describe("noTradeWords (step 5.22)", () => {
+  it("says which side made no trade, and nothing where both traded", () => {
+    expect(noTradeWords({ long: SIDE, short: SIDE })).toBeUndefined()
+    expect(noTradeWords({ long: SIDE, short: null })).toBe(
+      "This run made no short trade, so the Short column reads None."
     )
-    expect(sidesNote({ long: null, short: side })).toBe(
-      `${closed} This run made no long trade, so its column reads None.`
+    expect(noTradeWords({ long: null, short: SIDE })).toBe(
+      "This run made no long trade, so the Long column reads None."
     )
-    expect(sidesNote({ long: null, short: null })).toBe(
-      `${closed} This run made no trade, so both sides read None.`
+    expect(noTradeWords({ long: null, short: null })).toBe(
+      "This run made no trade, so the Long and Short columns read None."
     )
   })
 })

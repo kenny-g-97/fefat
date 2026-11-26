@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest"
 import { NO_BREAK_SPACE } from "@/ui/figures"
-import { figureRows, sideFigure } from "./side-figures"
+import { figureGroups, sideFigure } from "./side-figures"
 import { SIDE } from "./side-results.sample"
+
+/** The table's rows, every set in order. */
+function rowsOf(perpetual: boolean) {
+  return figureGroups(perpetual).flatMap((group) => group.rows)
+}
 
 /** Each row's figure of `side` as its cell writes it, by the row's id. */
 function writtenRows(
@@ -10,40 +15,38 @@ function writtenRows(
   side = SIDE
 ) {
   return Object.fromEntries(
-    figureRows(perpetual).map((row) => [
-      row.id,
-      sideFigure(side, row, currency),
-    ])
+    rowsOf(perpetual).map((row) => [row.id, sideFigure(side, row, currency)])
   )
 }
 
 describe("the figures of a run by side (step 5.22)", () => {
   it("writes each figure in its format, money made or lost in its sign's colour", () => {
     const written = writtenRows(false, "USD")
-    expect(written["net-pnl"]).toEqual({ text: "-$1,234.50", tone: "negative" })
+    expect(written["net-pnl"]).toEqual({ text: "-$1,234.50", look: "negative" })
     expect(written["gross-profit"]).toEqual({
       text: "$2,650.00",
-      tone: "positive",
+      look: "positive",
     })
     expect(written["gross-loss"]).toEqual({
       text: "-$3,884.50",
-      tone: "negative",
+      look: "negative",
     })
-    expect(written["expectancy"]).toEqual({ text: "-$51.44", tone: "negative" })
+    expect(written["expectancy"]).toEqual({ text: "-$51.44", look: "negative" })
     expect(written["average-win"]).toEqual({
       text: "$203.85",
-      tone: "positive",
+      look: "positive",
     })
     expect(written["average-loss"]).toEqual({
       text: "-$388.45",
-      tone: "negative",
+      look: "negative",
     })
-    const plain = Object.fromEntries(
+    expect(written["sharpe"]).toEqual({ text: "None", look: "none" })
+    const figures = Object.fromEntries(
       Object.entries(written)
-        .filter(([, cell]) => cell.tone === undefined)
+        .filter(([, cell]) => cell.look === "figure")
         .map(([id, cell]) => [id, cell.text])
     )
-    expect(plain).toEqual({
+    expect(figures).toEqual({
       "profit-factor": "0.68",
       trades: "24",
       wins: "13",
@@ -59,29 +62,42 @@ describe("the figures of a run by side (step 5.22)", () => {
       slippage: "$600.00",
       "max-drawdown": "$2,100.25",
       "longest-spell": "3 days",
-      sharpe: "None",
     })
   })
 
-  it("puts a perpetual's funding among the costs, and reads None for a side without trades", () => {
-    const ids = (perpetual: boolean) =>
-      figureRows(perpetual).map((row) => row.id)
+  it("writes money that made nothing in heading text, never signed", () => {
+    const even = writtenRows(false, "USD", { ...SIDE, net_pnl: "-0.000000" })
+    expect(even["net-pnl"]).toEqual({ text: "$0.00", look: "figure" })
+  })
+
+  it("sets the rows in five sets, a perpetual's funding received among the costs", () => {
+    expect(figureGroups(false).map((group) => group.id)).toEqual([
+      "profit",
+      "trades",
+      "averages",
+      "costs",
+      "risk",
+    ])
+    const ids = (perpetual: boolean) => rowsOf(perpetual).map((row) => row.id)
     expect(ids(false)).not.toContain("funding")
-    expect(
-      ids(true).slice(
-        ids(true).indexOf("fees"),
-        ids(true).indexOf("slippage") + 1
-      )
-    ).toEqual(["fees", "funding", "slippage"])
+    const costs = figureGroups(true).find((group) => group.id === "costs")
+    expect(costs?.rows.map((row) => row.label)).toEqual([
+      "Commissions and fees",
+      "Funding received",
+      "Slippage",
+    ])
     const funded = writtenRows(true, "USDT", { ...SIDE, funding: "-12.340000" })
     expect(funded["funding"]).toEqual({
       text: `-12.34${NO_BREAK_SPACE}USDT`,
-      tone: "negative",
+      look: "negative",
     })
-    for (const row of figureRows(true)) {
+  })
+
+  it("reads None in every row of a side without trades", () => {
+    for (const row of rowsOf(true)) {
       expect(sideFigure(null, row, "USD")).toEqual({
         text: "None",
-        tone: undefined,
+        look: "none",
       })
     }
   })

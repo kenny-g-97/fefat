@@ -11,6 +11,7 @@ import { BackLink } from "@/ui/text-link"
 import { KeyFigures } from "./KeyFigures"
 import { ResultBody } from "./ResultBody"
 import { ResultsBySideCard } from "./ResultsBySideCard"
+import { RunKey } from "./RunStatusLine"
 import { resultsLine } from "./run-words"
 
 const TITLE = "All results"
@@ -32,8 +33,9 @@ export function AllResultsPage() {
   return <ResultsOfRun key={key} runKey={key} />
 }
 
-/** The page of the saved run `runKey`: its line once its row answers, room for its figures while
- * they load, and the server's sentence in their place where it refuses them. */
+/** The page of the saved run `runKey`: its line once its row answers, its key, which tells it
+ * apart from another run of the version on the window, room for its figures while they load, and
+ * the server's sentence in their place where it refuses them. */
 function ResultsOfRun({ runKey }: Readonly<{ runKey: string }>) {
   const run = useQuery(runQuery(runKey))
   const statistics = useQuery(runStatisticsQuery(runKey))
@@ -51,15 +53,18 @@ function ResultsOfRun({ runKey }: Readonly<{ runKey: string }>) {
         </BackLink>
       }
     >
-      {statistics.status === "pending" ? (
-        <div className="min-h-screen" />
-      ) : (
-        <ResultBody query={statistics}>
-          {(answered) => (
-            <ResultsInFull runKey={runKey} statistics={answered} />
-          )}
-        </ResultBody>
-      )}
+      <div className="flex flex-col gap-6">
+        <RunKey runKey={runKey} />
+        {statistics.status === "pending" ? (
+          <div className="min-h-screen" />
+        ) : (
+          <ResultBody query={statistics}>
+            {(answered) => (
+              <ResultsInFull runKey={runKey} statistics={answered} />
+            )}
+          </ResultBody>
+        )}
+      </div>
     </Page>
   )
 }

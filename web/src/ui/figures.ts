@@ -217,8 +217,10 @@ const MINUTES_A_DAY = 1440
  * `45 minutes`, `1 hour 30 minutes`, `3 days 4 hours`, and `Under a minute` short of half of one
  * (web/DESIGN.md, Figures). */
 export function formatDuration(minutes: number): string {
-  if (!(minutes >= 0)) {
-    throw new Error(`Expected minutes at or above zero, got ${minutes}.`)
+  if (!Number.isFinite(minutes) || minutes < 0) {
+    throw new Error(
+      `Expected a count of minutes at or above zero, got ${minutes}.`
+    )
   }
   const whole = Math.round(minutes)
   if (whole === 0) {
