@@ -215,6 +215,59 @@ FIDELITY_COLUMNS: dict[str, tuple[str, ...]] = {
 """Each artifact's columns of fidelities, `trades` or `1m` (`parse_fidelity`)."""
 
 
+class Unit(StrEnum):
+    """What a column of an artifact counts in the engines' units (module docstring), which a
+    reader converts to the instrument's (step 5.8): an instant in nanoseconds since the Unix
+    epoch, a price or a rate in 1e-9 units, or money in micro-units of the run's currency."""
+
+    INSTANT = "instant"
+    PRICE = "price"
+    RATE = "rate"
+    MONEY = "money"
+
+
+UNIT_COLUMNS: dict[str, dict[str, Unit]] = {
+    "fills": {"ts": Unit.INSTANT, "price": Unit.PRICE, "fee": Unit.MONEY, "cash": Unit.MONEY},
+    "orders": {"price": Unit.PRICE, "placed_at": Unit.INSTANT, "activation": Unit.INSTANT},
+    "log": {"ts": Unit.INSTANT},
+    "costs": {"ts": Unit.INSTANT, "rate": Unit.RATE, "amount": Unit.MONEY},
+    "trades": {
+        "entry_decision": Unit.INSTANT,
+        "entry_ts": Unit.INSTANT,
+        "entry_price": Unit.PRICE,
+        "exit_price": Unit.PRICE,
+        "exit_ts": Unit.INSTANT,
+        "gross_pnl": Unit.MONEY,
+        "fees": Unit.MONEY,
+        "funding": Unit.MONEY,
+        "pnl": Unit.MONEY,
+        "mae": Unit.MONEY,
+        "mfe": Unit.MONEY,
+        "max_drawdown": Unit.MONEY,
+        "initial_risk": Unit.MONEY,
+    },
+    "trade_paths": {"ts": Unit.INSTANT, "price": Unit.PRICE},
+    "equity": {"ts": Unit.INSTANT, "cash": Unit.MONEY, "mark": Unit.PRICE, "equity": Unit.MONEY},
+    "equity_daily": {
+        "cash": Unit.MONEY,
+        "mark": Unit.PRICE,
+        "equity": Unit.MONEY,
+        "pnl": Unit.MONEY,
+    },
+    "signals": {
+        "ts_close": Unit.INSTANT,
+        "adj_offset": Unit.PRICE,
+        "entry_price": Unit.PRICE,
+        "stop_price": Unit.PRICE,
+        "target_price": Unit.PRICE,
+        "trail_ref": Unit.PRICE,
+    },
+}
+"""Each artifact's columns in the engines' units, by unit, the signal frame's optional prices
+among them; every other number is a count, an id, lots, ticks, an R multiple, a factor, or a
+feature of the strategy's, read as it is."""
+
+
 def require_states(frame: pl.DataFrame, name: str, folder: Path) -> None:
     """Refuse the artifact `name` of the run in `folder` where a state, nulls aside, is none of
     its `StrEnum`'s words, or a fidelity no fidelity (module docstring)."""
