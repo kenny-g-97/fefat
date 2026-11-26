@@ -32,6 +32,7 @@
   --positive: #0a7a4c;
   --negative: #c81e4a;
   --negative-soft: #fae9ed;
+  --chart-2: #155e75;
   --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.06);
 
   --card-foreground: var(--foreground);
@@ -67,6 +68,7 @@
   --positive: #10b981;
   --negative: #ff4d6d;
   --negative-soft: #1e0c0f;
+  --chart-2: #06b6d4;
   --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.45);
 }
 
@@ -95,6 +97,7 @@
   --color-positive: var(--positive);
   --color-negative: var(--negative);
   --color-negative-soft: var(--negative-soft);
+  --color-chart-2: var(--chart-2);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

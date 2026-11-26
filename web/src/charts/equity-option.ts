@@ -1,5 +1,5 @@
 import type { LineSeriesOption } from "echarts/charts"
-import type { EquityCurve } from "@/api/run-results"
+import type { BuyAndHoldCurve, EquityCurve } from "@/api/run-results"
 import type { Currency } from "@/api/runs"
 import type { ThemeTokens } from "./chart-look"
 import {
@@ -30,22 +30,33 @@ const TIME_LABELS = {
   none: "{yyyy}-{MM}-{dd} {HH}:{mm}",
 }
 
+/** Each decision's value held until the next, so that a session's break draws flat. */
+const STEPPED_LINE = {
+  type: "line",
+  step: "end",
+  symbol: "circle",
+  showSymbol: false,
+} as const
+
 /** The chart of `curve` in the theme's `tokens` (web/DESIGN.md, Patterns, Equity chart): the
  * equity over a dashed line at the capital, in the sign colours, green where the account stands
- * above its capital and red below, filled to the capital (D-119), and under it, on the same time
- * axis, its drawdown in grey, its axis inverted so that the depth hangs from zero with no figure
- * negated, both axes written as money in `currency`. Nothing animates, the axis pointer included,
- * and there is no zoom; each value holds until the next decision, so that a session's break draws
- * flat rather than as a slope; the pointer reads a decision, its crosshair spanning both, and its
- * figures stand in the page's own readout. */
+ * above its capital and red below, filled to the capital (D-119), with `buyAndHold` at the run's
+ * volatility over it in the second series' cyan where the run has it (step 5.23), and under it,
+ * on the same time axis, its drawdown in grey, its axis inverted so that the depth hangs from zero
+ * with no figure negated, both axes written as money in `currency`. Nothing animates, the axis
+ * pointer included, and there is no zoom; each value holds until the next decision, so that a
+ * session's break draws flat rather than as a slope; the pointer reads a decision, its crosshair
+ * spanning both, and its figures stand in the page's own readout. */
 export function equityOption(
   curve: EquityCurve,
   currency: Currency,
-  tokens: ThemeTokens
+  tokens: ThemeTokens,
+  buyAndHold: BuyAndHoldCurve | null = null
 ): ResultsChartOption {
+  const held = buyAndHold === null ? [] : buyAndHold.equity
   const sides = {
     left: labelStrip(
-      [curve.capital, ...curve.equity, ...curve.drawdown],
+      [curve.capital, ...curve.equity, ...held, ...curve.drawdown],
       currency
     ),
     right: GRID_RIGHT,
@@ -59,9 +70,12 @@ export function equityOption(
       { ...sides, top: "70%", bottom: 24 },
     ],
     ...pointerOptions(tokens),
-    ...equityAxes(curve, currency, tokens),
+    ...equityAxes(curve, held, currency, tokens),
     visualMap: signColours(curve, tokens),
-    series: equitySeries(curve, tokens),
+    series: [
+      ...equitySeries(curve, tokens),
+      ...buyAndHoldSeries(buyAndHold, tokens),
+    ],
   }
 }
 
@@ -94,9 +108,10 @@ function signColours(
 }
 
 /** One time axis over two value axes in `currency`, with horizontal grid lines alone, the upper
- * keeping the capital in view wherever the curve went. */
+ * keeping the capital in view wherever the curve and buy and hold's `held` equity went. */
 function equityAxes(
   curve: EquityCurve,
+  held: readonly number[],
   currency: Currency,
   tokens: ThemeTokens
 ): Pick<ResultsChartOption, "xAxis" | "yAxis"> {
@@ -123,8 +138,8 @@ function equityAxes(
         scale: true,
         ...keptInView(
           curve.capital,
-          Math.min(...curve.equity),
-          Math.max(...curve.equity)
+          Math.min(...curve.equity, ...held),
+          Math.max(...curve.equity, ...held)
         ),
       },
       { ...value, gridIndex: 1, inverse: true, min: 0, splitNumber: 2 },
@@ -140,15 +155,9 @@ function equitySeries(
   tokens: ThemeTokens
 ): LineSeriesOption[] {
   const times = curve.time.map((second) => second * MILLISECONDS_A_SECOND)
-  const line = {
-    type: "line",
-    step: "end",
-    symbol: "circle",
-    showSymbol: false,
-  } as const
   return [
     {
-      ...line,
+      ...STEPPED_LINE,
       name: "Equity",
       xAxisIndex: 0,
       yAxisIndex: 0,
@@ -158,7 +167,7 @@ function equitySeries(
       markLine: capitalLine(curve.capital, tokens),
     },
     {
-      ...line,
+      ...STEPPED_LINE,
       name: "Drawdown",
       xAxisIndex: 1,
       yAxisIndex: 1,
@@ -166,6 +175,32 @@ function equitySeries(
       lineStyle: { color: tokens.input, width: 1 },
       itemStyle: { color: tokens.input },
       areaStyle: { color: tokens.input, opacity: 0.35 },
+    },
+  ]
+}
+
+/** Buy and hold at the run's volatility as a walk over the equity, in the second series' cyan
+ * (web/DESIGN.md, Palette, Charts), after the equity, so that it draws over the equity's fill,
+ * against which it keeps its contrast; none where the run has it not. */
+function buyAndHoldSeries(
+  buyAndHold: BuyAndHoldCurve | null,
+  tokens: ThemeTokens
+): LineSeriesOption[] {
+  if (buyAndHold === null) {
+    return []
+  }
+  return [
+    {
+      ...STEPPED_LINE,
+      name: "Buy and hold",
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      data: buyAndHold.time.map((second, at) => [
+        second * MILLISECONDS_A_SECOND,
+        buyAndHold.equity[at],
+      ]),
+      lineStyle: { color: tokens.chartSecond, width: 1.5 },
+      itemStyle: { color: tokens.chartSecond },
     },
   ]
 }

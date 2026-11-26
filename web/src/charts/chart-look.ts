@@ -13,6 +13,7 @@ export type ThemeTokens = Readonly<{
   foregroundSecondary: string
   positive: string
   negative: string
+  chartSecond: string
 }>
 
 /** How a marker reads: quiet, the accent, or the sign of a profit or a loss. */
@@ -51,6 +52,7 @@ const TOKENS: Readonly<Record<keyof ThemeTokens, string>> = {
   foregroundSecondary: "--foreground-secondary",
   positive: "--positive",
   negative: "--negative",
+  chartSecond: "--chart-2",
 }
 
 /** The look of `style` in `theme`, each colour the trader's own or else the theme's token: rising
@@ -152,6 +154,7 @@ export function readThemeTokens(): ThemeTokens {
     foregroundSecondary: read(TOKENS.foregroundSecondary),
     positive: read(TOKENS.positive),
     negative: read(TOKENS.negative),
+    chartSecond: read(TOKENS.chartSecond),
   }
 }
 

@@ -70,13 +70,14 @@ The pure parts have vitest's tests beside them: the look, the labels in a zone w
 
 ## EquityChart
 
-`EquityChart` draws the equity curve over its drawdown.
+`EquityChart` draws the equity curve over its drawdown, with buy and hold beside it where the run has it (step 5.23).
 
 ```tsx
 <div className="h-80">
   <EquityChart
     label="Equity and drawdown of this run"
     curve={curve}
+    buyAndHold={exposure.buy_and_hold.curve}
     currency={statistics.currency}
     pointed={pointed}
     onPointed={setPointed}
@@ -88,11 +89,12 @@ The pure parts have vitest's tests beside them: the look, the labels in a zone w
 | --- | --- |
 | `label` | The chart's name for a screen reader. |
 | `curve` | `GET /v1/runs/{run}/equity`: the `capital`, and one entry a decision in `time` (whole seconds), `equity`, and `drawdown`, a depth below the peak. |
+| `buyAndHold` | `GET /v1/runs/{run}/market`'s `buy_and_hold.curve`: one lot of the run's instrument held long from its first mark, at the lots whose days have the run's volatility, at the same decisions as `curve`, `time` and `equity`, drawn as a walk in the second series' cyan over the equity; null draws no second line, as for a run of fewer than three days or one that never traded. |
 | `currency` | The run's currency, from `GET /v1/runs/{run}/stats`, which both value axes' labels write their money in, `$50,000` (D-117). |
 | `pointed` | The decision the readout shows, from `onPointed`, which the keys step from. |
 | `onPointed` | Told the index of the decision under the pointer or the keys, or null when the pointer leaves the chart, Escape is pressed, or the focus moves off it within the page: the caller's readout then shows the last decision. Between the two panes, where no decision lies, it is told nothing, so that the readout holds. |
 
-Give it a parent that sets its height; it fills that box and redraws when it resizes. `equityOption` turns the columns and the theme's tokens into the library's options: the equity over a dashed line at the capital, its line and its fill to the capital in the sign colours, green above the capital and red below (D-119), through a piecewise visual map, since a line's own colour would override the map's; ECharts colours a line by its value from the pieces closed at both ends alone and reads which way the axis runs from their ends, so the positive takes one from the capital to a unit of money above it, where a piece of no height would turn the colours upside down, and a run that never leaves its capital takes the capital line's grey; and under it, on one time axis, the drawdown in grey, its axis inverted so that the depth hangs from zero with no figure negated. Nothing animates, its axis pointer included, and it offers no zoom, so the wheel scrolls the page. The chart takes the focus on a click or Tab, and then Left and Right step a decision, Home and End go to either end, and Escape or moving the focus off it gives the readout back to the last, while the window going away keeps the reading; a key with Alt, Ctrl, or Command stays the browser's.
+Give it a parent that sets its height; it fills that box and redraws when it resizes. `equityOption` turns the columns and the theme's tokens into the library's options: the equity over a dashed line at the capital, its line and its fill to the capital in the sign colours, green above the capital and red below (D-119), through a piecewise visual map, since a line's own colour would override the map's; ECharts colours a line by its value from the pieces closed at both ends alone and reads which way the axis runs from their ends, so the positive takes one from the capital to a unit of money above it, where a piece of no height would turn the colours upside down, and a run that never leaves its capital takes the capital line's grey; buy and hold, where given, a third series over the equity's fill in `--chart-2`, its values counted in the axis's range and its labels' strip; and under it, on one time axis, the drawdown in grey, its axis inverted so that the depth hangs from zero with no figure negated. Nothing animates, its axis pointer included, and it offers no zoom, so the wheel scrolls the page. The chart takes the focus on a click or Tab, and then Left and Right step a decision, Home and End go to either end, and Escape or moving the focus off it gives the readout back to the last, while the window going away keeps the reading; a key with Alt, Ctrl, or Command stays the browser's.
 
 ## HistogramChart
 
