@@ -1,5 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
-import { useLocation, useNavigate, useSearch } from "@tanstack/react-router"
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearch,
+} from "@tanstack/react-router"
 import { useEffect } from "react"
 import { isActive, jobsQuery } from "@/api/jobs"
 import { isRefusal } from "@/api/problems"
@@ -10,6 +15,7 @@ import {
   runJobQuery,
   runQuery,
 } from "@/api/runs"
+import { Button } from "@/ui/button"
 import { Page } from "@/ui/page"
 import { SectionFailure } from "@/ui/section-failure"
 import { BackLink } from "@/ui/text-link"
@@ -32,6 +38,23 @@ function BackToRuns() {
 }
 
 const BACK = <BackToRuns />
+
+/** The run's results in full (step 5.22), a page of its own: a ghost button, since it leads to
+ * more of the same run rather than doing anything, carrying the way back to the list. */
+function AllResultsLink({ runKey }: Readonly<{ runKey: string }>) {
+  return (
+    <Button variant="ghost" asChild>
+      <Link
+        to="/runs/run/results"
+        search={{ key: runKey }}
+        state={(kept) => kept}
+        data-testid="all-results"
+      >
+        All results
+      </Link>
+    </Button>
+  )
+}
 
 /** A run's page (web/DESIGN.md, Patterns, Run page), addressed by its run key once saved, or by
  * its row's id with its job while it runs: once saved, one line of its status, its results, and
@@ -151,6 +174,11 @@ function ShownRun({ run }: Readonly<{ run: ListedRun }>) {
       title={shown.strategy === null ? "Run" : shown.strategy.name}
       description={runLine(shown)}
       back={BACK}
+      action={
+        shown.state === "saved" ? (
+          <AllResultsLink runKey={shown.run_key} />
+        ) : undefined
+      }
     >
       {shown.state === "saved" ? (
         <div className="flex flex-col gap-6">

@@ -8,6 +8,7 @@ import {
   formatAligned,
   formatCount,
   formatDecimal,
+  formatDuration,
   formatEdge,
   formatFigure,
   formatMoney,
@@ -199,6 +200,36 @@ describe("fidelityLabel", () => {
     ])
     expect(() => fidelityLabel("weekly")).toThrow(
       'Expected a fidelity such as trades or 1m, got "weekly".'
+    )
+  })
+})
+
+describe("formatDuration (step 5.22)", () => {
+  it("writes a time in its two largest units, in words, rounded to the smaller", () => {
+    expect(
+      [0, 0.4, 0.5, 45.4, 59.6, 90, 1439.7, 1500.2, 2880, 4570].map(
+        formatDuration
+      )
+    ).toEqual([
+      "Under a minute",
+      "Under a minute",
+      "1 minute",
+      "45 minutes",
+      "1 hour",
+      "1 hour 30 minutes",
+      "1 day",
+      "1 day 1 hour",
+      "2 days",
+      "3 days 4 hours",
+    ])
+  })
+
+  it("refuses a time below zero or past every count", () => {
+    expect(() => formatDuration(-1)).toThrow(
+      "Expected minutes at or above zero, got -1."
+    )
+    expect(() => formatDuration(Number.NaN)).toThrow(
+      "Expected minutes at or above zero, got NaN."
     )
   })
 })

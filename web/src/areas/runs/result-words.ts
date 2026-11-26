@@ -1,4 +1,9 @@
-import type { MonteCarlo, PathFigure, SampleSize } from "@/api/run-results"
+import type {
+  MonteCarlo,
+  PathFigure,
+  ResultsBySide,
+  SampleSize,
+} from "@/api/run-results"
 import type { Currency } from "@/api/runs"
 import { counted, formatFigure, moneyFigure, moneySign } from "@/ui/figures"
 
@@ -43,6 +48,25 @@ export function monteCarloNote({
   seed,
 }: Pick<MonteCarlo, "paths" | "trades" | "seed">): string {
   return `${counted(paths, "path")} of ${counted(trades, "trade")}, drawn with replacement from seed ${seed}. Drawdowns are of closed trades, and a path keeps no streak across days.`
+}
+
+/** What the table of a run's figures by side says under it (step 5.22): that a side's risk is of
+ * its closed trades, as all trades' is not, then which side the run made no trade on, whose
+ * column reads None. */
+export function sidesNote({
+  long,
+  short,
+}: Pick<ResultsBySide, "long" | "short">): string {
+  const closed =
+    "A side's max drawdown, longest spell under a peak, and Sharpe are of its closed trades, walked from the capital in the order they closed; those of all trades mark open trades to market."
+  if (long === null && short === null) {
+    return `${closed} This run made no trade, so both sides read None.`
+  }
+  if (long === null || short === null) {
+    const side = long === null ? "long" : "short"
+    return `${closed} This run made no ${side} trade, so its column reads None.`
+  }
+  return closed
 }
 
 /** A chart the Monte Carlo card offers: the paths' equity fan, or one of their figures against the

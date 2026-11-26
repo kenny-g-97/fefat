@@ -9,9 +9,11 @@ import {
   pathFigureWritten,
   percentWords,
   sampleSizeWords,
+  sidesNote,
   signed,
   toneOf,
 } from "./result-words"
+import { SIDE } from "./side-results.sample"
 
 describe("the words of a run's results", () => {
   it("writes an hour of the day with its minutes", () => {
@@ -109,6 +111,25 @@ describe("the words of a run's results", () => {
     )
     expect(percentWords("profit_factor", 98, null)).toBe(
       "The path at 98% drew no losing trade, so it has no profit factor"
+    )
+  })
+})
+
+describe("sidesNote (step 5.22)", () => {
+  const closed =
+    "A side's max drawdown, longest spell under a peak, and Sharpe are of its closed trades, walked from the capital in the order they closed; those of all trades mark open trades to market."
+  const side = SIDE
+
+  it("says a side's risk is of its closed trades, and which side made no trade", () => {
+    expect(sidesNote({ long: side, short: side })).toBe(closed)
+    expect(sidesNote({ long: side, short: null })).toBe(
+      `${closed} This run made no short trade, so its column reads None.`
+    )
+    expect(sidesNote({ long: null, short: side })).toBe(
+      `${closed} This run made no long trade, so its column reads None.`
+    )
+    expect(sidesNote({ long: null, short: null })).toBe(
+      `${closed} This run made no trade, so both sides read None.`
     )
   })
 })

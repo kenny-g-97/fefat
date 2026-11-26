@@ -46,14 +46,31 @@ export function runDetail(
     .join(", ")
 }
 
+/** A run with its dates, as a page's line under its title names it. */
+type DatedRun = TradedRun & Pick<ListedRun, "start" | "end">
+
 /** What a run's page says of it under its title: its version, what it trades, and its dates. */
-export function runLine(
-  run: TradedRun & Pick<ListedRun, "start" | "end">
-): string {
+export function runLine(run: DatedRun): string {
   const version =
     run.strategy === null
       ? "No saved version"
       : `Version ${run.strategy.version}`
+  return lineOf(version, run)
+}
+
+/** What the page of a run's results in full says of it under its title (step 5.22): its strategy
+ * and version, what it trades, and its dates, `demo version 2, MNQ in 5m bars, 2026-03-06 to
+ * 2026-03-09`. */
+export function resultsLine(run: DatedRun): string {
+  const version =
+    run.strategy === null
+      ? "No saved version"
+      : `${run.strategy.name} version ${run.strategy.version}`
+  return lineOf(version, run)
+}
+
+/** `version`, what `run` trades, and its dates, each left out where it is empty. */
+function lineOf(version: string, run: DatedRun): string {
   return [version, tradedWords(run), `${run.start} to ${run.end}`]
     .filter((words) => words !== "")
     .join(", ")

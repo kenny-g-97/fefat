@@ -30,6 +30,12 @@ async function readMonteCarlo(run: string) {
   )
 }
 
+async function readResultsBySide(run: string) {
+  return answer(
+    await api.GET("/v1/runs/{run}/results", { params: { path: { run } } })
+  )
+}
+
 /** What a saved run's record says of how it went, as the client reads it. */
 export type RunStatistics = Awaited<ReturnType<typeof readStatistics>>
 /** A saved run's metrics. */
@@ -68,6 +74,11 @@ export type PathFigure = keyof FiguresByPercent
 /** One figure of the paths at each whole percent of them from 0 to 100, none where a path has
  * none, as one that drew no losing trade has no profit factor, and the run's own. */
 export type FigureAtPercents = FiguresByPercent[PathFigure]
+/** A saved run's figures for all its trades, its long trades, and its short trades, a side none
+ * where the run made no trade on it (step 5.22). */
+export type ResultsBySide = Awaited<ReturnType<typeof readResultsBySide>>
+/** The figures of a run's trades of one side, or of all of them. */
+export type SideResults = ResultsBySide["all_trades"]
 
 /** A saved run's metrics, its currency, its net P&L as a share of its capital, its fidelity
  * eras, and its warnings. */
@@ -103,6 +114,15 @@ export function runMonteCarloQuery(runKey: string) {
   return queryOptions({
     queryKey: ["run-results", runKey, "monte-carlo"],
     queryFn: () => readMonteCarlo(runKey),
+    ...KEPT,
+  })
+}
+
+/** A saved run's figures for all, long, and short trades. */
+export function runResultsBySideQuery(runKey: string) {
+  return queryOptions({
+    queryKey: ["run-results", runKey, "by-side"],
+    queryFn: () => readResultsBySide(runKey),
     ...KEPT,
   })
 }

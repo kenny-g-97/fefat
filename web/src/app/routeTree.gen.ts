@@ -26,6 +26,7 @@ import { Route as ShellRunsRunRouteImport } from './routes/_shell/runs/run'
 import { Route as ShellStrategiesIndexRouteImport } from './routes/_shell/strategies/index'
 import { Route as ShellStrategiesNewRouteImport } from './routes/_shell/strategies/new'
 import { Route as ShellStrategiesStrategyRouteImport } from './routes/_shell/strategies/strategy'
+import { Route as ShellRunsRunResultsRouteImport } from './routes/_shell/runs/run_.results'
 
 const ShellRoute = ShellRouteImport.update({
   id: '/_shell',
@@ -111,6 +112,11 @@ const ShellStrategiesStrategyRoute = ShellStrategiesStrategyRouteImport.update({
   path: '/strategies/strategy',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellRunsRunResultsRoute = ShellRunsRunResultsRouteImport.update({
+  id: '/runs/run_/results',
+  path: '/runs/run/results',
+  getParentRoute: () => ShellRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
@@ -129,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/data/': typeof ShellDataIndexRoute
   '/runs/': typeof ShellRunsIndexRoute
   '/strategies/': typeof ShellStrategiesIndexRoute
+  '/runs/run/results': typeof ShellRunsRunResultsRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -147,6 +154,7 @@ export interface FileRoutesByTo {
   '/data': typeof ShellDataIndexRoute
   '/runs': typeof ShellRunsIndexRoute
   '/strategies': typeof ShellStrategiesIndexRoute
+  '/runs/run/results': typeof ShellRunsRunResultsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -167,6 +175,7 @@ export interface FileRoutesById {
   '/_shell/data/': typeof ShellDataIndexRoute
   '/_shell/runs/': typeof ShellRunsIndexRoute
   '/_shell/strategies/': typeof ShellStrategiesIndexRoute
+  '/_shell/runs/run_/results': typeof ShellRunsRunResultsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -187,6 +196,7 @@ export interface FileRouteTypes {
     | '/data/'
     | '/runs/'
     | '/strategies/'
+    | '/runs/run/results'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -205,6 +215,7 @@ export interface FileRouteTypes {
     | '/data'
     | '/runs'
     | '/strategies'
+    | '/runs/run/results'
   id:
     | '__root__'
     | '/_shell'
@@ -224,6 +235,7 @@ export interface FileRouteTypes {
     | '/_shell/data/'
     | '/_shell/runs/'
     | '/_shell/strategies/'
+    | '/_shell/runs/run_/results'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -352,6 +364,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellStrategiesStrategyRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/runs/run_/results': {
+      id: '/_shell/runs/run_/results'
+      path: '/runs/run/results'
+      fullPath: '/runs/run/results'
+      preLoaderRoute: typeof ShellRunsRunResultsRouteImport
+      parentRoute: typeof ShellRoute
+    }
   }
 }
 
@@ -371,6 +390,7 @@ interface ShellRouteChildren {
   ShellDataIndexRoute: typeof ShellDataIndexRoute
   ShellRunsIndexRoute: typeof ShellRunsIndexRoute
   ShellStrategiesIndexRoute: typeof ShellStrategiesIndexRoute
+  ShellRunsRunResultsRoute: typeof ShellRunsRunResultsRoute
 }
 
 const ShellRouteChildren: ShellRouteChildren = {
@@ -389,6 +409,7 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellDataIndexRoute: ShellDataIndexRoute,
   ShellRunsIndexRoute: ShellRunsIndexRoute,
   ShellStrategiesIndexRoute: ShellStrategiesIndexRoute,
+  ShellRunsRunResultsRoute: ShellRunsRunResultsRoute,
 }
 
 const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
