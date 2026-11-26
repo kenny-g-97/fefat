@@ -5,6 +5,7 @@ import type {
 } from "@/api/runs"
 import { counted } from "@/ui/figures"
 import type { EnteredValues, ParameterValue } from "@/ui/schema-fields"
+import { isTradeDate } from "@/ui/trade-date"
 
 /** What the trader chose in the Run backtest dialog (web/DESIGN.md, Patterns, Run backtest
  * dialog); a choice left at null is the run's default, which the estimate names, the instrument
@@ -51,29 +52,8 @@ type TicksText = Readonly<{ market: string; stop: string }>
 /** A window of trade dates, as the API writes them. */
 type TradeDates = Readonly<{ start: string; end: string }>
 
-const DATE_TEXT = /^(\d{4})-(\d{2})-(\d{2})$/
 const WHOLE = /^\d+$/
 const MOST_TICKS = 1_000
-
-/** The days of `month` of `year`, from the calendar's rule rather than the browser's clock,
- * which would move a date near midnight. */
-function daysIn(year: number, month: number): number {
-  if (month === 2) {
-    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
-    return leap ? 29 : 28
-  }
-  return [4, 6, 9, 11].includes(month) ? 30 : 31
-}
-
-/** Whether `text` is a date as the app writes one, `2026-03-06`, that the calendar holds. */
-export function isTradeDate(text: string): boolean {
-  const found = DATE_TEXT.exec(text)
-  if (found === null) {
-    return false
-  }
-  const [year, month, day] = [found[1], found[2], found[3]].map(Number)
-  return month >= 1 && month <= 12 && day >= 1 && day <= daysIn(year, month)
-}
 
 /** Why `text` is no trade date of the data held from `held.start` to `held.end`, or null. Dates
  * are compared as the texts they are, which sort as dates, so that no browser's time zone moves

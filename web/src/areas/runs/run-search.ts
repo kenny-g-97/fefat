@@ -1,4 +1,5 @@
 import { z } from "zod"
+import type { components } from "@/api/schema"
 
 /** The statuses a run takes, its job's until it is saved. */
 export const RUN_STATUSES = [
@@ -36,3 +37,65 @@ export const runSearch = z.object({
 /** A saved run's results in full (step 5.22): the run by its key alone, since only a saved run
  * has results. */
 export const allResultsSearch = runSearch.pick({ key: true })
+
+type Schemas = components["schemas"]
+
+const SIDES = ["long", "short"] as const satisfies readonly Schemas["PositionSide"][]
+/** Every role a fill can take, a trade's exit reason among them (F-TAG-01). */
+export const FILL_ROLES = [
+  "entry",
+  "stop",
+  "target_1",
+  "target_2",
+  "target_3",
+  "exit",
+  "flat_by",
+  "no_overnight",
+  "no_weekend",
+  "max_bars",
+  "max_minutes",
+  "opposite_signal",
+  "signal_exit",
+  "roll_volume",
+  "roll_open_interest",
+  "roll_calendar",
+  "roll_expiry",
+] as const satisfies readonly Schemas["OrderRole"][]
+/** The signs of a net P&L that the trade table filters by. */
+export const PNL_SIGNS = [
+  "positive",
+  "negative",
+  "zero",
+] as const satisfies readonly Schemas["PnlSign"][]
+/** What the trade table orders the trades by, the first the order a table opens in. */
+export const TRADE_SORTS = [
+  "entry_ts",
+  "exit_ts",
+  "pnl",
+  "r_multiple",
+  "held",
+  "mae_ticks",
+  "mfe_ticks",
+] as const satisfies readonly Schemas["TradeSort"][]
+const ORDERS = ["asc", "desc"] as const satisfies readonly Schemas["SortOrder"][]
+const TRADE_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
+const FIDELITY = /^(trades|tbbo|[0-9]+[smhd])$/
+
+/** A saved run's trades (step 5.8): the run by its key, the SQL tab or the table, and what the
+ * table asks, its filters and its order, kept in the address as the Runs page keeps its filters,
+ * so that a reload and a link keep them; a value the page cannot read is left out. */
+export const tradesSearch = z.object({
+  key: runSearch.shape.key,
+  tab: z.literal("sql").optional().catch(undefined),
+  side: z.enum(SIDES).optional().catch(undefined),
+  exit_reason: z.enum(FILL_ROLES).optional().catch(undefined),
+  start: z.string().regex(TRADE_DATE).optional().catch(undefined),
+  end: z.string().regex(TRADE_DATE).optional().catch(undefined),
+  pnl_sign: z.enum(PNL_SIGNS).optional().catch(undefined),
+  fidelity: z.string().regex(FIDELITY).optional().catch(undefined),
+  ambiguous: z.boolean().optional().catch(undefined),
+  sort: z.enum(TRADE_SORTS).optional().catch(undefined),
+  order: z.enum(ORDERS).optional().catch(undefined),
+})
+
+export type TradesSearch = z.infer<typeof tradesSearch>

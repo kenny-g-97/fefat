@@ -72,6 +72,26 @@
   --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.45);
 }
 
+/* More contrast, where the trader's system asks for it (step 5.8, from the Phase 4 exit's
+   backlog): the hairlines take the next steps toward the text, a field's border and the body and
+   subtle text the next toward the heading's, in either theme, so that a dense table reads at a
+   glance; the fills, the accent, and the sign colours stay as they are. */
+@media (prefers-contrast: more) {
+  :root {
+    --border: #9a9a9a;
+    --input: #5c5c5c;
+    --foreground-secondary: #3d3d3d;
+    --muted-foreground: #4d4d4d;
+  }
+
+  .dark {
+    --border: #555555;
+    --input: #8a8a8a;
+    --foreground-secondary: #b8b8b8;
+    --muted-foreground: #a3a3a3;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -506,6 +526,135 @@ main[tabindex="-1"]:focus-visible {
   color: var(--brand);
 }
 
+/* The column chooser's menu (step 5.8, D-93) is the skill's panel, as a select's list is: its
+   items 32 px in heading text, the one under the pointer or the keys on the hover step in the
+   brand colour, its check the item's own colour; it scrolls inside the window. */
+[data-slot="dropdown-menu-content"] {
+  max-height: min(24rem, var(--radix-dropdown-menu-content-available-height));
+  background-color: var(--muted);
+  box-shadow: var(--shadow-md);
+}
+
+:is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"]
+) {
+  height: 2rem;
+  color: var(--foreground);
+}
+
+:is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"]
+):focus-visible {
+  outline: none;
+}
+
+:is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"]
+)[data-highlighted] {
+  background-color: var(--accent);
+  color: var(--brand);
+}
+
+/* Tabs (step 5.8): a line of 40 px triggers over the hairline, 24 px apart, each label at 500 in
+   body text that turns to heading text under the pointer, the chosen one in heading text over a
+   2 px line in the brand colour, where you are, as the sidebar marks its page. */
+[data-slot="tabs-list"] {
+  width: 100%;
+  height: 2.5rem;
+  justify-content: flex-start;
+  gap: 1.5rem;
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+[data-slot="tabs-trigger"] {
+  flex: none;
+  height: 2.5rem;
+  padding-inline: 0;
+  border-width: 0;
+  font-weight: 500;
+  color: var(--foreground-secondary);
+}
+
+[data-slot="tabs-trigger"]:is(:hover, [data-state="active"]) {
+  color: var(--foreground);
+}
+
+[data-slot="tabs-trigger"]::after {
+  bottom: -1px;
+  height: 2px;
+  background-color: var(--brand);
+}
+
+[data-slot="tabs-trigger"]:focus-visible {
+  --tw-ring-color: transparent;
+}
+
+/* A data grid, a run's trades or a query's answer (step 5.8): a card that scrolls both ways,
+   its header row standing at its top and its first column at its left, on the card's surface; a
+   row on the control surface under the pointer and the hover step while pressed, as a row as
+   wide as its card answers a press, the selected trade on the active item's soft fill, and a
+   row's focus outline inside it, where the card's edge would cut it. A sortable column's header
+   is a button in the header's type, heading text under the pointer and once it sorts. */
+[data-slot="grid-head"] th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: var(--card);
+}
+
+[data-slot="data-grid"] :is(th, td):first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background-color: var(--card);
+}
+
+[data-slot="data-grid"] th:first-child {
+  z-index: 3;
+}
+
+[data-slot="grid-row"]:hover,
+[data-slot="grid-row"]:hover > td:first-child {
+  background-color: var(--muted);
+}
+
+[data-slot="grid-row"]:active,
+[data-slot="grid-row"]:active > td:first-child {
+  background-color: var(--accent);
+}
+
+[data-slot="grid-row"][aria-selected="true"],
+[data-slot="grid-row"][aria-selected="true"] > td:first-child {
+  background-color: var(--brand-soft);
+}
+
+[data-slot="grid-row"]:focus-visible {
+  outline-offset: -2px;
+}
+
+[data-slot="sort-button"] {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+
+[data-slot="table-head"]:is([aria-sort="ascending"], [aria-sort="descending"]),
+[data-slot="sort-button"]:hover {
+  color: var(--foreground);
+}
+
+/* A query's answer names its columns as the query wrote them, which the header's capitals would
+   change. */
+[data-slot="table-head"][data-case="as-typed"] {
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 /* A colour field is the browser's own swatch, 40 px square in the field border on the control
    surface, its colour filling it within the one radius. */
 [data-slot="colour-field"] {
@@ -617,5 +766,26 @@ a[data-slot="row-link"]:active {
 
   [data-slot="frame-edge"]:focus-visible::after {
     outline: 2px solid Highlight;
+  }
+
+  /* The current page in the sidebar and the current step of a task lose their soft fill with
+     every background, so their border takes the system's highlight colour (step 5.8, from the
+     design review of step 5.17); a job's bar fills in it over a track bordered in the text
+     colour, and a selected trade stands outlined in it. */
+  :is([aria-current="page"], [aria-current="step"]) {
+    border-color: Highlight;
+  }
+
+  [data-slot="progress"] {
+    border: 1px solid CanvasText;
+  }
+
+  [data-slot="progress-indicator"] {
+    background-color: Highlight;
+  }
+
+  [data-slot="grid-row"][aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
   }
 }

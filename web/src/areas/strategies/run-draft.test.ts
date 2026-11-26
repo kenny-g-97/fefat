@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest"
 import type { RunEstimated } from "@/api/runs"
+import { isTradeDate } from "@/ui/trade-date"
 import {
   estimateAsked,
   estimateWords,
   feeTableOf,
   instrumentChoices,
   instrumentChosen,
-  isTradeDate,
   readWords,
   runReadiness,
   shownDates,
