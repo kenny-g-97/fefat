@@ -1,14 +1,14 @@
 # Phase 7 — Prop simulator
 
-**Goal.** The prop-firm simulator from `03-prop-simulator.md`: rules as dated, sourced data; an account state machine with a Python reference; replay of an existing backtest file — a saved FEFAT run or a trade log imported from another platform — through the rules and your prop strategy, never re-running the trading strategy; Monte Carlo with a cash ledger; a portfolio of several backtest files, strategies and instruments on one timeline, with its own analysis (steps 7.12 and 7.13, added 2026-11-04, D-76); and the pages to run and read it all.
+**Goal.** The prop-firm simulator from `03-prop-simulator.md`: rules as dated, sourced data; an account state machine with a Python reference; replay of an existing backtest file — a saved FEFAT run or a trade log imported from another platform — through the rules and your prop strategy, never re-running the trading strategy; Monte Carlo with a cash ledger; a portfolio of several backtest files, strategies and instruments on one timeline, with its own analysis (steps 7.12 and 7.13, added 2026-11-04, D-76), set up and run from a page and read in full, with or without each member and against the market (steps 7.14 to 7.16, added 2026-11-26, D-121); and the pages to run and read it all.
 
-**You get.** Pick a saved backtest, or a portfolio of several, prop rules, and a prop strategy, and get pass probabilities, payouts, costs, and a plan ranking in seconds — without re-running anything.
+**You get.** Pick a saved backtest, or a portfolio of several, prop rules, and a prop strategy, and get pass probabilities, payouts, costs, and a plan ranking in seconds — without re-running anything. Set up a basket of strategies on their instruments, run it from one page, and read how its members move together, with the market, and without one another.
 
-**Depends on.** Phase 6 in the written order. Steps 7.1–7.8 and 7.12 need only the SDK and the run artifacts from Phase 2, including the trade paths every run stores since step 2.13; 7.9–7.11 and 7.13 need the app (Phase 6). If you move this phase earlier at a kickoff, amend 7.1's `Depends on` line.
+**Depends on.** Phase 6 in the written order. Steps 7.1–7.8 and 7.12 need only the SDK and the run artifacts from Phase 2, including the trade paths every run stores since step 2.13, and 7.14 step 5.23's market exposure too; 7.9–7.11, 7.13, 7.15, and 7.16 need the app (Phase 6). If you move this phase earlier at a kickoff, amend 7.1's `Depends on` line.
 
-**Skills.** `backtest-expert` and `software-design-principles` for every step: the account state machine and the replay are backtest code, and the skill's sample-size and friction rules apply to the Monte Carlo and the plan ranking; `frontend-design`, `unslop`, and `contemporary-typeui` with `web/DESIGN.md` for 7.9–7.11 and 7.13.
+**Skills.** `backtest-expert` and `software-design-principles` for every step: the account state machine and the replay are backtest code, and the skill's sample-size and friction rules apply to the Monte Carlo and the plan ranking; `designing-architecture` for 7.15's basket job; `frontend-design`, `unslop`, and `contemporary-typeui` with `web/DESIGN.md` for 7.9–7.11, 7.13, 7.15, and 7.16.
 
-**Open decisions for the kickoff.** The first three plans to encode (suggested: Topstep Trading Combine → XFA, My Funded Futures Rapid or Pro, Tradeify Growth or Select); the bankroll and horizon defaults; whether you trade micros or minis in evaluations; which other platforms' trade logs to import first (for example NinjaTrader, Sierra Chart, TradeStation, or TradingView strategy-tester exports).
+**Open decisions for the kickoff.** The first three plans to encode (suggested: Topstep Trading Combine → XFA, My Funded Futures Rapid or Pro, Tradeify Growth or Select); the bankroll and horizon defaults; whether you trade micros or minis in evaluations; which other platforms' trade logs to import first (for example NinjaTrader, Sierra Chart, TradeStation, or TradingView strategy-tester exports); the market a portfolio's beta is taken against unless you choose another (step 7.14), and the trade dates its rolling correlation spans, 60 suggested.
 
 ## Kickoff
 
@@ -471,6 +471,10 @@ Not in this step: pages (7.13); a strategy that reads the portfolio's state whil
 
 - If the two-member sum test fails on the equity between trades, a member's open profit is being marked on the other member's minute marks; mark every member at every merged minute boundary.
 
+#### Amendment
+
+2026-11-26 (your request of that date, D-121): a pair of members' correlation counts the trade dates both were valued on, since futures and crypto keep different calendars; step 7.14 extends `portfolio_report` with the analysis in full.
+
 ### 7.13 Portfolio page
 
 Depends on: 7.12, 7.11 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
@@ -508,6 +512,119 @@ Not in this step: new analysis; rebalancing or weights that change over time.
 #### If it fails
 
 - Members on different time zones or sessions must still align on instants, never on local times; if the equity curve shows steps at a member's session boundary, the merge keyed on trade dates instead of timestamps.
+
+### 7.14 Portfolio analysis in full
+
+Depends on: 7.12, 5.23 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer · Security: no · Model hint: default
+
+#### Purpose
+
+A portfolio says what each of its members brings: how it reads with or without each, how it moves with the market, which member carries its risk, and whether its members still diversify when it matters.
+
+#### Prerequisites
+
+- Steps 7.12 and 5.23 merged: the portfolio backtest file with its report, and a run's market exposure.
+
+#### Prompt
+
+```text
+Masterplan step 7.14 — Portfolio analysis in full.
+
+Read docs/masterplan/03-prop-simulator.md §4.7 and docs/masterplan/02-engine-and-data.md §7 and §9. Your request of 2026-11-26 asked for it (D-121): the correlation between strategies, the portfolio's sensitivity to the market, its results with or without certain strategies, and the figures portfolio tools add. Extend `fefat.prop.portfolio_report` from the members' days and the merged file, no member run again. Members in and out: the report of any subset of the members, as a portfolio of those alone gives it, and a leave-one-out table, for each member the portfolio's net P&L, maximum drawdown, and Sharpe without it, and the change. Market exposure: step 5.23's correlation, beta, share explained, and alpha for the portfolio and for each member against a market you choose among the instruments the store holds daily bars of, and the portfolio's beta to each instrument its members trade, a pair of series counting the trade dates both were valued on, since futures and crypto keep different calendars. Risk and diversification: each member's share of the portfolio's variance, the shares adding up to one, beside its share of the profit and of the drawdown; the diversification ratio, the members' volatilities summed over the portfolio's; the portfolio's maximum drawdown against the sum of the members' own; and the effective number of independent members, the members' count squared over the sum of every pair's squared correlation, n for unrelated members and 1 for copies. Correlation when it matters: the members' correlation by day and by week, since weeks catch strategies that trade different sessions and move together a day apart; the average pairwise correlation over a rolling window of trade dates, which shows when diversification broke down; and for each pair the share of days both lost beside the share their own losing days give by chance, rather than a correlation over the portfolio's losing days, which choosing the days by the sum's sign biases downward. Worst periods: the portfolio's worst days, weeks, and months with each member's part, and the profit and loss by month of each member and of the portfolio.
+
+Tests: a subset's report equals the report of a portfolio built from those members alone; the risk shares add up to one; unrelated planted members give an effective number near n and copies give 1; a member that is the market itself has a beta of its lots; two members whose days are the same a trade date apart correlate highly by week where they correlate near zero by day.
+
+Not in this step: pages (steps 7.15 and 7.16), weights searched for, the margin a portfolio ties up, its exposure by instrument over time (`BACKLOG.md`).
+```
+
+#### Done means
+
+1. The subset, risk-share, effective-number, beta, and weekly-correlation tests pass.
+2. A notebook cell shows the leave-one-out table, the market exposure, and the correlations by day and by week for a portfolio of two synthetic runs on different instruments.
+
+#### Your checks
+
+- In a notebook, combine three of your saved runs and read the leave-one-out table; build the portfolio without the member whose absence raises its Sharpe most and check that its report equals the subset's; then read the members' betas against ES.
+
+#### If it fails
+
+- Risk shares that do not add up to one were taken from each member's own variance: a member's share is its covariance with the portfolio over the portfolio's variance.
+
+### 7.15 Set up and run a portfolio backtest
+
+Depends on: 7.13 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
+
+#### Purpose
+
+A basket of strategies on their instruments is set up and run from one page, as one backtest, and opens as a portfolio.
+
+#### Prerequisites
+
+- Step 7.13 merged: portfolios saved over the API, and their page.
+
+#### Prompt
+
+```text
+Masterplan step 7.15 — Set up and run a portfolio backtest.
+
+Read docs/masterplan/03-prop-simulator.md §4.7 and §7, and web/DESIGN.md (Run backtest dialog, Coverage strip, Tables). Your request of 2026-11-26 asked for it (D-121): you set up the strategies, their instruments, and their data, run the basket, and read it as a portfolio. Add a Portfolios section to the sidebar after Runs: the saved portfolios, each with its members, its window, and its net P&L, opening 7.13's portfolio page, and New portfolio backtest. Its set-up page is a table of members, each a saved strategy version with its parameters, the instrument it trades (D-114), the provider of its data, its fee table and slippage, and its size multiplier, under one window and one capital; beside each member, the trade dates its data holds against the window, as the Data page's coverage strip draws them; a member whose instrument holds no data in the window is named, blocks Run, and links to the import wizard. Before Run, an estimate for each member as Run backtest gives one (step 5.6), and the window every member's data covers. Run launches each member through the run launch of step 5.3, a run already saved under the same key being the Cached case and never run again, and one job follows them, a line a member; once every member's run is saved, the portfolio is saved through 7.13's route and its page opens. A member that fails or is refused ends the job naming it, the saved runs kept, and Run again runs only what is missing. A saved portfolio keeps its request, so that Edit members opens the set-up page filled.
+
+Tests: the portfolio equals `BacktestFile.portfolio` of the same members' runs (pytest); a member already saved is not run again; a member without data in the window blocks Run by name; Playwright runs a basket of two seeded strategies on two instruments to its portfolio page.
+
+Not in this step: strategies that share capital or react to one another while they run (`BACKLOG.md`), new analysis (step 7.16).
+```
+
+#### Done means
+
+1. Playwright passes on both projects with screenshots.
+2. The portfolio equals `BacktestFile.portfolio` of its members' runs, and a member already saved is not run again (tests).
+3. A member without data in the window blocks Run by name (test).
+
+#### Your checks
+
+- Set up three of your strategies on two instruments over one year, run the basket, and open its portfolio page; run it again: every member reads Cached.
+
+#### If it fails
+
+- A basket that runs a member twice launched it outside the run launch: every member goes through `POST /v1/runs`, whose request lookup finds a saved run.
+
+### 7.16 The portfolio page in full
+
+Depends on: 7.14, 7.15 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
+
+#### Purpose
+
+The portfolio page shows step 7.14's analysis: switch members off and on, and read how the portfolio moves with the market, where its risk sits, and when its members stopped diversifying.
+
+#### Prerequisites
+
+- Steps 7.14 and 7.15 merged.
+
+#### Prompt
+
+```text
+Masterplan step 7.16 — The portfolio page in full.
+
+Read docs/masterplan/03-prop-simulator.md §4.7 and §7, and web/DESIGN.md (Charts, Stat card, Tables). Your request of 2026-11-26 asked for it (D-121). Serve step 7.14's report for any subset of a portfolio's members from `GET /v1/prop/portfolios/{id}/report`, and build it into 7.13's page: a switch a member, the figures, the equity chart, and the tables following the members switched on, the choice kept in the page's address, the whole portfolio's curve staying behind in a neutral step; the leave-one-out table; the Market exposure card with its market picker and each member's beta; the correlation table by day or by week, and the rolling average correlation as a chart over ECharts; the risk shares beside the profit and drawdown shares, with the diversification ratio and the effective number of members as stat cards; and the worst days, weeks, and months with each member's part, and the months by member. Extend docs/prop-guide.md with what each figure says and does not, and docs/demo-prop.md with the flow.
+
+Contract test: every figure on the page equals `portfolio_report` for the same members (a Playwright test reads the DOM and compares it with the API, and a pytest compares the API with the SDK).
+
+Not in this step: new figures, weights searched for or rebalanced.
+```
+
+#### Done means
+
+1. Contract tests pass (API equals SDK; DOM equals API), for the whole portfolio and for a subset of its members.
+2. Playwright passes on both projects with screenshots.
+3. `docs/prop-guide.md` and `docs/demo-prop.md` cover the analysis.
+
+#### Your checks
+
+- Open a portfolio of your strategies, switch off the member with the largest share of the variance, and read how the Sharpe and the drawdown move; then switch the correlation table to weeks.
+
+#### If it fails
+
+- A figure that differs from the notebook's for a subset was worked out in the page: the server answers every subset, and the page computes nothing.
 
 ## Phase exit
 

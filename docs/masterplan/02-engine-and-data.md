@@ -354,6 +354,8 @@ The `backtest-expert` skill (`.claude/skills/backtest-expert`) is loaded by ever
 - Robustness: day-block bootstrap of drawdown and Sharpe; cost, latency, and parameter-neighbourhood reruns; random trade skipping. The bootstrap code is shared with the prop simulator.
 - Minimum safeguards: an automatic trial count per strategy lineage feeding the deflated Sharpe ratio; a locked holdout with logged unlock; PBO from the sweep matrix; plateau-based selection; small-sample warnings; prop simulation fed by stitched out-of-sample trades by default.
 
+Added 2026-11-26 (D-121, steps 5.23, 7.14, and 11.6): a run's market exposure, the correlation and the beta in lots of its days with one lot of its instrument held long, valued at the run's own marks with each roll's gap taken off, the share of its variance that explains, and the alpha left over, and buy and hold over its window, at one lot and at the run's volatility, stand on its page from step 5.23; step 11.6's robustness report shows them again with bootstrap intervals and over a rolling window, and step 7.14 gives a portfolio's and its members' against a market you choose.
+
 ## 10. Libraries (versions verified 2026-10-05)
 
 - **Rust 1.99:** pyo3 0.29.3; pyo3-arrow 0.19.0 (pins arrow 59.x; stay on arrow and parquet 59.3); memmap2 0.9.11; rayon 1.12.0; serde 1.0.229; schemars 1.2.2; thiserror 2.0.21; blake3 1.8.7. Dev: proptest 1.11.0, insta 1.49.0, criterion 0.8.2, cargo-nextest 0.9.146, cargo-mutants 27.1.0.
