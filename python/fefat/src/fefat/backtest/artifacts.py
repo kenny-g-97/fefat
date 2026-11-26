@@ -5,7 +5,6 @@ each signal bar with its trade date, and the equity of each trade date; each wri
 with `run.json`, into the run's folder, named by its key, which is written whole or not at all,
 and read back."""
 
-import math
 import shutil
 import tempfile
 import time
@@ -102,7 +101,7 @@ def _risk(ticks: int | None, lots: int, parameters: InstrumentParameters) -> int
     """What `lots` lose from their entry to a stop `ticks` away, in micro-units, rounded up."""
     if ticks is None:
         return None
-    return math.ceil(parameters.value(ticks * parameters.tick, lots))
+    return parameters.worth_of_ticks(ticks, lots)
 
 
 def _equity(equity: pl.DataFrame, signals: pl.DataFrame) -> pl.DataFrame:

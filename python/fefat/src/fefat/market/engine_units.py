@@ -10,6 +10,7 @@ integer parameters here, once, for the reference engine and for `ff.backtest` al
     bars.select(price_in_units("close"))  # 4990.25, a float, as the API sends it
 """
 
+import math
 from decimal import Decimal
 from fractions import Fraction
 from typing import Protocol
@@ -88,6 +89,11 @@ class InstrumentParameters(FrozenModel):
     def value(self, price: int, lots: int) -> Fraction:
         """What `lots` are worth at `price`, exactly, in micro-units: negative for a short."""
         return Fraction(price * lots * self.money_per_point, PRICE_SCALE)
+
+    def worth_of_ticks(self, ticks: int, lots: int) -> int:
+        """What `ticks` of the price are worth on `lots`, in micro-units, rounded up, against the
+        trader, as every amount is (F-FEE-03): a stop's risk, or a fill's slippage."""
+        return math.ceil(self.value(ticks * self.tick, lots))
 
 
 def instrument_parameters(instrument: InstrumentSpecification) -> InstrumentParameters:
