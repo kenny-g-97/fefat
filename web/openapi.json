@@ -5265,6 +5265,42 @@
         "title": "ReportedFinding",
         "type": "object"
       },
+      "ResultsBySide": {
+        "additionalProperties": false,
+        "description": "A run's figures for all its trades, and for its long and its short trades, each none where\nthe run made no trade on that side.",
+        "properties": {
+          "all_trades": {
+            "$ref": "#/components/schemas/SideResults"
+          },
+          "long": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SideResults"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "short": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SideResults"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "all_trades",
+          "long",
+          "short"
+        ],
+        "title": "ResultsBySide",
+        "type": "object"
+      },
       "Robustness": {
         "additionalProperties": false,
         "description": "The robustness summary of a run: what the script read, its five scores, their total and\nverdict, its red flags, the sample size the run reaches, the script's profit factor (none\nwhere the script's is infinite) and expectancy in percent of the capital per trade, and the\nprofit and loss at one more tick of slippage, `fragile_to_slippage` when the run's profit is\ngone at it. The regimes a run covers arrive with step 11.4 (D-51).",
@@ -6538,6 +6574,226 @@
         ],
         "title": "Severity",
         "type": "string"
+      },
+      "SideResults": {
+        "additionalProperties": false,
+        "description": "The figures of a run's trades of one side, or of all of them (module docstring), money in\nthe instrument's currency, the time held in minutes, and the excursions in ticks.",
+        "properties": {
+          "average_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Loss"
+          },
+          "average_mae_ticks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Mae Ticks"
+          },
+          "average_mfe_ticks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Mfe Ticks"
+          },
+          "average_minutes_held": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Minutes Held"
+          },
+          "average_win": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Win"
+          },
+          "expectancy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy"
+          },
+          "expectancy_r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy R"
+          },
+          "fees": {
+            "title": "Fees",
+            "type": "string"
+          },
+          "funding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Funding"
+          },
+          "gross_loss": {
+            "title": "Gross Loss",
+            "type": "string"
+          },
+          "gross_profit": {
+            "title": "Gross Profit",
+            "type": "string"
+          },
+          "longest_drawdown_days": {
+            "minimum": 0.0,
+            "title": "Longest Drawdown Days",
+            "type": "integer"
+          },
+          "losses": {
+            "minimum": 0.0,
+            "title": "Losses",
+            "type": "integer"
+          },
+          "max_drawdown": {
+            "title": "Max Drawdown",
+            "type": "string"
+          },
+          "net_pnl": {
+            "title": "Net Pnl",
+            "type": "string"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "slippage": {
+            "title": "Slippage",
+            "type": "string"
+          },
+          "trades": {
+            "minimum": 0.0,
+            "title": "Trades",
+            "type": "integer"
+          },
+          "trades_per_day": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trades Per Day"
+          },
+          "win_loss_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Loss Ratio"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "wins": {
+            "minimum": 0.0,
+            "title": "Wins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trades",
+          "wins",
+          "losses",
+          "win_rate",
+          "net_pnl",
+          "gross_profit",
+          "gross_loss",
+          "profit_factor",
+          "expectancy",
+          "expectancy_r",
+          "average_win",
+          "average_loss",
+          "win_loss_ratio",
+          "fees",
+          "funding",
+          "slippage",
+          "trades_per_day",
+          "average_minutes_held",
+          "average_mae_ticks",
+          "average_mfe_ticks",
+          "max_drawdown",
+          "longest_drawdown_days",
+          "sharpe"
+        ],
+        "title": "SideResults",
+        "type": "object"
       },
       "SizeUnit-Input": {
         "additionalProperties": false,
@@ -11460,6 +11716,92 @@
           }
         ],
         "summary": "Run Monte Carlo",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run}/results": {
+      "get": {
+        "description": "A saved run's figures for all its trades, its long trades, and its short trades (step\n5.22), each side none where the run made no trade on it; money as decimal text in the run's\ncurrency; 409 as `/stats` answers it.",
+        "operationId": "run_results_by_side_v1_runs__run__results_get",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsBySide"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run Results By Side",
         "tags": [
           "runs"
         ]

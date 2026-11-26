@@ -25,7 +25,7 @@ from pydantic import (
     model_validator,
 )
 
-from fefat.backtest import RunConfig, TradeDistributions
+from fefat.backtest import ResultsBySide, RunConfig, TradeDistributions
 from fefat.backtest.equity_curves import EQUITY_POINTS, FEWEST_POINTS
 from fefat.backtest.resampling import MONTE_CARLO_PATHS, MONTE_CARLO_SEED, MonteCarloAnswer
 from fefat.market.contracts import parse_contract_name
@@ -330,6 +330,15 @@ def run_monte_carlo(
     answers it."""
     with _refusals():
         return container.runs.monte_carlo(run, paths, seed, max_points)
+
+
+@router.get("/runs/{run}/results", responses=problem_responses(401, 404, 409, 422))
+def run_results_by_side(run: RunAddress, container: ContainerDependency) -> ResultsBySide:
+    """A saved run's figures for all its trades, its long trades, and its short trades (step
+    5.22), each side none where the run made no trade on it; money as decimal text in the run's
+    currency; 409 as `/stats` answers it."""
+    with _refusals():
+        return container.runs.results_by_side(run)
 
 
 @router.post("/runs/{run}/cancel", responses=problem_responses(401, 403, 404, 422))
