@@ -5,7 +5,7 @@ decisions, the cash at the first, and the funding paid while it is open. It move
 `fefat.backtest.explain` at step 5.9, which grew it past the size of a module."""
 
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -16,6 +16,7 @@ import polars as pl
 
 from fefat.backtest.record import RollRecord, RunRecord
 from fefat.market.api import load, roll_calendar
+from fefat.market.calendar import SessionTable
 from fefat.market.fidelity import TickFidelity
 from fefat.market.layout import Partition
 from fefat.market.schema import Timeframe
@@ -30,6 +31,8 @@ if TYPE_CHECKING:
     from fefat.backtest.runs import Run
 
 type Trade = dict[str, Any]
+type _Records = tuple[tuple[Record, ...], tuple[RollRow, ...], str]
+"""An episode's records, the rolls they cross, and the front of the first."""
 
 
 @dataclass(frozen=True)
@@ -50,12 +53,14 @@ class Episode:
 def episode_of(
     run: "Run",
     trade: Trade,
-    fidelity: TickFidelity | Timeframe,
-    exit_date: date,
-    store: Store,
-    snapshots: dict[str, Snapshot],
+    priced: tuple[TickFidelity | Timeframe, date],
+    pinned: tuple[Store, dict[str, Snapshot]],
+    sessions: SessionTable,
 ) -> Episode:
-    """The records, rolls, signal rows, decisions, cash, and funding of the trade's episode."""
+    """The records, rolls, signal rows, decisions, cash, and funding of the trade's episode, on
+    the fidelity its fills priced on, to the trade date of its exit, read from the store's data
+    the run pinned, from the decision's trade date or the one before (`_marked`)."""
+    fidelity, exit_date = priced
     entered, left = trade["entry_decision"], trade["exit_ts"]
     decided = run.signals.filter(pl.col("ts_close") == entered).row(0, named=True)
     account = run.equity(str(run.record.strategy.spec["timeframe"]))
@@ -66,13 +71,21 @@ def episode_of(
             f"reversing a position of {flat['position']} lots, which a replay from flat cannot "
             "give (BACKLOG.md)."
         )
-    first = decided["trade_date"]
     if isinstance(fidelity, Timeframe):
-        tape, rolls, contract = _bars(run.record, fidelity, (first, exit_date), (entered, left))
+        bars = fidelity
+
+        def read(start: date) -> _Records:
+            return _bars(run.record, bars, (start, exit_date), (entered, left))
     else:
+        store, snapshots = pinned
         snapshot = snapshots[str(TickFidelity.TRADES)]
-        prints = _prints(trade, decided, (first, exit_date), run.record.rolls, (store, snapshot))
-        tape, rolls, contract = _cut(prints, entered, left), (), decided["contract"]
+
+        def read(start: date) -> _Records:
+            rolls = run.record.rolls
+            prints = _prints(trade, decided, (start, exit_date), rolls, (store, snapshot))
+            return _cut(prints, entered, left), (), decided["contract"]
+
+    tape, rolls, contract = _marked(read, decided["trade_date"], sessions, entered)
     frame = run.signals.filter(pl.col("ts_close") >= entered, pl.col("trade_date") <= exit_date)
     return Episode(
         tape=tape,
@@ -85,12 +98,27 @@ def episode_of(
     )
 
 
+def _marked(
+    read: Callable[[date], "_Records"], first: date, sessions: SessionTable, entered: int
+) -> "_Records":
+    """The episode's records as `read` gives them from the decision's trade date `first`, where
+    they start at a mark, a record available by the decision at `entered`, whose price it reads
+    (F-MRK-01); else from the trade date before: a session whose first buckets hold no print or
+    bar has no mark of its own by then, and the Rust engine marks it from the session before
+    (step 5.9, from the Phase 2 exit's reviews)."""
+    found = read(first)
+    tape = found[0]
+    if tape and tape[0].available_at() <= entered:
+        return found
+    return read(sessions.preceding(first).trade_date)
+
+
 def _bars(
     record: RunRecord,
     timeframe: Timeframe,
     dates: tuple[date, date],
     instants: tuple[int, int],
-) -> tuple[tuple[Record, ...], tuple[RollRow, ...], str]:
+) -> "_Records":
     """The episode's stored bars of `timeframe`, which the engine replayed, not bars `load`
     would build from finer data, spliced as `load` splices them, or of the run's one contract
     unspliced (`RunConfig.contract`), and cut to the episode; the rolls they cross, none on one

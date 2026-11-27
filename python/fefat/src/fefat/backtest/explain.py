@@ -10,12 +10,16 @@ reference's fills are the Rust engine's.
 A trade's id is its entry order, `entry_order` in the trades artifact. Its episode starts at the
 decision that placed the entry, flat, with the cash the run held then, on the records from the
 last one before that decision, which set the price the decision reads, to the fill that left the
-trade flat. The template reads the signal frame from that decision to the end of the exit's trade
-date, so that its time rules see whole sessions. The store's data is first checked against the
-snapshots the run's record pins (`fefat.backtest.pinned_data`), and its fee table and calendar against those the run's config
-gave the engine. Bars and trade prints replay; an episode on TBBO or on two
-fidelities, a trade of trade prints across a roll, and a trade entered by reversing a position
-are refused (`BACKLOG.md`)."""
+trade flat (`fefat.backtest.explain_episode`): from the trade date before where the decision's
+session holds no record by then (step 5.9). The template reads the signal frame from that
+decision to the end of the exit's trade date, so that its time rules see whole sessions. The
+store's data is first checked against the snapshots the run's record pins
+(`fefat.backtest.pinned_data`), and its fee table and calendar against those the run's config
+gave the engine. Bars and trade prints replay; an episode on TBBO or on two fidelities, a trade
+of trade prints across a roll, and a trade entered by reversing a position are refused
+(`BACKLOG.md`). The explanation keeps the reference's log entries beside its lines, each an
+instant, a kind, an order, a rule, and a text, for a reader that shows them as data, such as the
+app's trade review (step 5.9)."""
 
 import os
 from collections.abc import Iterable, Sequence
@@ -37,6 +41,7 @@ from fefat.market.schema import Timeframe
 from fefat.market.store import Store
 from fefat.reference.costs import RunFees
 from fefat.reference.engine import ReferenceEngine
+from fefat.reference.event_log import LogEntry
 from fefat.reference.hours import CalendarHours
 from fefat.reference.run_documents import fees_document, hours_document
 from fefat.reference.rust_batch import FillView
@@ -53,12 +58,14 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, repr=False)
 class Explanation:
-    """A trade explained: its id, the lines printed, and the fills of its episode, the reference
-    engine's and the Rust engine's alike."""
+    """A trade explained: its id, the lines printed, the fills of its episode, the reference
+    engine's and the Rust engine's alike, and the entries of the reference's log, in the order
+    they happened, which the lines write out."""
 
     trade_id: int
     lines: tuple[str, ...]
     fills: tuple[FillView, ...]
+    entries: tuple[LogEntry, ...]
 
     def text(self) -> str:
         return "\n".join(self.lines)
@@ -106,7 +113,7 @@ def explain(run: "Run", trade_id: int) -> Explanation:
     root = record.instrument.root
     sessions = instrument_table(paths.data_dir).sessions_of(root, paths.cache_dir)
     fees = _the_runs_fees_and_calendar(run, sessions)
-    episode = episode_of(run, trade, fidelity, exit_date, store, snapshots)
+    episode = episode_of(run, trade, (fidelity, exit_date), (store, snapshots), sessions)
     first_id = _first_order(run.orders, trade)
     replayed = _replayed(record, episode, (fidelity, fees), first_id, sessions)
     reference = _through_exit((FillView.of(fill) for fill in replayed.fills), trade)
@@ -120,7 +127,7 @@ def explain(run: "Run", trade_id: int) -> Explanation:
         "Fills, the reference engine's and the Rust engine's alike:",
         *_fill_lines(reference, episode.tape, run.orders),
     )
-    return Explanation(trade_id, lines, rust)
+    return Explanation(trade_id, lines, rust, tuple(replayed.log.entries))
 
 
 def _first_order(orders: pl.DataFrame, trade: Trade) -> int:
