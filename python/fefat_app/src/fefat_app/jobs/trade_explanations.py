@@ -15,6 +15,7 @@ from fefat.config import FefatPaths
 from fefat.market.calendar import utc_text
 from fefat.market.engine_units import money_text, price_text
 from fefat.market.fidelity import parse_fidelity
+from fefat.reference.ledger import FillFlag, Liquidity
 from fefat.reference.orders import OrderRole, Side
 from fefat.reference.rust_batch import FillView
 from fefat_app.jobs.progress import JobProgress
@@ -27,11 +28,17 @@ from fefat_app.trade_review import (
 )
 
 
+class ReplayCrashedError(RuntimeError):
+    """A replay that failed for a reason the engine did not give, in words that name no folder
+    of this PC: the job fails with it, where a refusal is the job's answer."""
+
+
 def run_explanation(
     paths: FefatPaths, payload: Mapping[str, Any], progress: JobProgress
 ) -> dict[str, Any]:
     """Replay the trade of `payload` of the run saved in `paths`' runs folder, reporting as it
-    starts; the trade explained, or why the replay refused it."""
+    starts; the trade explained, or why the replay refused it; `ReplayCrashedError` where it
+    crashed, since the worker keeps a crash's words as the job's error, which the page shows."""
     asked = ExplainPayload.model_validate(payload)
     progress.advance(0, f"Replaying trade {asked.trade_id} through the reference engine")
     try:
@@ -39,6 +46,9 @@ def run_explanation(
     except (ValueError, EnginesDisagreementError, FileNotFoundError) as refused:
         reason = _without_folders(str(refused), paths, asked.run_key)
         return ExplanationRefused(trade_id=asked.trade_id, reason=reason).model_dump(mode="json")
+    except Exception as crashed:
+        words = _without_folders(f"{type(crashed).__name__}: {crashed}", paths, asked.run_key)
+        raise ReplayCrashedError(words) from crashed
     progress.advance(100, f"Replayed trade {asked.trade_id}")
     return _explained(explanation).model_dump(mode="json")
 
@@ -74,10 +84,10 @@ def _fill(fill: FillView) -> ExplainedFill:
         time=utc_text(fill.ts),
         price=price_text(fill.price),
         rule=fill.rule,
-        liquidity=fill.liquidity,
+        liquidity=Liquidity(fill.liquidity),
         slippage_ticks=fill.slippage_ticks,
         fee=Decimal(money_text(fill.fee)),
-        flags=fill.flags,
+        flags=tuple(FillFlag(flag) for flag in fill.flags),
         fidelity=parse_fidelity(fill.fidelity),
         contract=fill.contract,
     )

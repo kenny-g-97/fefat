@@ -83,7 +83,7 @@ class TradeReview:
             raise ResultsRefusedError(
                 f"Expected the instrument run {opened.hash[:12]} traded, got none: {unknown}"
             ) from unknown
-        with self.runs.reading(run):
+        with self.runs.results_read(opened):
             window = review_window(opened, rows)
         return _chart_page(page, opened.record, window)
 

@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from fefat.backtest.record import Hash
 from fefat.market.fidelity import FidelityText
 from fefat.reference.event_log import EventKind
+from fefat.reference.ledger import FillFlag, Liquidity
 from fefat.reference.orders import OrderRole, PositionSide, Side
 from fefat_app.services.market_bars import BarsPage
 
@@ -136,10 +137,10 @@ class ExplainedFill(BaseModel):
     time: str
     price: str
     rule: str
-    liquidity: str
+    liquidity: Liquidity
     slippage_ticks: int
     fee: Decimal
-    flags: tuple[str, ...]
+    flags: tuple[FillFlag, ...]
     fidelity: FidelityText
     contract: str
 

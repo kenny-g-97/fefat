@@ -37,10 +37,10 @@ const explainedFill = z.object({
   time: z.string(),
   price: z.string(),
   rule: z.string(),
-  liquidity: z.string(),
+  liquidity: z.enum(["maker", "taker"]),
   slippage_ticks: z.number(),
   fee: z.string(),
-  flags: z.array(z.string()),
+  flags: z.array(z.enum(["ambiguous", "size_exceeded"])),
   fidelity: z.string(),
   contract: z.string(),
 })
