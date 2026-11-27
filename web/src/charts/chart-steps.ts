@@ -7,8 +7,9 @@ import { chartTime } from "./chart-time"
 import type { Drawn } from "./drawn-series"
 
 /** The keys of a focused chart (`keyAction`) and its crosshair: `pressed` pans, zooms, or steps
- * the crosshair a bar, `pointed` hears the crosshair the pointer moves, and `left`, as the focus
- * leaves the chart, takes away a crosshair the keys placed, as Escape does; each tells
+ * the crosshair a bar, `pointed` hears the crosshair the pointer moves, `left`, as the focus
+ * leaves the chart, takes away a crosshair the keys placed, as Escape does, and `shifted`, once
+ * the chart drew its bars anew, keeps the crosshair on its bar (`movedCrosshair`); each tells
  * `onCrosshairMove` the bar under the crosshair, none once it is gone. */
 export function useChartKeys(
   chart: RefObject<IChartApi | null>,
@@ -51,7 +52,23 @@ export function useChartKeys(
     pressed,
     left,
     pointed: (index: number | null) => report(index, false),
+    shifted: (added: number | null) => {
+      const index = crosshair.current
+      if (index !== null && added !== 0) {
+        report(movedCrosshair(index, added), keyed.current)
+      }
+    },
   }
+}
+
+/** The bar the crosshair stood on, `index`, once its chart drew its bars anew with `added` more
+ * before the first it held (`keptView`): the same bar, its index moved by as much, so that the
+ * readout and the keys' next step stay on it; none where none stood or its bars are gone. */
+export function movedCrosshair(
+  index: number | null,
+  added: number | null
+): number | null {
+  return index === null || added === null ? null : index + added
 }
 
 /** Step the crosshair of `chart` by `bars` from the bar `from` of its first candle series, or

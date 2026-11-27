@@ -124,6 +124,41 @@ describe("the trade review's panes", () => {
     expect(candles.primitives).toHaveLength(1)
   })
 
+  it("draws a fill that reverses a position once, as the selected trade's where it is one", () => {
+    // Step 5.9's step review: a reversing fill closes one trade and opens the next under both
+    // (S-fill-042), and its two markers stood on one point.
+    const reversed = trade(
+      3,
+      [fill(8, "sell", 1_600, "6855.25"), fill(12, "buy", 1_900, "6858")],
+      "10.000000",
+      { first: null, last: null }
+    )
+    const chart = { ...CHART, trades: [LOSER, reversed] }
+    const fills = drawnFills(chart, barPlaces(chart.bars, false))
+    const markersOf = (selected: number | null) => {
+      const [price] = tradePanes(chart, "5m", true, fills, {
+        selected,
+        overlay: new TradeOverlay(),
+      })
+      const candles = price.series[0]
+      if (candles.kind !== "candles") {
+        throw new Error("Expected the candles first.")
+      }
+      return (candles.markers ?? []).map((each) => [each.id, each.size])
+    }
+
+    expect(markersOf(null)).toEqual([
+      ["7/0", undefined],
+      ["7/1", undefined],
+      ["10/1", undefined],
+    ])
+    expect(markersOf(3)).toEqual([
+      ["7/0", undefined],
+      ["10/0", 2],
+      ["10/1", 2],
+    ])
+  })
+
   it("draws the price over the volume and a pane a feature, its values beside the bars", () => {
     const panes = tradePanes(CHART, "5m", true, FILLS, {
       selected: null,

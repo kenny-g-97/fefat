@@ -40,11 +40,12 @@ export function useSelectedTrade(
   const before = index > 0 ? rows[index - 1] : undefined
   const after =
     row === undefined ? rows.at(0) : index >= 0 ? rows.at(index + 1) : undefined
+  const pagesRead = table.data === undefined ? 0 : table.data.pages.length
   const readOn =
     index >= 0 && index === rows.length - 1 && table.hasNextPage
       ? () =>
           void table.fetchNextPage().then((read) => {
-            const first = read.data?.pages.at(-1)?.trades.at(0)
+            const first = firstOfNewPage(read, pagesRead)
             if (first !== undefined) {
               onSelect(first)
             }
@@ -59,4 +60,26 @@ export function useSelectedTrade(
     previous: before === undefined ? null : () => onSelect(before),
     next: after === undefined ? readOn : () => onSelect(after),
   }
+}
+
+/** The first row of the page a read of the next page added to the `pagesBefore` read, none
+ * where the read failed or added none: TanStack Query answers a failed read with the pages it
+ * held, whose last page's first row stands before the selection. */
+export function firstOfNewPage<Row>(
+  read: Readonly<{
+    isError: boolean
+    data:
+      | Readonly<{ pages: readonly Readonly<{ trades: readonly Row[] }>[] }>
+      | undefined
+  }>,
+  pagesBefore: number
+): Row | undefined {
+  if (
+    read.isError ||
+    read.data === undefined ||
+    read.data.pages.length <= pagesBefore
+  ) {
+    return undefined
+  }
+  return read.data.pages.at(-1)?.trades.at(0)
 }

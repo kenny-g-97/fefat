@@ -82,7 +82,7 @@ export function tradePanes(
           ...series,
           markers: [
             ...(series.markers ?? []),
-            ...[...fills.values()].map((each) =>
+            ...onePerFill([...fills.values()], shown.selected).map((each) =>
               fillMarker(each, shown.selected)
             ),
           ],
@@ -108,6 +108,22 @@ function featureLine(
   values: readonly (number | null)[]
 ): LineSeries {
   return { kind: "line", id: `feature-${name}`, time, value: values }
+}
+
+/** `fills`, one a fill of the ledger: a fill that reverses a position stands under both of its
+ * trades (S-fill-042), and is drawn once, as the selected trade's where it is one of them. */
+function onePerFill(
+  fills: readonly DrawnFill[],
+  selected: number | null
+): readonly DrawnFill[] {
+  const drawn = new Map<string, DrawnFill>()
+  for (const each of fills) {
+    const key = `${each.fill.order} ${each.fill.time}`
+    if (!drawn.has(key) || each.trade.trade === selected) {
+      drawn.set(key, each)
+    }
+  }
+  return [...drawn.values()]
 }
 
 function fillMarker(drawn: DrawnFill, selected: number | null): ChartMarker {

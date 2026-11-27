@@ -13,7 +13,12 @@ import {
   type Time,
 } from "lightweight-charts"
 import { type ChartLook, lastBarColour, legibleText } from "./chart-look"
-import { type ChartMarker, type SessionSpan, sessionSpans } from "./chart-marks"
+import {
+  type ChartMarker,
+  inTimeOrder,
+  type SessionSpan,
+  sessionSpans,
+} from "./chart-marks"
 import { formatFeature } from "@/ui/figures"
 import { type ChartTime, chartTime } from "./chart-time"
 import { SessionShading } from "./session-shading"
@@ -270,7 +275,9 @@ function paintedCandles(
     )
   }
   each.markers.setMarkers(
-    (series.markers ?? []).map((marker) => drawnMarker(marker, look.markers))
+    inTimeOrder(series.markers ?? []).map((marker) =>
+      drawnMarker(marker, look.markers)
+    )
   )
   const sessions = series.sessions
   const spans = !bars

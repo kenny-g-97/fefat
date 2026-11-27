@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { keyAction } from "./chart-keys"
-import { rollMarks, sessionSpans } from "./chart-marks"
+import { inTimeOrder, rollMarks, sessionSpans } from "./chart-marks"
 
 describe("sessionSpans", () => {
   it("shades every other session counting back from the newest, which is not", () => {
@@ -82,6 +82,43 @@ describe("keyAction", () => {
       { kind: "zoom", factor: 1.25 },
       { kind: "zoom", factor: 0.8 },
       undefined,
+    ])
+  })
+})
+
+describe("inTimeOrder", () => {
+  const mark = (time: number | string, text: string) =>
+    ({
+      time,
+      text,
+      position: "above",
+      shape: "circle",
+      tone: "subtle",
+    }) as const
+
+  it("puts a pane's marks of several kinds in the order of their times", () => {
+    // Step 5.9's code review: the library finds the markers in view by halving their list, so
+    // a roll's mark given before a run's earlier fills hid them.
+    const marks = [mark(300, "roll"), mark(100, "entry"), mark(200, "exit")]
+
+    expect(inTimeOrder(marks).map((each) => each.text)).toEqual([
+      "entry",
+      "exit",
+      "roll",
+    ])
+  })
+
+  it("orders daily bars' trade dates, and keeps marks of one time as given", () => {
+    const marks = [
+      mark("2026-03-09", "roll"),
+      mark("2026-03-06", "entry"),
+      mark("2026-03-06", "exit"),
+    ]
+
+    expect(inTimeOrder(marks).map((each) => each.text)).toEqual([
+      "entry",
+      "exit",
+      "roll",
     ])
   })
 })

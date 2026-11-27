@@ -66,32 +66,47 @@ export function chartHandle(
   }
 }
 
-/** The view of `chart` as `drawn` stands, to put back once new bars are drawn: the same bars in
- * view, however many arrived before them. The library keeps the newest bar's place as a series'
- * bars are set anew, which would move a view scrolled back to the end of the bars a newer window
- * brings (the trade review's, step 5.9); the chart viewer's older windows keep their view as
- * they did. */
+/** The view of `chart` as the bars `before` of its first candle series stand, to put back once
+ * new bars are drawn: the same bars in view, however many arrived before them. The library
+ * keeps the newest bar's place as a series' bars are set anew, which would move a view scrolled
+ * back to the end of the bars a newer window brings (the trade review's, step 5.9); the chart
+ * viewer's older windows keep their view as they did. It answers how many bars arrived before
+ * the first of `before`, by which whatever counts bars moves too, as the crosshair's bar does
+ * (`movedCrosshair`): 0 where the chart held none, and none where that bar is gone. */
 export function keptView(
-  chart: IChartApi,
-  drawn: ReadonlyMap<string, Drawn>
-): (now: ReadonlyMap<string, Drawn>) => void {
-  const before = firstCandles(drawn)
-  const first = before === undefined ? undefined : before.last.time.at(0)
+  chart: ViewOfBars,
+  before: readonly ChartTime[] | undefined
+): (after: readonly ChartTime[] | undefined) => number | null {
+  const first = before === undefined ? undefined : before.at(0)
   const range = chart.timeScale().getVisibleLogicalRange()
-  return (now) => {
-    const after = firstCandles(now)
-    if (range === null || first === undefined || after === undefined) {
-      return
+  return (after) => {
+    if (first === undefined || after === undefined) {
+      return 0
     }
-    const shift = after.last.time.indexOf(first)
-    if (shift >= 0) {
+    const shift = after.indexOf(first)
+    if (shift < 0) {
+      return null
+    }
+    if (range !== null) {
       chart.timeScale().setVisibleLogicalRange({
         from: range.from + shift,
         to: range.to + shift,
       })
     }
+    return shift
   }
 }
+
+/** The view of a chart's time scale, which `keptView` reads and sets, in bars from the first of
+ * its first candle series. */
+export type ViewOfBars = Readonly<{
+  timeScale: () => Readonly<{
+    getVisibleLogicalRange: () => Readonly<{ from: number; to: number }> | null
+    setVisibleLogicalRange: (
+      range: Readonly<{ from: number; to: number }>
+    ) => void
+  }>
+}>
 
 /** The first candle series `drawn` holds, whose bars the chart's view and keys count. */
 export function firstCandles(
