@@ -35,6 +35,7 @@ from fefat_app.services.logins import LoginAttempts, Logins
 from fefat_app.services.runs import Runs
 from fefat_app.services.stored_data import StoredDataDeletions
 from fefat_app.services.strategies import SavedStrategies
+from fefat_app.services.trade_review import TradeReview
 from fefat_app.services.trade_table import TradeTable
 from fefat_app.uploads import UploadFolders
 
@@ -48,7 +49,8 @@ class Container:
     catalog over the store in the data folder (step 5.1) and the deletes of its data
     (step 5.18), the library's strategies and
     features over their index (step 5.2), the runs (step 5.3), the import wizard over the
-    workspace's uploads (step 5.12), and the runs' trades and queries (step 5.8)."""
+    workspace's uploads (step 5.12), the runs' trades and queries (step 5.8), and the trade
+    review over the runs and the store (step 5.9)."""
 
     settings: Settings
     paths: FefatPaths
@@ -66,6 +68,7 @@ class Container:
     runs: Runs
     imports: Imports
     trade_table: TradeTable
+    trade_review: TradeReview
 
 
 def credential_store() -> CredentialStore:
@@ -113,6 +116,7 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
         runs=runs,
         imports=Imports(executor, jobs, UploadFolders(paths.uploads_dir, clock), paths, settings),
         trade_table=TradeTable(runs, DuckDbQueries()),
+        trade_review=TradeReview(runs, store, paths.cache_dir),
     )
 
 

@@ -188,7 +188,9 @@ IndexedRun = Annotated[SubmittedRun | SavedRun, Field(discriminator="state")]
 class RunStatistics(BaseModel):
     """What a saved run's record says of how it went (step 5.7, D-116): its metrics, the currency
     their money is in, its net P&L as a share of its capital, the fidelity era of each trade date
-    it filled on, and its warnings."""
+    it filled on, and its warnings; and, from step 5.9, the timeframe of its strategy's bars,
+    which a run of no saved version names nowhere else, and on which the trade review's chart
+    cuts its windows."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -197,6 +199,7 @@ class RunStatistics(BaseModel):
     metrics: Metrics
     fidelity_eras: tuple[FidelityEra, ...]
     warnings: tuple[str, ...]
+    timeframe: str
 
 
 class EquityCurve(BaseModel):

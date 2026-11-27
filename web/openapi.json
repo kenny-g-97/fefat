@@ -1180,6 +1180,163 @@
         "title": "CatalogSyncRequest",
         "type": "object"
       },
+      "ChartFeature": {
+        "description": "One of the strategy's features beside the page's bars: its column's name, how its values\nread, and its value at each bar's close, none where the signals hold none.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/FeatureUnit"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "unit",
+          "values"
+        ],
+        "title": "ChartFeature",
+        "type": "object"
+      },
+      "ChartFill": {
+        "description": "A fill of a trade, as the fills ledger holds it: its order, role, side, and lots, its\ninstant, its price as decimal text, the fidelity it priced on, and `bar_time`, the open in\nwhole seconds of the page's bar it lies on by F-BAR-06, none where it lies off the page.",
+        "properties": {
+          "bar_time": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bar Time"
+          },
+          "fidelity": {
+            "title": "Fidelity",
+            "type": "string"
+          },
+          "lots": {
+            "title": "Lots",
+            "type": "integer"
+          },
+          "order": {
+            "title": "Order",
+            "type": "integer"
+          },
+          "price": {
+            "title": "Price",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/OrderRole"
+          },
+          "side": {
+            "$ref": "#/components/schemas/Side"
+          },
+          "time": {
+            "title": "Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order",
+          "role",
+          "side",
+          "lots",
+          "time",
+          "bar_time",
+          "price",
+          "fidelity"
+        ],
+        "title": "ChartFill",
+        "type": "object"
+      },
+      "ChartPage": {
+        "description": "A page of a saved run's chart: its bars as `GET /v1/market/bars` sends them, at the prices\neach contract traded at, with `next_from` to send as the next page's `from`; the\ninstrument's tick; the strategy's features at each bar; and the trades with a fill on the\npage, or held across it.",
+        "properties": {
+          "bars": {
+            "$ref": "#/components/schemas/BarColumns"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/ChartFeature"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "next_from": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next From"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "tick_size": {
+            "title": "Tick Size",
+            "type": "string"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          },
+          "trades": {
+            "items": {
+              "$ref": "#/components/schemas/ChartTrade"
+            },
+            "title": "Trades",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "instrument",
+          "timeframe",
+          "provider",
+          "bars",
+          "next_from",
+          "warnings",
+          "tick_size",
+          "features",
+          "trades"
+        ],
+        "title": "ChartPage",
+        "type": "object"
+      },
       "ChartStyle": {
         "additionalProperties": false,
         "description": "The charts' style (module docstring); its defaults are FEAT's, hollow green rising bars\nand hollow red falling ones, the builder's answer at step 5.4's plan, with the volume pane,\nthe grid, and the sessions' shading shown.",
@@ -1221,6 +1378,60 @@
           }
         },
         "title": "ChartStyle",
+        "type": "object"
+      },
+      "ChartTrade": {
+        "description": "A trade the page shows: its row, its id, its entry order, its side and lots, its net P&L\nas decimal text, every fill of it in the order they were made, its stop, and each target's\nlast level.",
+        "properties": {
+          "entry_order": {
+            "title": "Entry Order",
+            "type": "integer"
+          },
+          "fills": {
+            "items": {
+              "$ref": "#/components/schemas/ChartFill"
+            },
+            "title": "Fills",
+            "type": "array"
+          },
+          "lots": {
+            "title": "Lots",
+            "type": "integer"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "string"
+          },
+          "side": {
+            "$ref": "#/components/schemas/PositionSide"
+          },
+          "stop": {
+            "$ref": "#/components/schemas/StopLevels"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Targets",
+            "type": "array"
+          },
+          "trade": {
+            "minimum": 0.0,
+            "title": "Trade",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trade",
+          "entry_order",
+          "side",
+          "lots",
+          "pnl",
+          "fills",
+          "stop",
+          "targets"
+        ],
+        "title": "ChartTrade",
         "type": "object"
       },
       "Column": {
@@ -2374,6 +2585,15 @@
         ],
         "title": "FeatureOutput",
         "type": "object"
+      },
+      "FeatureUnit": {
+        "description": "How a feature's values read: `price`, in the instrument's units, as the distance the\nstrategy's exit rules read it as, such as an ATR; or `as_stored`, as the run's signals hold\nit, since nothing says which other features are prices (the builder's answer at the plan).",
+        "enum": [
+          "price",
+          "as_stored"
+        ],
+        "title": "FeatureUnit",
+        "type": "string"
       },
       "FeeChoice": {
         "additionalProperties": false,
@@ -6021,7 +6241,7 @@
         "type": "object"
       },
       "RunStatistics": {
-        "description": "What a saved run's record says of how it went (step 5.7, D-116): its metrics, the currency\ntheir money is in, its net P&L as a share of its capital, the fidelity era of each trade date\nit filled on, and its warnings.",
+        "description": "What a saved run's record says of how it went (step 5.7, D-116): its metrics, the currency\ntheir money is in, its net P&L as a share of its capital, the fidelity era of each trade date\nit filled on, and its warnings; and, from step 5.9, the timeframe of its strategy's bars,\nwhich a run of no saved version names nowhere else, and on which the trade review's chart\ncuts its windows.",
         "properties": {
           "currency": {
             "$ref": "#/components/schemas/Currency"
@@ -6040,6 +6260,10 @@
             "title": "Pnl Share",
             "type": "number"
           },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          },
           "warnings": {
             "items": {
               "type": "string"
@@ -6053,7 +6277,8 @@
           "pnl_share",
           "metrics",
           "fidelity_eras",
-          "warnings"
+          "warnings",
+          "timeframe"
         ],
         "title": "RunStatistics",
         "type": "object"
@@ -6885,6 +7110,15 @@
         "title": "Severity",
         "type": "string"
       },
+      "Side": {
+        "description": "An order's side. The specification writes each rule for a buy, and a sell mirrors it\n(`docs/spec/fill-semantics.md` \u00a71).",
+        "enum": [
+          "buy",
+          "sell"
+        ],
+        "title": "Side",
+        "type": "string"
+      },
       "SideResults": {
         "additionalProperties": false,
         "description": "The figures of a run's trades of one side, or of all of them (module docstring), money in\nthe instrument's currency, the time held in minutes, and the excursions in ticks.",
@@ -7329,6 +7563,39 @@
         ],
         "title": "SourceKind",
         "type": "string"
+      },
+      "StopLevels": {
+        "description": "A trade's stop: its first level, from its entry's price and its initial risk, and its last,\nas the orders hold it once a breakeven, a trail, or a roll moved it; none without a stop.",
+        "properties": {
+          "first": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          }
+        },
+        "required": [
+          "first",
+          "last"
+        ],
+        "title": "StopLevels",
+        "type": "object"
       },
       "StoredDataset": {
         "description": "A dataset of trades, TBBO, or bars the store holds (`fefat.market.status`): its id; its\nprovider, root, schema, and fidelity, `trades`, `tbbo`, or the timeframe of its bars; how\nmany contracts it holds and its first and last trade date; the quality of its root's report\nfrom its provider, with the last trade date the report checked, none while unchecked; its\norigin and the licence scope of its source; and the last day a file of its provider that fed\nits root was imported, none without a record of one.",
@@ -12036,6 +12303,126 @@
           }
         ],
         "summary": "Cancel Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run}/chart": {
+      "get": {
+        "description": "A page of at most 20,000 of the saved run's bars on the trade dates from `from` to `to`, in\nthe strategy's timeframe, at the prices each contract traded at, which its fills hold, as\n`GET /v1/market/bars` pages them; the instrument's tick; the strategy's features at each\nbar's close, those its exit rules read as a distance in the instrument's units; and the\ntrades with a fill on the page or held across it, each with every fill, the bar each lies\non by F-BAR-06, its stop's first and last level, and its targets.",
+        "operationId": "run_chart_v1_runs__run__chart_get",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The trade date the window starts on, such as `2026-03-06`, or the instant a page opens at, a page's `next_from`, such as `2026-03-06T03:20:00Z`.",
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "description": "The trade date the window starts on, such as `2026-03-06`, or the instant a page opens at, a page's `next_from`, such as `2026-03-06T03:20:00Z`.",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?$",
+              "title": "From",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The trade date the window ends on.",
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "description": "The trade date the window ends on.",
+              "format": "date",
+              "title": "To",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChartPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run Chart",
         "tags": [
           "runs"
         ]

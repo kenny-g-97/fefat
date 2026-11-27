@@ -28,6 +28,7 @@ from fefat_app.http import (
     runs,
     strategies,
     streams,
+    trade_review,
     trades,
     uploads,
 )
@@ -82,6 +83,7 @@ def build_api() -> FastAPI:
         features.router,
         runs.router,
         trades.router,
+        trade_review.router,
         docs.router,
     ):
         api.include_router(router)

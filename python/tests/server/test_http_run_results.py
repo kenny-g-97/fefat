@@ -69,6 +69,8 @@ def test_the_statistics_are_the_sdks_for_the_same_run(client: TestClient, run: R
     eras = tuple(FidelityEra.model_validate(era) for era in body["fidelity_eras"])
     assert eras == run.record.fidelity_eras
     assert tuple(body["warnings"]) == run.record.warnings
+    # Step 5.9: the trade review cuts its chart's windows on the strategy's bars.
+    assert body["timeframe"] == run.record.strategy.spec["timeframe"] == "5m"
 
 
 def test_a_run_is_read_by_its_rows_id_too(client: TestClient, run: Run) -> None:

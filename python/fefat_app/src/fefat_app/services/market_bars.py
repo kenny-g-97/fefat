@@ -183,13 +183,23 @@ def bars_page(store: Store, cache_folder: Path, request: BarsRequest) -> BarsPag
     """The page of bars `request` asks for, read from `store`, the session tables cached in
     `cache_folder` (module docstring); `NoSuchInstrumentError` for an instrument that names no
     root and no contract of one, and `BarsRefusedError` for a window the SDK refuses."""
+    return bars_page_rows(store, cache_folder, request)[0]
+
+
+def bars_page_rows(
+    store: Store, cache_folder: Path, request: BarsRequest
+) -> tuple[BarsPage, pl.DataFrame]:
+    """The page of bars `request` asks for (`bars_page`), and its rows, with the columns of
+    `SIGNAL_BAR_COLUMNS` at the prices asked for, each bar's `ts_open` and `ts_close` among
+    them, on which the trade review places its fills (step 5.9): a session's last bar is cut at
+    its close, so a bar's close is its own, never its open and a width."""
     with _refusals():
         source = _source(store, cache_folder, request)
         _require_prices(source, request.prices)
         page = _page(source, Timeframe.parse(request.timeframe), request)
     rows = page.rows if request.prices is BarPrices.ADJUSTED else _traded(page.rows)
     next_from = None if page.next_open is None else _instant(page.next_open)
-    return BarsPage(
+    sent = BarsPage(
         instrument=request.instrument,
         timeframe=request.timeframe,
         provider=source.provider,
@@ -197,6 +207,7 @@ def bars_page(store: Store, cache_folder: Path, request: BarsRequest) -> BarsPag
         next_from=next_from,
         warnings=page.warnings,
     )
+    return sent, rows
 
 
 @contextmanager

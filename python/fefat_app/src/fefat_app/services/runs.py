@@ -211,6 +211,7 @@ class Runs:
             metrics=record.metrics,
             fidelity_eras=record.fidelity_eras,
             warnings=record.warnings,
+            timeframe=str(record.strategy.spec["timeframe"]),
         )
 
     def equity_curve(self, run: str, max_points: int) -> EquityCurve:
