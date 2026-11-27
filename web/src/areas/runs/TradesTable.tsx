@@ -101,6 +101,7 @@ export function TradesTable({
           order={shown.order === undefined ? "asc" : shown.order}
           onOrder={onOrder}
           onNearEnd={readOn}
+          readFor={JSON.stringify(shown)}
         />
       )}
       {trades.status === "error" && isFetchNextPageError && (

@@ -304,6 +304,26 @@ test("a sort chosen by the keys keeps its focus, and Enter again turns its order
   await expect(sort).toBeFocused()
 })
 
+test("an order read before opens at its first row, wherever the grid was scrolled", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  await page.goto(`/runs/run/trades?key=${key}`)
+  const first = page.locator('[data-testid="trade-row"][data-index="0"]')
+  await expect(first).toBeVisible()
+  await page.getByTestId("sort-mae_ticks").click()
+  await expect(page).toHaveURL(/sort=mae_ticks/)
+  await page.getByTestId("sort-entry_ts").click()
+  await expect(page).not.toHaveURL(/sort=/)
+  await grid(page).evaluate((box) => box.scrollTo(0, box.scrollHeight))
+  await expect(first).not.toBeInViewport()
+
+  await page.getByTestId("sort-mae_ticks").click()
+
+  await expect(page).toHaveURL(/sort=mae_ticks/)
+  await expect(first).toBeInViewport()
+})
+
 test("a filter keeps the trades the API keeps, and the address keeps it through a reload", async ({
   loggedIn: page,
 }) => {
@@ -345,6 +365,13 @@ test("a date out of order is refused at its field, and no trade matches a day wi
 
   await expect(page.getByText("Type a date on or before To.")).toBeVisible()
   await expect(page).not.toHaveURL(/start=/)
+
+  await to.fill("2026-03-20")
+  await to.press("Enter")
+
+  await expect(page).toHaveURL(/start=2026-03-09/)
+  await expect(page).toHaveURL(/end=2026-03-20/)
+  await expect(page.getByText("Type a date on or before To.")).toHaveCount(0)
 
   await from.fill("2026-03-01")
   await from.press("Enter")

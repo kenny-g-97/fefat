@@ -32,13 +32,15 @@ type TradeGridProps = Readonly<{
   order: SortOrder
   onOrder: (sort: TradeSort, order: SortOrder) => void
   onNearEnd: () => void
+  readFor: string
 }>
 
 /** The trades read so far as a data grid (web/DESIGN.md, Patterns, Data grid): a card that
  * scrolls both ways, no taller than its rows, its header row and its entry column standing
- * still, only the rows near its view drawn, busy without rows while `total` is not known yet; a
- * row chosen by the pointer, Enter, or Space, or reached by the arrows, is the selected trade,
- * which `announceSelectedTrade` tells the page. */
+ * still, only the rows near its view drawn, busy without rows while `total` is not known yet,
+ * and back at its first row once `readFor`, the filters and the order its rows are read for,
+ * changes; a row chosen by the pointer, Enter, or Space, or reached by the arrows, is the
+ * selected trade, which `announceSelectedTrade` tells the page. */
 export function TradeGrid({
   trades,
   total,
@@ -48,6 +50,7 @@ export function TradeGrid({
   order,
   onOrder,
   onNearEnd,
+  readFor,
 }: TradeGridProps) {
   const box = useRef<HTMLDivElement>(null)
   const columns = useMemo(() => tableColumns(look), [look])
@@ -74,6 +77,9 @@ export function TradeGrid({
   const { virtualizer, rows, above, below } = useVirtualRows(trades.length, box)
   const [selected, setSelected] = useState<number | null>(null)
   const [focusing, setFocusing] = useState<number | null>(null)
+  useEffect(() => {
+    virtualizer.scrollToOffset(0)
+  }, [readFor, virtualizer])
   const lastDrawn = rows.at(-1)
   useEffect(() => {
     if (

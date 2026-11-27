@@ -13,8 +13,7 @@ type KeptFieldProps = Readonly<{
 
 /** A text field whose text is kept once the field is left or on Enter, as the chart's contract
  * field keeps its own (web/DESIGN.md, Patterns, Live draft), so that nothing half typed is
- * acted on; a value changed from outside replaces the text, unless the trader is typing it, and
- * a refused text is kept again even where it equals the value, so that its refusal can clear. */
+ * acted on; a value changed from outside replaces the text, unless the trader is typing it. */
 export function KeptField({
   id,
   value,
@@ -35,7 +34,7 @@ export function KeptField({
   }
   const keep = () => {
     setTyping(false)
-    if (typed !== value || invalid) {
+    if (typed !== value) {
       onKeep(typed)
     }
   }

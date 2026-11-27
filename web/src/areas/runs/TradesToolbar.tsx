@@ -147,99 +147,114 @@ export function TradesToolbar({
 export const FROM_FIELD = "trades-start"
 
 type Dates = Readonly<{ start: string | undefined; end: string | undefined }>
+type DateEnd = keyof Dates
+/** The text each end's field holds that it refused, which the address does not hold. */
+type RefusedDates = Readonly<{ start: string | null; end: string | null }>
+
+const NONE_REFUSED: RefusedDates = { start: null, end: null }
 
 /** From and To, the trade dates of the entry, each checked against the other end as last kept
  * here, which the page's address may not hold yet, so that a date typed straight after the
- * other is checked against it; a change of the address from elsewhere, a reload or Clear
- * filters, replaces both. */
+ * other is checked against it. A refused date stays in its field under its reason until it is
+ * kept again, and is kept with the other end once that end admits it, so that no field shows a
+ * date the table does not apply; a change of the address from elsewhere, as a reload, replaces
+ * what is kept. */
 function DateRange({
   start,
   end,
   onAsk,
 }: Dates & Readonly<{ onAsk: (change: TradesAsked) => void }>) {
   const [kept, setKept] = useState<Dates>({ start, end })
+  const [refused, setRefused] = useState<RefusedDates>(NONE_REFUSED)
   const [given, setGiven] = useState<Dates>({ start, end })
   if (given.start !== start || given.end !== end) {
     setGiven({ start, end })
     setKept({ start, end })
   }
+  const keep = (at: DateEnd, typed: string) => {
+    const text = typed.trim()
+    if (dateRefusal(at, text, kept) !== null) {
+      setRefused(withEnd(refused, at, text))
+      return
+    }
+    const other = at === "start" ? "end" : "start"
+    const accepted = withEnd(kept, at, dateOf(text))
+    const waiting = refused[other]
+    const admitted =
+      waiting !== null && dateRefusal(other, waiting, accepted) === null
+    const next = admitted ? withEnd(accepted, other, dateOf(waiting)) : accepted
+    setKept(next)
+    setRefused(admitted ? NONE_REFUSED : withEnd(refused, at, null))
+    onAsk(next)
+  }
+  const fieldOf = (at: DateEnd) => {
+    const typed = refused[at]
+    const date = kept[at]
+    return {
+      text: typed !== null ? typed : date === undefined ? "" : date,
+      refusal: typed === null ? null : dateRefusal(at, typed, kept),
+      onKeep: (text: string) => keep(at, text),
+    }
+  }
   return (
     <>
-      <DateField
-        id={FROM_FIELD}
-        label="From"
-        value={start}
-        refused={(typed) =>
-          kept.end !== undefined && typed > kept.end
-            ? "Type a date on or before To."
-            : null
-        }
-        onKeep={(chosen) => {
-          setKept({ ...kept, start: chosen })
-          onAsk({ start: chosen })
-        }}
-      />
-      <DateField
-        id="trades-end"
-        label="To"
-        value={end}
-        refused={(typed) =>
-          kept.start !== undefined && typed < kept.start
-            ? "Type a date on or after From."
-            : null
-        }
-        onKeep={(chosen) => {
-          setKept({ ...kept, end: chosen })
-          onAsk({ end: chosen })
-        }}
-      />
+      <DateField id={FROM_FIELD} label="From" {...fieldOf("start")} />
+      <DateField id="trades-end" label="To" {...fieldOf("end")} />
     </>
   )
+}
+
+/** Why `text`, typed for the end `at` of the range `kept`, is no trade date of it: no date the
+ * calendar holds, or out of order with the other end; null for a date, or none. */
+function dateRefusal(at: DateEnd, text: string, kept: Dates): string | null {
+  if (text === "") {
+    return null
+  }
+  if (!isTradeDate(text)) {
+    return "Type a date such as 2026-03-05."
+  }
+  if (at === "start") {
+    return kept.end !== undefined && text > kept.end
+      ? "Type a date on or before To."
+      : null
+  }
+  return kept.start !== undefined && text < kept.start
+    ? "Type a date on or after From."
+    : null
+}
+
+function dateOf(text: string): string | undefined {
+  return text === "" ? undefined : text
+}
+
+function withEnd<T>(
+  dates: Readonly<{ start: T; end: T }>,
+  at: DateEnd,
+  value: T
+): Readonly<{ start: T; end: T }> {
+  return at === "start" ? { ...dates, start: value } : { ...dates, end: value }
 }
 
 type DateFieldProps = Readonly<{
   id: string
   label: string
-  value: string | undefined
-  refused: (typed: string) => string | null
-  onKeep: (value: string | undefined) => void
+  text: string
+  refusal: string | null
+  onKeep: (typed: string) => void
 }>
 
 /** A trade date typed as the app writes one, kept once left or on Enter (`KeptField`), empty
- * for every date; one the calendar does not hold, or out of order with the other end as it
- * stands, is refused under its field until it is kept again or the address changes it. */
-function DateField({ id, label, value, refused, onKeep }: DateFieldProps) {
-  const [rejected, setRejected] = useState<string | null>(null)
-  const [given, setGiven] = useState(value)
-  if (given !== value) {
-    setGiven(value)
-    setRejected(null)
-  }
-  const refusalOf = (text: string) =>
-    text === ""
-      ? null
-      : isTradeDate(text)
-        ? refused(text)
-        : "Type a date such as 2026-03-05."
-  const refusal = rejected === null ? null : refusalOf(rejected)
-  const keep = (typed: string) => {
-    const text = typed.trim()
-    if (refusalOf(text) !== null) {
-      setRejected(text)
-      return
-    }
-    setRejected(null)
-    onKeep(text === "" ? undefined : text)
-  }
+ * for every date, its refusal, if any, under it. */
+function DateField({ id, label, text, refusal, onKeep }: DateFieldProps) {
   return (
     <Choice id={id} label={label} refusal={refusal} className="w-36">
       <KeptField
         id={id}
-        value={value ?? ""}
+        value={text}
         placeholder="Any date"
         invalid={refusal !== null}
         describedBy={refusal === null ? undefined : `${id}-refusal`}
-        onKeep={keep}
+        onKeep={onKeep}
       />
     </Choice>
   )
