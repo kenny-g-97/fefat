@@ -1,5 +1,5 @@
 import { type UseQueryResult, useQueries } from "@tanstack/react-query"
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 import {
   type BarWindow,
   grownRange,
@@ -14,11 +14,9 @@ import {
 import type { VisibleBars } from "@/charts/PriceChart"
 
 /** The windows read so far around the centre: the chart they give, joined, none while the centre
- * is not read; which of them it joins; whether every window asked for is read; and the first that
- * failed. */
+ * is not read; whether every window asked for is read; and the first that failed. */
 type ReadWindows = Readonly<{
   chart: ChartWindow | null
-  around: Readonly<{ from: number; to: number }> | null
   settled: boolean
   failure: Readonly<{ error: Error; retry: () => void }> | undefined
 }>
@@ -28,7 +26,8 @@ type ReadWindows = Readonly<{
  * the selected trade's, and then one older or newer as the view nears either end of the bars
  * read, the whole run's windows never asked at once, so that a run of 200,000 bars stays
  * responsive; a new centre outside those asked starts over from it, the others kept in the
- * cache. `span` gives the dates the bars read cover, and `grow` hears the view's bars. */
+ * cache. `grow` hears the view's bars, and the bars it heard last are heard again once every
+ * window asked is read, since a window of no bars draws nothing that would tell them anew. */
 export function useRunChartWindows(
   runKey: string,
   windows: readonly BarWindow[],
@@ -52,10 +51,9 @@ export function useRunChartWindows(
     queries: asked.map((each) => runChartWindowQuery(runKey, each)),
     combine,
   })
-  const around = read.around
-  const first = around === null ? undefined : asked.at(around.to)
-  const last = around === null ? undefined : asked.at(around.from)
+  const heard = useRef<VisibleBars | null>(null)
   const grow = (visible: VisibleBars) => {
+    heard.current = visible
     if (!read.settled) {
       return
     }
@@ -64,15 +62,17 @@ export function useRunChartWindows(
       setRange(next)
     }
   }
-  return {
-    ...read,
-    span:
-      first === undefined || last === undefined
-        ? null
-        : { first: first.from, last: last.to },
-    windows: `${asked.length} of ${windows.length}`,
-    grow,
-  }
+  const growAgain = useEffectEvent(() => {
+    if (heard.current !== null) {
+      grow(heard.current)
+    }
+  })
+  useEffect(() => {
+    if (read.settled) {
+      growAgain()
+    }
+  }, [read.settled, asked.length])
+  return { ...read, grow }
 }
 
 function readWindows(
@@ -90,7 +90,6 @@ function readWindows(
           .flatMap((each) => (each === undefined ? [] : [each]))
   return {
     chart: joined.length === 0 ? null : joinedWindows(joined),
-    around,
     settled: results.every((result) => result.status === "success"),
     failure:
       failed === undefined

@@ -46,7 +46,7 @@ export function TradeReview({
     >
       <TradeLine
         trade={selected}
-        position={selection.position}
+        place={selection.place}
         currency={currency}
         onPrevious={selection.previous}
         onNext={selection.next}

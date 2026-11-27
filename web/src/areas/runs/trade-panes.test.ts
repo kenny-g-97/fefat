@@ -159,6 +159,14 @@ describe("the trade review's panes", () => {
     ])
   })
 
+  it("names no fill for a crosshair left of the first bar, the entry staying pinned", () => {
+    // Step 5.9's ponytail review: left of the first bar the library's index is negative, and an
+    // index counted from the end named a fill far away.
+    expect(
+      tooltipFill(CHART, FILLS, 2, { hovered: null, crosshair: -3 })
+    ).toEqual({ drawn: FILLS.get("7/0"), pinned: true })
+  })
+
   it("draws the price over the volume and a pane a feature, its values beside the bars", () => {
     const panes = tradePanes(CHART, "5m", true, FILLS, {
       selected: null,

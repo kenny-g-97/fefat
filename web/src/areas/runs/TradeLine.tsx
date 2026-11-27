@@ -5,10 +5,11 @@ import type { Trade } from "@/api/trades"
 import { Button } from "@/ui/button"
 import { counted, formatMoney, moneySign, sentenceCase } from "@/ui/figures"
 import { formatInstantToTheSecond } from "@/ui/instant"
+import type { TradePlace } from "./use-selected-trade"
 
 type TradeLineProps = Readonly<{
   trade: Trade | null
-  position: Readonly<{ at: number; of: number }> | null
+  place: TradePlace | null
   currency: Currency | null
   onPrevious: (() => void) | null
   onNext: (() => void) | null
@@ -22,12 +23,13 @@ const SIGN_COLOUR = {
 } as const
 
 /** The line over the trade review chart (web/DESIGN.md, Patterns, Trade line): the selected trade,
- * where it stands among the trades the table keeps, its entry to the second, its side and lots,
+ * where it stands among the trades the table keeps (`placeText`), its entry to the second, its
+ * side and lots,
  * and its net P&L in its sign's colour, then Previous and Next, which step through the table's
  * trades, and Explain, the card's one primary action; with no trade selected, the way to one. */
 export function TradeLine({
   trade,
-  position,
+  place,
   currency,
   onPrevious,
   onNext,
@@ -41,11 +43,11 @@ export function TradeLine({
         </p>
       ) : (
         <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 whitespace-nowrap">
-          <Figure label="Trade" testId="trade-position">
-            {position === null
-              ? "Not in the table"
-              : `${position.at} of ${position.of}`}
-          </Figure>
+          {place !== null && (
+            <Figure label="Trade" testId="trade-position">
+              {placeText(place)}
+            </Figure>
+          )}
           <Figure label="Entry" testId="trade-entry">
             {formatInstantToTheSecond(trade.entry_ts)}
           </Figure>
@@ -122,4 +124,14 @@ function Figure({
       </dd>
     </div>
   )
+}
+
+/** Where a trade stands, in words: `3 of 18`, or past the rows read, or out of the table. */
+function placeText(place: TradePlace): string {
+  if (place.kind === "at") {
+    return `${place.at} of ${place.of}`
+  }
+  return place.kind === "further"
+    ? "Further down the table"
+    : "Not in the table"
 }

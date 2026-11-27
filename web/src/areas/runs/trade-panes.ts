@@ -228,10 +228,9 @@ export function tooltipFill(
   if (hovered !== undefined) {
     return { drawn: hovered, pinned: false }
   }
+  // Left of the first bar the library's index is negative, which names no bar.
   const barTime =
-    pointer.crosshair === null
-      ? undefined
-      : chart.bars.time.at(pointer.crosshair)
+    pointer.crosshair === null ? undefined : chart.bars.time[pointer.crosshair]
   const onTheBar = [...fills.values()]
     .filter((each) => each.fill.bar_time === barTime)
     .toSorted((one, other) => rank(one, selected) - rank(other, selected))

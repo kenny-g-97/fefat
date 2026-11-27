@@ -79,45 +79,12 @@ export function ChartReadout({
   )
 }
 
-/** The figures beside the bar's own, each a label and its figure on one line, after the bar's
- * prices however the row's width lays them out. */
+/** A row of figures, the bar's prices or those beside them, each a label and its figure on one
+ * line, after the bar's time however the row's width lays them out: under 56 rem they start a
+ * line of their own, and under 40 rem, where five-digit prices leave it no room, the volume
+ * does. The lines follow the row's width, never the figures under the crosshair, which would
+ * move the chart under the pointer from one bar to the next. */
 function Fields({ fields }: Readonly<{ fields: readonly ReadoutField[] }>) {
-  return (
-    <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 whitespace-nowrap @max-[56rem]:order-last @max-[56rem]:basis-full">
-      {fields.map(({ label, id, value }) => (
-        <div key={id} className="flex items-center gap-2">
-          <dt className="text-muted-foreground">{label}</dt>
-          <dd
-            data-testid={`readout-${id}`}
-            className="font-semibold text-foreground"
-          >
-            {value}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  )
-}
-
-function Prices({
-  bars,
-  at,
-  decimals,
-}: Readonly<{ bars: BarColumns; at: number; decimals: number }>) {
-  const fields: readonly ReadoutField[] = [
-    { label: "Open", id: "open", value: formatPrice(bars.open[at], decimals) },
-    { label: "High", id: "high", value: formatPrice(bars.high[at], decimals) },
-    { label: "Low", id: "low", value: formatPrice(bars.low[at], decimals) },
-    {
-      label: "Close",
-      id: "close",
-      value: formatPrice(bars.close[at], decimals),
-    },
-    { label: "Volume", id: "volume", value: formatCount(bars.volume[at]) },
-  ]
-  // The lines follow the row's width, never the figures under the crosshair, which would move
-  // the chart under the pointer from one bar to the next: under 56 rem the prices start a line
-  // of their own, and under 40 rem, where five-digit prices leave it no room, the volume does.
   return (
     <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 whitespace-nowrap @max-[56rem]:order-last @max-[56rem]:basis-full">
       {fields.map(({ label, id, value }) => (
@@ -138,5 +105,35 @@ function Prices({
         </div>
       ))}
     </dl>
+  )
+}
+
+function Prices({
+  bars,
+  at,
+  decimals,
+}: Readonly<{ bars: BarColumns; at: number; decimals: number }>) {
+  return (
+    <Fields
+      fields={[
+        {
+          label: "Open",
+          id: "open",
+          value: formatPrice(bars.open[at], decimals),
+        },
+        {
+          label: "High",
+          id: "high",
+          value: formatPrice(bars.high[at], decimals),
+        },
+        { label: "Low", id: "low", value: formatPrice(bars.low[at], decimals) },
+        {
+          label: "Close",
+          id: "close",
+          value: formatPrice(bars.close[at], decimals),
+        },
+        { label: "Volume", id: "volume", value: formatCount(bars.volume[at]) },
+      ]}
+    />
   )
 }

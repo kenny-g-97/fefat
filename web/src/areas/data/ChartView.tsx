@@ -24,6 +24,7 @@ import {
   type ChartFrameProps,
   ChartFrame as KeptChartFrame,
 } from "@/ui/chart-frame"
+import { ChartWarnings } from "@/ui/chart-warnings"
 import { decimalsOf } from "@/ui/figures"
 import { FILLS } from "@/ui/frame-size"
 import { usePageScrolls } from "@/ui/page-scroll"
@@ -147,13 +148,7 @@ function ChartWindows({
       {failure !== undefined && (
         <SectionFailure error={failure.error} onRetry={failure.retry} />
       )}
-      {warnings.length > 0 && (
-        <ul className="flex shrink-0 flex-col gap-1 text-xs text-foreground-secondary">
-          {warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
-        </ul>
-      )}
+      <ChartWarnings warnings={warnings} />
     </>
   )
 }

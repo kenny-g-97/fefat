@@ -3,6 +3,7 @@ import { barWindows, windowAt } from "@/api/bar-windows"
 import type { ChartStyle } from "@/api/settings"
 import type { Trade } from "@/api/trades"
 import { ChartFrame } from "@/ui/chart-frame"
+import { ChartWarnings } from "@/ui/chart-warnings"
 import { SectionFailure } from "@/ui/section-failure"
 import { useRunChartWindows } from "./run-chart-windows"
 import { TRADE_CHART_FRAME } from "./trade-chart-frame"
@@ -19,8 +20,8 @@ type TradeChartProps = Readonly<{
 /** The trade review chart (web/DESIGN.md, Patterns, Trade review chart): the run's bars in its
  * strategy's timeframe, a window of its `dates` at a time around the selected trade's entry, or
  * the newest with none selected, drawn with every fill and the strategy's features once read;
- * its card says that its bars load until then, and a window that fails to come says why with
- * Try again under the card. */
+ * its card says that its bars load until then, a window that fails to come says why with Try
+ * again under the card, and what its pages warn of stands under it too. */
 export function TradeChart({
   runKey,
   dates,
@@ -48,11 +49,6 @@ export function TradeChart({
           selected={selected}
           loading={loading}
           onVisibleBarsChange={read.grow}
-          attributes={{
-            "data-windows": read.windows,
-            "data-span":
-              read.span === null ? "" : `${read.span.first} ${read.span.last}`,
-          }}
         />
       )}
       {read.failure !== undefined && (
@@ -61,6 +57,9 @@ export function TradeChart({
           onRetry={read.failure.retry}
         />
       )}
+      <ChartWarnings
+        warnings={read.chart === null ? [] : read.chart.warnings}
+      />
     </>
   )
 }

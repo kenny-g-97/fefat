@@ -58,15 +58,19 @@ export function runTradesQuery(runKey: string, shown: TradesShown) {
   })
 }
 
-/** The trade of the saved run `runKey` whose row is `row`, which a link to the trade review
- * names (step 5.9), read alone where the table has not read it; none past the run's last. */
-export function runTradeQuery(runKey: string, row: number) {
+/** The trade of the saved run `runKey` whose row is `row` among those `shown`'s filters keep,
+ * which a link to the trade review names (step 5.9), read alone where the table has not read
+ * it; none past the run's last, or where the filters hide it. */
+export function runTradeQuery(runKey: string, row: number, shown: TradesShown) {
   return queryOptions({
-    queryKey: ["run-results", runKey, "trade", row],
+    queryKey: ["run-results", runKey, "trade", row, shown],
     queryFn: async () => {
       const page = answer(
         await api.GET("/v1/runs/{run}/trades", {
-          params: { path: { run: runKey }, query: { trade: row, limit: 1 } },
+          params: {
+            path: { run: runKey },
+            query: { ...shown, trade: row, limit: 1 },
+          },
         })
       )
       const found = page.trades.at(0)

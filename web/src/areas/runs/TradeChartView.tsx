@@ -32,7 +32,6 @@ type TradeChartViewProps = Readonly<{
   selected: Trade | null
   loading: boolean
   onVisibleBarsChange: (bars: VisibleBars) => void
-  attributes: Readonly<Record<`data-${string}`, string>>
 }>
 
 /** The trade review chart once a window is read: the readout of the bar under the crosshair with
@@ -46,7 +45,6 @@ export function TradeChartView({
   selected,
   loading,
   onVisibleBarsChange,
-  attributes,
 }: TradeChartViewProps) {
   const handle = useRef<PriceChartHandle>(null)
   const box = useRef<HTMLDivElement>(null)
@@ -120,8 +118,6 @@ export function TradeChartView({
       {...TRADE_CHART_FRAME}
       loading={loading}
       attributes={{
-        ...attributes,
-        "data-bars": String(chart.bars.time.length),
         "data-centred-on": centredOn === null ? "" : String(centredOn),
       }}
     >

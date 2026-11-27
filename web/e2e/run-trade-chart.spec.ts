@@ -214,6 +214,28 @@ test("Explain shows the trade's replay as a timeline beside the chart", async ({
   await expect(panel).toBeHidden()
 })
 
+test("the chart says under its card what its pages warn of", async ({
+  loggedIn: page,
+}) => {
+  // Step 5.9's ponytail review: a feature the chart leaves out, and what load warns of, went
+  // unsaid. The seeded run warns of nothing, so its pages are answered with one more warning.
+  const warning =
+    "The feature regime holds no numbers, so the chart leaves it out."
+  const chartPage = z.looseObject({ warnings: z.array(z.string()) })
+  await page.route("**/v1/runs/*/chart?**", async (route) => {
+    const response = await route.fetch()
+    const read = chartPage.parse(await response.json())
+    await route.fulfill({
+      response,
+      json: { ...read, warnings: [...read.warnings, warning] },
+    })
+  })
+  const key = await theSeededKey(page)
+  await openTrades(page, key, "&trade=2")
+
+  await expect(page.getByTestId("chart-warnings")).toHaveText(warning)
+})
+
 test("the trade review draws in the light theme too", async ({
   loggedIn: page,
 }) => {
