@@ -18,13 +18,15 @@ with replacement (step 5.20), each figure at every whole percent of them (step 5
 `results_by_side` gives its figures for all, long, and short trades (step 5.22);
 `market_exposure` how its days moved with one lot of its instrument held long, beside buy and
 hold (step 5.23); and `review_window` the trades a window of its bars shows, each fill on its
-bar, with their levels and the strategy's features beside the bars (step 5.9).
+bar, with their levels and the strategy's features beside the bars (step 5.9);
+and `compare_runs` sets two to four runs side by side, the first the reference (step 5.10).
 `RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
 `fefat.backtest.schemas`, and the record is `fefat.backtest.record`. `fidelity_check` works a
 saved run's fidelity check out again (`fefat.backtest.fidelity`, step 2.12), and `reconcile`
 waits for fill exports.
 """
 
+from fefat.backtest.compare import ComparedRun, RunComparison, RunFigures, compare_runs
 from fefat.backtest.distributions import Histogram, TradeDistributions, trade_distributions
 from fefat.backtest.equity_curves import equity_curve
 from fefat.backtest.estimates import WindowEstimate, estimated, held_instruments
@@ -81,6 +83,7 @@ __all__ = [
     "TRADES",
     "TRADE_PATHS",
     "AppliedRunConfig",
+    "ComparedRun",
     "EquityFan",
     "FeaturePin",
     "FidelityCheck",
@@ -98,13 +101,16 @@ __all__ = [
     "ResultsBySide",
     "ReviewWindow",
     "Run",
+    "RunComparison",
     "RunConfig",
+    "RunFigures",
     "RunRecord",
     "RunStage",
     "SideResults",
     "TooFewTrades",
     "TradeDistributions",
     "WindowEstimate",
+    "compare_runs",
     "equity_curve",
     "estimated",
     "fidelity_check",
