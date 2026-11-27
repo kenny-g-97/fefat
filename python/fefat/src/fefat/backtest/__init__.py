@@ -15,9 +15,10 @@ From step 5.3 `run` tells a callable each stage it reaches (`RunStage`): `progre
 `equity_curve` downsamples a run's equity, keeping its deepest drawdown, and `trade_distributions`
 counts its trades into histograms (step 5.7); `monte_carlo` walks paths of its trades drawn again
 with replacement (step 5.20), each figure at every whole percent of them (step 5.21);
-`results_by_side` gives its figures for all, long, and short trades (step 5.22); and
+`results_by_side` gives its figures for all, long, and short trades (step 5.22);
 `market_exposure` how its days moved with one lot of its instrument held long, beside buy and
-hold (step 5.23).
+hold (step 5.23); and `review_window` the trades a window of its bars shows, each fill on its
+bar, with their levels and the strategy's features beside the bars (step 5.9).
 `RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
 `fefat.backtest.schemas`, and the record is `fefat.backtest.record`. `fidelity_check` works a
 saved run's fidelity check out again (`fefat.backtest.fidelity`, step 2.12), and `reconcile`
@@ -65,6 +66,7 @@ from fefat.backtest.schemas import (
     TRADES,
 )
 from fefat.backtest.sides import ResultsBySide, SideResults, results_by_side
+from fefat.backtest.trade_review import ReviewWindow, review_window
 from fefat.market.fidelity import FidelityEra
 
 __all__ = [
@@ -94,6 +96,7 @@ __all__ = [
     "ProfitFactorByPercent",
     "RefusedCheck",
     "ResultsBySide",
+    "ReviewWindow",
     "Run",
     "RunConfig",
     "RunRecord",
@@ -110,6 +113,7 @@ __all__ = [
     "monte_carlo",
     "reconcile",
     "results_by_side",
+    "review_window",
     "run",
     "running_drawdown",
     "saved_runs_in",
