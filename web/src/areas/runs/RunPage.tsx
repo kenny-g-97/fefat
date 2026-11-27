@@ -40,19 +40,30 @@ function BackToRuns() {
 
 const BACK = <BackToRuns />
 
-/** The run's results in full (step 5.22), a page of its own: a ghost button, since it leads to
- * more of the same run rather than doing anything, its arrow saying that it leads to a page, as a
- * text link's does, carrying the way back to the list. */
-function AllResultsLink({ runKey }: Readonly<{ runKey: string }>) {
+const RUN_PAGE_TEST_IDS = {
+  "/runs/run/trades": "trades",
+  "/runs/run/results": "all-results",
+} as const
+
+type RunPageLinkProps = Readonly<{
+  to: keyof typeof RUN_PAGE_TEST_IDS
+  runKey: string
+  children: string
+}>
+
+/** A page of more of the same run, its trades (step 5.8) or its results in full (step 5.22): a
+ * ghost button, since it leads to more of the run rather than doing anything, its arrow saying
+ * that it leads to a page, as a text link's does, carrying the way back to the list. */
+function RunPageLink({ to, runKey, children }: RunPageLinkProps) {
   return (
     <Button variant="ghost" asChild>
       <Link
-        to="/runs/run/results"
+        to={to}
         search={{ key: runKey }}
         state={(kept) => kept}
-        data-testid="all-results"
+        data-testid={RUN_PAGE_TEST_IDS[to]}
       >
-        All results
+        {children}
         <ArrowRight className="size-4" />
       </Link>
     </Button>
@@ -179,7 +190,14 @@ function ShownRun({ run }: Readonly<{ run: ListedRun }>) {
       back={BACK}
       action={
         shown.state === "saved" ? (
-          <AllResultsLink runKey={shown.run_key} />
+          <>
+            <RunPageLink to="/runs/run/trades" runKey={shown.run_key}>
+              Trades
+            </RunPageLink>
+            <RunPageLink to="/runs/run/results" runKey={shown.run_key}>
+              All results
+            </RunPageLink>
+          </>
         ) : undefined
       }
     >

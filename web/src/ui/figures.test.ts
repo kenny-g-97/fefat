@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  alignedText,
   counted,
   currencyApart,
   decimalsOf,
@@ -18,6 +19,7 @@ import {
   moneyFigure,
   moneySign,
   NO_BREAK_SPACE,
+  placesOfText,
   sentenceCase,
 } from "./figures"
 
@@ -233,6 +235,31 @@ describe("formatDuration (step 5.22)", () => {
     )
     expect(() => formatDuration(Number.POSITIVE_INFINITY)).toThrow(
       "Expected a count of minutes at or above zero, got Infinity."
+    )
+  })
+})
+
+describe("a column of decimals sent as text (step 5.8)", () => {
+  it("counts the places a decimal holds as the API wrote it", () => {
+    expect(placesOfText("5000.25")).toBe(2)
+    expect(placesOfText("-4990.5")).toBe(1)
+    expect(placesOfText("5000")).toBe(0)
+    expect(placesOfText("5000.083333333333")).toBe(12)
+  })
+
+  it("pads a decimal with spaces to line its point up, adding no digit", () => {
+    expect(alignedText("5000.25", 2)).toBe("5000.25")
+    expect(alignedText("5000.5", 2)).toBe("5000.5 ")
+    expect(alignedText("5000", 2)).toBe("5000   ")
+    expect(alignedText("12", 0)).toBe("12")
+  })
+
+  it("refuses text that is no decimal, or holds more places than its column", () => {
+    expect(() => placesOfText("1e-7")).toThrow(
+      'Expected a decimal as text, got "1e-7".'
+    )
+    expect(() => alignedText("5000.125", 2)).toThrow(
+      "Expected a decimal of at most 2 places, got 5000.125."
     )
   })
 })

@@ -39,6 +39,8 @@ const EDGE = new Intl.NumberFormat("en-US", {
   signDisplay: "negative",
 })
 
+const DECIMAL_TEXT = /^-?[0-9]+(?:[.][0-9]+)?$/
+
 const UNITS: Readonly<Record<string, string>> = {
   s: "second",
   m: "minute",
@@ -75,6 +77,30 @@ export function formatAligned(value: number, places: number): string {
   }
   const point = own === 0 && places > 0 ? 1 : 0
   return formatDecimal(value) + " ".repeat(places - own + point)
+}
+
+/** The places a decimal the API sends as text holds, as a price is sent: `5000.25` holds 2,
+ * `5000` none. */
+export function placesOfText(text: string): number {
+  if (!DECIMAL_TEXT.test(text)) {
+    throw new Error(`Expected a decimal as text, got ${JSON.stringify(text)}.`)
+  }
+  const point = text.indexOf(".")
+  return point === -1 ? 0 : text.length - point - 1
+}
+
+/** A decimal the API sends as text, written to line its point up in a column of `places`
+ * decimals, as `formatAligned` writes a number: its own digits, then a space for each place and
+ * for the point it lacks, so that no digit is added (step 5.8). */
+export function alignedText(text: string, places: number): string {
+  const own = placesOfText(text)
+  if (own > places) {
+    throw new Error(
+      `Expected a decimal of at most ${places} places, got ${text}.`
+    )
+  }
+  const point = own === 0 && places > 0 ? 1 : 0
+  return text + " ".repeat(places - own + point)
 }
 
 /** A price with its instrument's decimals, as the chart's axis writes it: 5012.25. */

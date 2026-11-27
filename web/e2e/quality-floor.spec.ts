@@ -34,8 +34,8 @@ const PATHS = [
   "/no-such-page",
 ]
 
-/** `PATHS`, and the page of the seeded run and that of its results in full, whose address the
- * server's list gives (steps 5.6 and 5.22). */
+/** `PATHS`, and the page of the seeded run, that of its results in full, and that of its trades
+ * with its SQL tab, whose address the server's list gives (steps 5.6, 5.22, and 5.8). */
 async function everyPath(page: Page): Promise<readonly string[]> {
   const answer = await page.request.get("/v1/runs", {
     params: { status: "succeeded" },
@@ -49,6 +49,8 @@ async function everyPath(page: Page): Promise<readonly string[]> {
     ...PATHS,
     `/runs/run?key=${seeded.run_key}`,
     `/runs/run/results?key=${seeded.run_key}`,
+    `/runs/run/trades?key=${seeded.run_key}`,
+    `/runs/run/trades?key=${seeded.run_key}&tab=sql`,
   ]
 }
 
