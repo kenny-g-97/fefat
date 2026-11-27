@@ -2,13 +2,17 @@ import type { MarkerTone } from "./chart-look"
 import type { ChartTime } from "./chart-time"
 
 /** A marker on a candle series: where, its words, above or below its bar, its shape, and how it
- * reads. */
+ * reads; with a `price`, above or below that price rather than its bar, the shape's point on
+ * it, as a fill's marker stands at its fill's price; with an `id`, told apart under the pointer
+ * (`PriceChart`'s `onMarkerHover`). */
 export type ChartMarker = Readonly<{
   time: ChartTime
   text: string
   position: "above" | "below"
   shape: "arrowUp" | "arrowDown" | "circle" | "square"
   tone: MarkerTone
+  price?: number
+  id?: string
 }>
 
 /** A session of a chart's bars: the time of its first bar and of its last, and whether it is

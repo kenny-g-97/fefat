@@ -55,9 +55,25 @@ describe("rollMarks", () => {
 })
 
 describe("keyAction", () => {
+  it("steps the crosshair a bar with Shift and the arrows, and zooms by a plus Shift typed", () => {
+    // Step 5.9 (BACKLOG's "A bar read from the keys"): a trader on the keyboard reads each bar.
+    expect(
+      ["ArrowLeft", "ArrowRight", "+", "Home"].map((key) =>
+        keyAction(key, true)
+      )
+    ).toEqual([
+      { kind: "step", bars: -1 },
+      { kind: "step", bars: 1 },
+      { kind: "zoom", factor: 1.25 },
+      { kind: "earliest" },
+    ])
+  })
+
   it("pans, zooms, and goes to either end, and leaves other keys to the page", () => {
     expect(
-      ["ArrowLeft", "PageDown", "Home", "End", "+", "-", "Tab"].map(keyAction)
+      ["ArrowLeft", "PageDown", "Home", "End", "+", "-", "Tab"].map((key) =>
+        keyAction(key)
+      )
     ).toEqual([
       { kind: "pan", screens: -0.1 },
       { kind: "pan", screens: 1 },

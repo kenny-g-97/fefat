@@ -25,6 +25,7 @@ it("documents every prop of PriceChart and every field of its panes and series",
     ...fields(drawn, "ChartPane"),
     ...fields(drawn, "CandleSeries"),
     ...fields(drawn, "HistogramSeries"),
+    ...fields(drawn, "LineSeries"),
   ]
 
   expect(named.length).toBeGreaterThan(20)

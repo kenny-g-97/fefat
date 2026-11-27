@@ -1,6 +1,6 @@
 # Charts
 
-`PriceChart` draws price charts over [Lightweight Charts](https://tradingview.github.io/lightweight-charts/) 5.2.1 (Apache 2.0, step 5.4, D-93). The Data area's chart viewer is its first user; step 5.9's trade review chart and Phase 6's feature panes reuse it. `src/charts/` is the one place the library is imported, but for the types a caller's own primitive implements.
+`PriceChart` draws price charts over [Lightweight Charts](https://tradingview.github.io/lightweight-charts/) 5.2.1 (Apache 2.0, step 5.4, D-93). The Data area's chart viewer is its first user, and step 5.9's trade review chart its second, with its fills, connectors, bands, and feature panes; Phase 6's feature panes reuse it. `src/charts/` is the one place the library is imported, but for the types a caller's own primitive implements.
 
 ```tsx
 <PriceChart
@@ -28,8 +28,11 @@ Give it a parent that sets its size: it fills the box it is in (`autoSize`, insi
 | `style` | The trader's `ChartStyle` from `GET /v1/settings`, which the chart draws in the theme the page shows (`useShownTheme`), each colour the trader's own for that theme or else the theme's token from `web/DESIGN.md`. |
 | `priceFormat` | The price axis's `precision`, the decimals of the instrument's tick (`decimalsOf` in `src/ui/figures.ts`), and its `minMove`, the tick. |
 | `wheel` | `chart` lets the wheel zoom and pan the chart; `page` leaves it to the page, as the chart page does while some of the page's content lies under the window's foot, so that it never traps the page's scroll (`usePageScrolls`); a page longer than the window by no more than its own padding leaves the wheel to the chart. Dragging, the price axis, and the keys still move the chart. |
-| `onVisibleBarsChange` | Told, after each draw and each pan or zoom, how many bars of the first candle series lie `before` the view and `after` it, as `VisibleBars`: the chart viewer loads an older window when fewer than 500 lie before it. |
-| `onCrosshairMove` | Told the index of the bar under the crosshair in the first candle series' columns, or null when it leaves: the caller reads its own bar there, the API's numbers unchanged. |
+| `ref` | Optional, a `PriceChartHandle` (`chart-handle.ts`): `showBars(first, last)` puts the bars from the time `first` to the time `last` of the first candle series in the middle of the view, at least 80 bars wide and half as wide again as they are, and tells whether both are drawn; `locate(time, price)` gives where a time and a price of the first candle series stand, in pixels from the top left of the first pane, none off the view, for what the caller draws over the chart, such as the trade review's tooltip. |
+| `onVisibleBarsChange` | Told, after each draw and each pan or zoom, how many bars of the first candle series lie `before` the view and `after` it, as `VisibleBars`: the chart viewer loads an older window when fewer than 500 lie before it, and the trade review a newer one too when fewer than 500 lie after. |
+| `onCrosshairMove` | Told the index of the bar under the crosshair in the first candle series' columns, or null when it leaves: the caller reads its own bar there, the API's numbers unchanged. The keys' crosshair (Keys) is told too, since the library tells only the pointer's. |
+| `onMarkerHover` | Optional, told the `id` of the marker under the pointer, or null when the pointer is on none: the trade review shows that marker's fill. |
+| `onViewChange` | Optional, told each time the chart works its views out again, after a pan, a zoom, a resize, a change of the price axis's range, or new bars, never for a move of the crosshair alone (`ViewWatch`, a primitive the chart keeps on its first candle series): what the caller draws over the chart takes its place again through `ref`'s `locate`. |
 
 ## Panes and series
 
@@ -39,10 +42,12 @@ A `CandleSeries` (`kind`: `candles`) holds its bars column by column, as `GET /v
 
 - `id`, `time`, `open`, `high`, `low`, `close`: a bar's `time` is its open in whole seconds since the epoch, UTC, for intraday bars, or its trade date, `2026-03-06`, for daily bars, which the chart places by session; never a time shifted to a zone.
 - `sessions`: each bar's trade date, by which the chart shades every other session behind the bars (`SessionShading`), counting back from the newest, so that older bars arriving change no session's shade. The style's `sessions_shaded` turns it off.
-- `markers`: `ChartMarker`s, each a `time`, a `text`, a `position` above or below its bar, a `shape`, and a `tone`, `subtle`, `accent`, `positive`, or `negative`, which the look colours: the chart viewer marks each roll of a spliced series (`rollMarks`); step 5.9 marks fills in the sign colours.
-- `primitives`: the caller's own Lightweight Charts series primitives, attached to this series and detached when they leave the list, such as step 5.9's entry-to-exit connectors and stop and target bands.
+- `markers`: `ChartMarker`s, each a `time`, a `text`, a `position` above or below its bar, a `shape`, and a `tone`, `subtle`, `accent`, `positive`, or `negative`, which the look colours, and optionally a `price`, which stands the marker above or below that price rather than its bar, the point of its shape on it (the library's `atPriceTop` above the price, `atPriceBottom` under it), and an `id`, which `onMarkerHover` names: the chart viewer marks each roll of a spliced series (`rollMarks`); the trade review marks each fill at its price in the sign colours, a buy's arrow under its price pointing up and a sell's above it pointing down.
+- `primitives`: the caller's own Lightweight Charts series primitives, attached to this series and detached when they leave the list, such as the trade review's entry-to-exit connectors and stop and target bands (`trade-overlay.ts`).
 
 A `HistogramSeries` (`kind`: `histogram`), such as volume, holds `id`, `time`, and `value`, and, where its bars take their candle's colour when the style colours volume by direction, `rising`, whether each bar's close is at or above its open, the rule the candles follow.
+
+A `LineSeries` (`kind`: `line`), such as a feature of the strategy's in a pane of its own, holds `id`, `time`, and `value`, one a bar, null where it has none, as before a feature's warm-up ends, which the line leaves as a gap; it draws 1 px in the accent with no last value, the readout giving its figure.
 
 ## Time
 
@@ -56,7 +61,7 @@ The library's licence, Apache 2.0, asks an app for two things on a page its user
 
 ## Keys
 
-The chart takes the focus on a click or Tab, and then: the arrows pan a tenth of the bars in view, PageUp and PageDown a screen, Home and End go at once to the earliest and the latest bar loaded, and plus and minus zoom (`chart-keys.ts`). Its focus outline lies 2 px inside it, since a card around it may clip what lies outside.
+The chart takes the focus on a click or Tab, and then: the arrows pan a tenth of the bars in view, PageUp and PageDown a screen, Home and End go at once to the earliest and the latest bar loaded, and plus and minus zoom (`chart-keys.ts`); Shift with Left or Right steps the crosshair a bar, onto the last bar in view at first, the view moving to keep it, so that a trader on the keyboard reads each bar and each fill (step 5.9), and Escape, or the focus leaving the chart, takes that crosshair away (`chart-steps.ts`). Its focus outline lies 2 px inside it, since a card around it may clip what lies outside.
 
 ## Tests
 
