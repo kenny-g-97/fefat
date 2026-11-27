@@ -1,16 +1,22 @@
 """DuckDB over a saved run's artifacts (step 5.8, `fefat_app.artifact_queries`): the trader's one
-SELECT reads the run's views in the instrument's units and is refused past its bytes and its time,
-and a value DuckDB answers reaches the JSON as a browser reads it unchanged."""
+SELECT reads the run's views in the instrument's units, each column `UNIT_COLUMNS` names exactly,
+and is refused past its rows, its bytes, which DuckDB measures before Python reads a row, and its
+time, and a value DuckDB answers reaches the JSON as a browser reads it unchanged."""
 
 import os
 import re
 import shutil
+from decimal import Decimal
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 from fefat.backtest import Run
+from fefat.backtest.schemas import ARTIFACT_SCHEMAS, UNIT_COLUMNS, Unit
 from fefat.config import resolve_paths
+from fefat.market.engine_units import MONEY_DECIMALS, PRICE_DECIMALS, PRICE_SCALE
+from fefat_app import artifact_queries
 from fefat_app.artifact_queries import DuckDbQueries
 from fefat_app.trades import QueryRefusedError
 from test_run_records import the_run
@@ -26,6 +32,56 @@ def run(breakout_workspace: Path) -> Run:
 def test_an_answer_past_its_bytes_is_refused(run: Run) -> None:
     with pytest.raises(QueryRefusedError, match="1,000 bytes"):
         DuckDbQueries(most_bytes=1_000).select(run.folder, "SELECT * FROM fills")
+
+
+def test_an_answer_past_its_bytes_is_refused_before_python_reads_a_row(
+    run: Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unread(*read: object) -> object:
+        raise AssertionError(f"Expected the answer refused in DuckDB, got {read[0]!r} read")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(artifact_queries, "_json_value", unread)
+
+        with pytest.raises(QueryRefusedError, match="1,000 bytes"):
+            DuckDbQueries(most_bytes=1_000).select(run.folder, "SELECT list(f) FROM fills f")
+
+
+def test_each_unit_column_reads_in_the_instruments_units(run: Run) -> None:
+    queries = DuckDbQueries(most_rows=1_000_000, most_bytes=1_000_000_000)
+
+    for artifact, units in UNIT_COLUMNS.items():
+        raw = pl.read_parquet(run.folder / f"{artifact}.parquet")
+        for column, unit in units.items():
+            if column not in raw.columns:
+                assert column not in ARTIFACT_SCHEMAS[artifact], (artifact, column)
+                continue
+            read = "epoch_ns" if unit is Unit.INSTANT else ""
+            answer = queries.select(run.folder, f'SELECT {read}("{column}") FROM {artifact}')
+            expected = [
+                None if engine is None else _in_units(engine, unit, raw.schema[column])
+                for engine in raw.get_column(column).to_list()
+            ]
+            assert [_figure(row[0]) for row in answer.rows] == expected, (artifact, column)
+
+
+def _in_units(engine: int | float, unit: Unit, kind: pl.DataType) -> object:
+    """What the view of a column in engine units answers for `engine`: an instant's nanoseconds
+    (as `epoch_ns` reads them back), a float's price, or the decimal a whole number scales to."""
+    if unit is Unit.INSTANT:
+        return engine
+    if kind == pl.Float64:
+        return engine / PRICE_SCALE
+    places = MONEY_DECIMALS if unit is Unit.MONEY else PRICE_DECIMALS
+    return Decimal(int(engine)).scaleb(-places)
+
+
+def _figure(value: object) -> object:
+    """An answer's value as the figure it writes: a text of a whole number or a decimal as
+    that number, whatever zeros end it."""
+    if isinstance(value, str):
+        return int(value) if value.lstrip("-").isdigit() else Decimal(value)
+    return value
 
 
 def test_a_query_past_its_time_is_stopped(run: Run) -> None:

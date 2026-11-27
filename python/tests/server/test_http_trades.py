@@ -5,10 +5,12 @@ Polars sorts and filters the same artifacts, on the breakout run and on runs of 
 holds every trade the pages hold under the same filter and order (Done means 3) and
 `executions.csv` the run's fills in the order the run made them; and `POST /v1/runs/{run}/query`
 answers one SELECT over the run's artifacts in the instrument's units, refusing every other
-statement, a file beside them, and an answer past its caps."""
+statement, a file beside them, and an answer past its caps, and naming no folder of this PC."""
 
+import base64
 import csv
 import io
+import json
 import os
 import shutil
 import time
@@ -192,13 +194,16 @@ def shown(artifacts: dict[str, pl.DataFrame]) -> pl.DataFrame:
     )
 
 
-def walked(client: TestClient, run: Run, **asked: Any) -> tuple[list[dict[str, Any]], int, int]:
+def walked(
+    client: TestClient, run: Run, **asked: Any
+) -> tuple[list[dict[str, Any]], int, list[str]]:
     """Every trade the pages of `asked` hold, read from the first page to the last, with the
-    total the pages give and how many pages there were; each page at most its limit."""
+    total the pages give and the cursors that asked for the pages after the first; each page at
+    most its limit."""
     trades: list[dict[str, Any]] = []
     cursor: str | None = None
     limit = asked.get("limit", 200)
-    pages = 0
+    cursors: list[str] = []
     while True:
         params = {**asked} if cursor is None else {**asked, "cursor": cursor}
         answer = client.get(f"/v1/runs/{run.hash}/trades", params=params)
@@ -206,10 +211,10 @@ def walked(client: TestClient, run: Run, **asked: Any) -> tuple[list[dict[str, A
         page = answer.json()
         assert len(page["trades"]) <= limit
         trades.extend(page["trades"])
-        pages += 1
         cursor = page["next_cursor"]
         if cursor is None:
-            return trades, page["total"], pages
+            return trades, page["total"], cursors
+        cursors.append(cursor)
 
 
 def csrf(client: TestClient) -> dict[str, str]:
@@ -259,19 +264,20 @@ def test_fifty_thousand_trades_page_without_a_gap_a_repeat_or_the_whole_table(
     made(run, FIFTY_THOUSAND)
 
     first = client.get(f"/v1/runs/{run.hash}/trades", params={"limit": PAGE}).json()
-    trades, total, pages = walked(client, run, limit=PAGE)
+    trades, total, cursors = walked(client, run, limit=PAGE)
 
     assert (first["total"], len(first["trades"])) == (FIFTY_THOUSAND, PAGE)
-    assert (total, pages) == (FIFTY_THOUSAND, FIFTY_THOUSAND // PAGE)
+    assert (total, len(cursors) + 1) == (FIFTY_THOUSAND, FIFTY_THOUSAND // PAGE)
     assert [trade["trade"] for trade in trades] == list(range(FIFTY_THOUSAND))
     timings: list[float] = []
     for _ in range(3):
         started = time.perf_counter()
-        deep = client.get(
-            f"/v1/runs/{run.hash}/trades", params={"limit": PAGE, "cursor": first["next_cursor"]}
+        deepest = client.get(
+            f"/v1/runs/{run.hash}/trades", params={"limit": PAGE, "cursor": cursors[-1]}
         )
         timings.append(time.perf_counter() - started)
-        assert deep.status_code == 200
+        assert deepest.status_code == 200
+        assert deepest.json()["trades"][-1]["trade"] == FIFTY_THOUSAND - 1
     assert min(timings) < 1.0, timings
 
 
@@ -365,9 +371,46 @@ def test_prices_keep_their_decimals_whole_or_averaged(client: TestClient, run: R
     assert page["trades"][1]["exit_price"].endswith("3333")
 
 
+def test_a_price_under_a_millionth_is_sent_as_decimal_text(client: TestClient, run: Run) -> None:
+    tiny = made(run, 3)["trades"].with_columns(
+        entry_price=pl.lit(123, pl.Int64), exit_price=pl.lit(700.0, pl.Float64)
+    )
+    tiny.write_parquet(run.folder / "trades.parquet")
+
+    page = client.get(f"/v1/runs/{run.hash}/trades").json()
+
+    assert {(trade["entry_price"], trade["exit_price"]) for trade in page["trades"]} == {
+        ("0.000000123", "0.0000007")
+    }
+
+
 @pytest.mark.parametrize("cursor", ["not-a-cursor", "eyJzb3J0IjogInBubCJ9"])
 def test_a_cursor_no_page_gave_is_refused(client: TestClient, run: Run, cursor: str) -> None:
     answer = client.get(f"/v1/runs/{run.hash}/trades", params={"cursor": cursor})
+
+    assert answer.status_code == 400
+    assert "Expected a cursor" in answer.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "cursor",
+    [
+        {"sort": "pnl", "order": "asc", "value": 2**63, "trade": 1},
+        {"sort": "pnl", "order": "asc", "value": 1.5, "trade": 1},
+        {"sort": "entry_ts", "order": "desc", "value": 1, "trade": 2**63},
+        {"sort": "r_multiple", "order": "asc", "value": float("inf"), "trade": 1},
+        {"sort": "r_multiple", "order": "asc", "value": 10**400, "trade": 1},
+    ],
+)
+def test_a_cursor_whose_figure_no_trade_holds_is_refused(
+    client: TestClient, run: Run, cursor: dict[str, Any]
+) -> None:
+    text = base64.urlsafe_b64encode(json.dumps(cursor).encode()).decode()
+
+    answer = client.get(
+        f"/v1/runs/{run.hash}/trades",
+        params={"sort": cursor["sort"], "order": cursor["order"], "cursor": text},
+    )
 
     assert answer.status_code == 400
     assert "Expected a cursor" in answer.json()["detail"]
@@ -542,12 +585,27 @@ def test_an_unbounded_answer_is_refused_and_a_limited_one_answers(
     made(run, FIFTY_THOUSAND)
 
     unbounded = asked_sql(client, run, "SELECT * FROM trades")
+    one_row = asked_sql(client, run, "SELECT list(t) FROM trades t")
     limited = asked_sql(client, run, "SELECT trade, pnl FROM trades ORDER BY pnl LIMIT 100")
 
     assert unbounded.status_code == 400
     assert "10,000 rows" in unbounded.json()["detail"]
+    assert one_row.status_code == 400
+    assert "4,194,304 bytes" in one_row.json()["detail"]
     assert limited.status_code == 200
     assert len(limited.json()["rows"]) == 100
+
+
+def test_an_answer_names_no_folder_of_this_pc(client: TestClient, run: Run) -> None:
+    views = asked_sql(client, run, "SELECT sql FROM duckdb_views() WHERE NOT internal")
+    allowed = asked_sql(client, run, "SELECT current_setting('allowed_paths') AS allowed")
+
+    assert [views.status_code, allowed.status_code] == [200, 200], (views.text, allowed.text)
+    texts = [json.dumps(row) for answer in (views, allowed) for row in answer.json()["rows"]]
+    assert any(f"run {run.hash[:12]}" in text for text in texts)
+    for folder in (run.folder, Path.home()):
+        named = (folder.as_posix(), json.dumps(str(folder))[1:-1])
+        assert not [text for text in texts if any(name in text for name in named)], folder
 
 
 def test_the_query_of_an_unknown_run_answers_404(client: TestClient, run: Run) -> None:

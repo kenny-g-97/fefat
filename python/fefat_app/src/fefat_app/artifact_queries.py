@@ -5,9 +5,11 @@ before any SQL runs, so that no other file is read, no extension loads, nothing 
 and no setting changes. A page of the trades reads the artifacts' own whole numbers, so that each
 value converts exactly in Python; the trader's one SELECT reads views in the instrument's units,
 an instant a `TIMESTAMP_NS`, a price and money a `DECIMAL`, and answers at most `most_rows` rows
-of at most `most_bytes` of JSON within `timeout_seconds`. In-memory DuckDB cannot open read-only,
-and a folder it may read it may also write, so a write is refused by DuckDB's own parser: one
-statement, a SELECT (`DESCRIBE` and `SUMMARIZE` among them)."""
+of at most `most_bytes` of JSON within `timeout_seconds`, its rows and its JSON measured in DuckDB
+before Python reads a row, and every text naming the run's folder as the run and the trader's own
+folder as `~`. In-memory DuckDB cannot open read-only, and a folder it may read it may also
+write, so a write is refused by DuckDB's own parser: one statement, a SELECT (`DESCRIBE` and
+`SUMMARIZE` among them)."""
 
 import json
 import math
@@ -17,11 +19,11 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import duckdb
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue
 
 from fefat.backtest.schemas import ARTIFACT_SCHEMAS, UNIT_COLUMNS, Unit
 from fefat.market.engine_units import MONEY_DECIMALS, PRICE_DECIMALS, PRICE_SCALE
@@ -40,6 +42,9 @@ from fefat_app.trades import (
     TradesAsked,
 )
 
+# shortcut: each connection may take 1 GB and nothing bounds how many run at once, which one
+# trader's browser stays within; bound them, as with a semaphore, once the agent's queries run
+# beside the trader's (Phase 8).
 _CONFIGURATION: dict[str, str | bool | int | float | list[str]] = {
     "threads": 2,
     "memory_limit": "1GB",
@@ -50,7 +55,7 @@ _CONFIGURATION: dict[str, str | bool | int | float | list[str]] = {
 }
 """A connection's settings before it is locked: two threads and 1 GB, and no folder to spill to,
 which DuckDB would otherwise add to the files it may read."""
-_TABLE = ("trades", "fills", "trade_paths")
+_TRADE_ARTIFACTS = ("trades", "fills", "trade_paths")
 """The artifacts a page of the trades reads."""
 _EXACT = 2**53
 """The whole numbers a browser's number holds exactly lie within this, either side of zero."""
@@ -69,10 +74,13 @@ _AMBIGUOUS_AMONG = (
     "WHERE p.kind = 'fill' AND f.ambiguous AND p.trade IN (SELECT unnest(?::BIGINT[]))"
 )
 _SIGNS = {PnlSign.POSITIVE: "pnl > 0", PnlSign.NEGATIVE: "pnl < 0", PnlSign.ZERO: "pnl = 0"}
-_LIST: TypeAdapter[list[Any]] = TypeAdapter(list[Any])
-"""A `LIST` value DuckDB answered, its items whatever they are."""
-_MAP: TypeAdapter[dict[Any, Any]] = TypeAdapter(dict[Any, Any])
-"""A `STRUCT` or a `MAP` value DuckDB answered, its keys and values whatever they are."""
+_MEASURED = (
+    "SELECT count(*), coalesce(sum(strlen(to_json(answer)::VARCHAR)), 0) "
+    "FROM (SELECT * FROM (\n{select}\n) LIMIT {rows}) AS answer"
+)
+"""How many rows a SELECT answers, up to one past the cap, and the bytes of their JSON, worked out
+in DuckDB within its memory, so that an answer past either cap, such as one row that lists every
+point of every path, is refused before Python reads it."""
 
 
 @dataclass(frozen=True)
@@ -88,7 +96,7 @@ class DuckDbQueries:
         """The trades of the run in `folder` that `asked` keeps, in its order, after its cursor,
         at most its limit, with how many its filters keep; `FileNotFoundError` where an artifact
         is gone and `UnreadableArtifactError` where one does not read."""
-        connection = _locked(folder, _TABLE, converted=False)
+        connection = _locked(folder, _TRADE_ARTIFACTS, converted=False)
         try:
             return _trades(connection, asked)
         except duckdb.Error as unreadable:
@@ -102,25 +110,29 @@ class DuckDbQueries:
         and for an answer past the caps."""
         connection = _locked(folder, tuple(ARTIFACT_SCHEMAS), converted=True)
         try:
-            _refuse_all_but_one_select(connection, sql, folder)
-            columns, rows = self._fetched(connection, sql, folder)
+            select = _one_select(connection, sql, folder)
+            columns, rows = self._fetched(connection, select, folder)
         finally:
             connection.close()
-        return self._answer(columns, rows)
+        return self._answer(columns, rows, folder)
 
     def _fetched(
-        self, connection: duckdb.DuckDBPyConnection, sql: str, folder: Path
+        self, connection: duckdb.DuckDBPyConnection, select: str, folder: Path
     ) -> tuple[tuple[QueryColumn, ...], list[tuple[Any, ...]]]:
-        """The columns of `sql`'s answer and at most one row past `most_rows`, the query stopped
-        once `timeout_seconds` have passed."""
+        """The columns of `select`'s answer and its rows, measured first (`_MEASURED`) and refused
+        past `most_rows` or `most_bytes`, the query stopped once `timeout_seconds` have passed."""
         timer = threading.Timer(self.timeout_seconds, connection.interrupt)
         timer.start()
         try:
-            connection.execute(sql)
+            measured = _MEASURED.format(select=select, rows=self.most_rows + 1)
+            rows, size = _one_row(connection, measured)
+            self._refuse_past_caps(rows, size)
+            connection.execute(select)
             columns = tuple(
-                QueryColumn(name=name, type=str(kind)) for name, kind, *_ in connection.description
+                QueryColumn(name=_without_folders(name, folder), type=str(kind))
+                for name, kind, *_ in connection.description
             )
-            return columns, connection.fetchmany(self.most_rows + 1)
+            return columns, connection.fetchmany(self.most_rows)
         except duckdb.InterruptException as stopped:
             raise QueryRefusedError(
                 f"The query ran past {self.timeout_seconds:g} seconds, so FEAT stopped it: "
@@ -132,25 +144,30 @@ class DuckDbQueries:
             timer.cancel()
             timer.join()
 
-    def _answer(
-        self, columns: tuple[QueryColumn, ...], rows: Sequence[tuple[Any, ...]]
-    ) -> QueryAnswer:
-        """`rows` as JSON values, refused past `most_rows` or `most_bytes`."""
-        if len(rows) > self.most_rows:
+    def _refuse_past_caps(self, rows: int, size: int) -> None:
+        """Refuse an answer of more than `most_rows` rows or of more than `most_bytes` of JSON."""
+        if rows > self.most_rows:
             raise QueryRefusedError(
                 f"The query answers more than {self.most_rows:,} rows: add a LIMIT, or "
                 "aggregate the rows."
             )
+        if size > self.most_bytes:
+            raise QueryRefusedError(
+                f"The query's answer passes {self.most_bytes:,} bytes: select fewer columns or "
+                "rows."
+            )
+
+    def _answer(
+        self, columns: tuple[QueryColumn, ...], rows: Sequence[tuple[Any, ...]], folder: Path
+    ) -> QueryAnswer:
+        """`rows` as JSON values, refused past `most_bytes` as the server writes them, which
+        DuckDB's own JSON only measures."""
         answered: list[tuple[JsonValue, ...]] = []
         size = 0
         for row in rows:
-            values = tuple(_json_value(value) for value in row)
+            values = tuple(_json_value(value, folder) for value in row)
             size += len(json.dumps(values, ensure_ascii=False).encode())
-            if size > self.most_bytes:
-                raise QueryRefusedError(
-                    f"The query's answer passes {self.most_bytes:,} bytes: select fewer columns "
-                    "or rows."
-                )
+            self._refuse_past_caps(len(answered), size)
             answered.append(values)
         return QueryAnswer(columns=columns, rows=tuple(answered))
 
@@ -236,11 +253,8 @@ def _trades(connection: duckdb.DuckDBPyConnection, asked: TradesAsked) -> RawTra
     )
     names = [column[0] for column in connection.description]
     found = [dict(zip(names, row, strict=True)) for row in connection.fetchall()]
-    total = _counted(
-        connection,
-        f"{_shown(marked)} SELECT count(*) FROM shown WHERE {' AND '.join(terms) or 'true'}",
-        values,
-    )
+    counted = f"{_shown(marked)} SELECT count(*) FROM shown WHERE {' AND '.join(terms) or 'true'}"
+    total = int(_one_row(connection, counted, values)[0])
     more = asked.limit is not None and len(found) > asked.limit
     page = found[: asked.limit] if asked.limit is not None else found
     if not marked:
@@ -312,24 +326,26 @@ def _ambiguous_among(connection: duckdb.DuckDBPyConnection, trades: list[int]) -
     return {row[0] for row in connection.fetchall()}
 
 
-def _counted(connection: duckdb.DuckDBPyConnection, sql: str, values: list[object]) -> int:
+def _one_row(
+    connection: duckdb.DuckDBPyConnection, sql: str, values: Sequence[object] = ()
+) -> tuple[Any, ...]:
+    """The one row the aggregate `sql` answers."""
     connection.execute(sql, values)
     found = connection.fetchone()
     if found is None:
-        raise UnreadableArtifactError(f"Expected a count of the trades, got none from {sql!r}.")
-    return int(found[0])
+        raise ValueError(f"Expected one row from {sql!r}, got none.")
+    return found
 
 
-def _refuse_all_but_one_select(
-    connection: duckdb.DuckDBPyConnection, sql: str, folder: Path
-) -> None:
-    """Refuse `sql` unless it is one SELECT, as DuckDB's own parser reads it."""
+def _one_select(connection: duckdb.DuckDBPyConnection, sql: str, folder: Path) -> str:
+    """The one SELECT of `sql`, as DuckDB's own parser reads it, without the semicolon that may
+    end it; refused unless `sql` is one SELECT."""
     try:
         statements = connection.extract_statements(sql)
     except duckdb.Error as unreadable:
         raise QueryRefusedError(_scrubbed(unreadable, folder)) from unreadable
     if [statement.type for statement in statements] == [duckdb.StatementType.SELECT]:
-        return
+        return statements[0].query.strip().rstrip(";").rstrip()
     got = (
         f"a {statements[0].type.name} statement"
         if len(statements) == 1
@@ -341,10 +357,13 @@ def _refuse_all_but_one_select(
     )
 
 
-def _json_value(value: Any) -> JsonValue:
-    """A value DuckDB answered as a JSON value that a browser reads unchanged (`QueryAnswer`)."""
-    if value is None or isinstance(value, bool | str):
+def _json_value(value: Any, folder: Path) -> JsonValue:
+    """A value DuckDB answered as a JSON value that a browser reads unchanged (`QueryAnswer`),
+    a text naming no folder of this PC (`_without_folders`)."""
+    if value is None or isinstance(value, bool):
         return value
+    if isinstance(value, str):
+        return _without_folders(value, folder)
     if isinstance(value, int):
         return value if -_EXACT <= value <= _EXACT else str(value)
     if isinstance(value, float):
@@ -360,10 +379,13 @@ def _json_value(value: Any) -> JsonValue:
     if isinstance(value, bytes):
         return value.hex()
     if isinstance(value, list | tuple):
-        return [_json_value(each) for each in _LIST.validate_python(value)]
+        return [_json_value(each, folder) for each in cast("Sequence[Any]", value)]
     if isinstance(value, dict):
-        return {str(key): _json_value(each) for key, each in _MAP.validate_python(value).items()}
-    return str(value)
+        entries = cast("dict[Any, Any]", value).items()
+        return {
+            _without_folders(str(key), folder): _json_value(each, folder) for key, each in entries
+        }
+    return _without_folders(str(value), folder)
 
 
 def _instant_text(value: datetime) -> str:
@@ -377,11 +399,25 @@ def _instant_text(value: datetime) -> str:
 
 
 def _scrubbed(error: Exception, folder: Path) -> str:
-    """The first line of DuckDB's words, the run's folder named as the run, so that no folder of
-    this PC reaches an answer."""
+    """The first line of DuckDB's words, naming no folder of this PC (`_without_folders`)."""
     words = str(error).splitlines()[0] if str(error) else type(error).__name__
+    return _without_folders(words, folder)
+
+
+def _without_folders(text: str, folder: Path) -> str:
+    """`text` with the run's folder named as the run and the trader's own folder as `~`, so that
+    no folder of this PC, nor the user's name in it, reaches an answer, as a view's definition or
+    a setting of DuckDB's would carry them."""
     run = f"run {folder.name[:12]}"
-    return words.replace(folder.as_posix(), run).replace(str(folder), run)
+    home = Path.home()
+    for found, shown in (
+        (folder.as_posix(), run),
+        (str(folder), run),
+        (home.as_posix(), "~"),
+        (str(home), "~"),
+    ):
+        text = text.replace(found, shown)
+    return text
 
 
 def _literal(text: str) -> str:

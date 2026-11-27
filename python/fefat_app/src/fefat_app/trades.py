@@ -8,6 +8,7 @@ and from the adapter that reads the Parquet, `fefat_app.artifact_queries`."""
 
 import base64
 import binascii
+import math
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -22,6 +23,8 @@ from fefat.market.fidelity import FidelityText
 from fefat.reference.orders import OrderRole, PositionSide
 
 _NANOSECONDS_A_MINUTE = 60_000_000_000
+_INT64 = 2**63
+"""The whole numbers an artifact's 64-bit columns hold lie from minus this to one under it."""
 
 
 class TradeSort(StrEnum):
@@ -166,7 +169,15 @@ class TradeCursor(BaseModel):
     sort: TradeSort
     order: SortOrder
     value: int | float | None
-    trade: int = Field(ge=0)
+    trade: int = Field(ge=0, lt=_INT64)
+
+    @property
+    def fits_its_sort(self) -> bool:
+        """Whether `value` is a figure its sort can hold: an R multiple a finite float or none,
+        any other sort's a whole number the artifact's 64 bits hold."""
+        if self.sort is TradeSort.R_MULTIPLE:
+            return self.value is None or (type(self.value) is float and math.isfinite(self.value))
+        return type(self.value) is int and -_INT64 <= self.value < _INT64
 
     @classmethod
     def after(cls, last: RawTrade, shown: TradesShown) -> Self:
@@ -185,6 +196,11 @@ class TradeCursor(BaseModel):
             raise TradeCursorError(
                 f"Expected a cursor that a page of the run's trades gave, got {text!r}."
             ) from None
+        if not cursor.fits_its_sort:
+            raise TradeCursorError(
+                f"Expected a cursor that a page of the run's trades gave, got {text!r}, whose "
+                f"figure no trade's {cursor.sort} holds."
+            )
         if (cursor.sort, cursor.order) != (shown.sort, shown.order):
             raise TradeCursorError(
                 f"Expected a cursor of the trades by {shown.sort} {shown.order}, got one by "
@@ -223,11 +239,10 @@ def _money(units: int) -> Decimal:
     return Decimal(money_text(units))
 
 
-def _averaged_price(units: float) -> Decimal:
-    """A price in 1e-9 units that an average of exits made a float, as the decimal of its
-    shortest digits, such as 5000.083333333333."""
-    scaled = Decimal(repr(units)).scaleb(-PRICE_DECIMALS).normalize()
-    return Decimal(format(scaled, "f"))
+def _averaged_price(units: float) -> str:
+    """A price in 1e-9 units that an average of exits made a float, as the decimal text of its
+    shortest digits, such as 5000.083333333333, never in an exponent's form."""
+    return format(Decimal(repr(units)).scaleb(-PRICE_DECIMALS).normalize(), "f")
 
 
 class TradeRow(BaseModel):
@@ -247,10 +262,10 @@ class TradeRow(BaseModel):
     entry_trade_date: date
     entry_decision: str
     entry_ts: str
-    entry_price: Decimal
+    entry_price: str
     entry_contract: str
     exit_ts: str
-    exit_price: Decimal | None
+    exit_price: str | None
     exit_reason: OrderRole
     exit_contract: str
     exits: int
@@ -286,7 +301,7 @@ class TradeRow(BaseModel):
             entry_trade_date=raw.entry_trade_date,
             entry_decision=utc_text(raw.entry_decision),
             entry_ts=utc_text(raw.entry_ts),
-            entry_price=Decimal(price_text(raw.entry_price)),
+            entry_price=price_text(raw.entry_price),
             entry_contract=raw.entry_contract,
             exit_ts=utc_text(raw.exit_ts),
             exit_price=None if raw.exit_price is None else _averaged_price(raw.exit_price),

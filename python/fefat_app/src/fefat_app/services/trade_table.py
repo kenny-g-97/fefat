@@ -74,13 +74,13 @@ class TradeTable:
         """Every fill of the saved run `run`, one row an execution, in the order the run made
         them, under the names of the fills' columns (D-119), each sent as the phase's header
         says: an instant as ISO 8601 in UTC, a price and money as decimal text."""
+        units = UNIT_COLUMNS["fills"]
         with self.runs.reading(run) as opened:
             fills = opened.fills
-        units = UNIT_COLUMNS["fills"]
-        rows = [
-            [_in_units(value, units.get(column)) for column, value in fill.items()]
-            for fill in fills.iter_rows(named=True)
-        ]
+            rows = [
+                [_in_units(value, units.get(column), column) for column, value in fill.items()]
+                for fill in fills.iter_rows(named=True)
+            ]
         return ExportedFile(name=_file_name(opened, "executions"), text=_csv(fills.columns, rows))
 
     def query(self, run: str, sql: str) -> QueryAnswer:
@@ -100,10 +100,15 @@ def _file_name(run: Run, holds: str) -> str:
     return f"{strategy}-{run.hash[:12]}-{holds}.csv"
 
 
-def _in_units(value: object, unit: Unit | None) -> object:
-    """A value of an artifact in the instrument's units, as the phase's header sends it."""
-    if value is None or unit is None or not isinstance(value, int):
+def _in_units(value: object, unit: Unit | None, column: str) -> object:
+    """A value of the fills in the instrument's units, as the phase's header sends it; a column
+    `UNIT_COLUMNS` names holds whole engine units, and anything else there is refused."""
+    if value is None or unit is None:
         return value
+    if type(value) is not int:
+        raise ValueError(
+            f"Expected a whole number of {unit} units in the fills' {column}, got {value!r}."
+        )
     match unit:
         case Unit.INSTANT:
             return utc_text(value)
