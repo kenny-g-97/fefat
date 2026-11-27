@@ -143,6 +143,9 @@ export function TradesToolbar({
   )
 }
 
+/** The id of the From field, which Clear filters sends the focus to. */
+export const FROM_FIELD = "trades-start"
+
 type Dates = Readonly<{ start: string | undefined; end: string | undefined }>
 
 /** From and To, the trade dates of the entry, each checked against the other end as last kept
@@ -163,7 +166,7 @@ function DateRange({
   return (
     <>
       <DateField
-        id="trades-start"
+        id={FROM_FIELD}
         label="From"
         value={start}
         refused={(typed) =>
@@ -203,22 +206,30 @@ type DateFieldProps = Readonly<{
 }>
 
 /** A trade date typed as the app writes one, kept once left or on Enter (`KeptField`), empty
- * for every date; one the calendar does not hold, or out of order with the other end, is
- * refused under its field until it changes. */
+ * for every date; one the calendar does not hold, or out of order with the other end as it
+ * stands, is refused under its field until it is kept again or the address changes it. */
 function DateField({ id, label, value, refused, onKeep }: DateFieldProps) {
-  const [refusal, setRefusal] = useState<string | null>(null)
+  const [rejected, setRejected] = useState<string | null>(null)
+  const [given, setGiven] = useState(value)
+  if (given !== value) {
+    setGiven(value)
+    setRejected(null)
+  }
+  const refusalOf = (text: string) =>
+    text === ""
+      ? null
+      : isTradeDate(text)
+        ? refused(text)
+        : "Type a date such as 2026-03-05."
+  const refusal = rejected === null ? null : refusalOf(rejected)
   const keep = (typed: string) => {
     const text = typed.trim()
-    const why =
-      text === ""
-        ? null
-        : isTradeDate(text)
-          ? refused(text)
-          : "Type a date such as 2026-03-05."
-    setRefusal(why)
-    if (why === null) {
-      onKeep(text === "" ? undefined : text)
+    if (refusalOf(text) !== null) {
+      setRejected(text)
+      return
     }
+    setRejected(null)
+    onKeep(text === "" ? undefined : text)
   }
   return (
     <Choice id={id} label={label} refusal={refusal} className="w-36">

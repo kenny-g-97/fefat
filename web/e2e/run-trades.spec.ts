@@ -10,11 +10,14 @@ import { theSeededKey } from "./support/seeded-run.ts"
 
 // The trade table of step 5.8 against the seeded server (Done means 2): every cell of the
 // table is the API's trade, read here with the spec's own formatting; a header sorts and a
-// filter narrows the trades as the API does, kept in the page's address; a selected row emits
-// `selectedTrade` with the API's trade; the column chooser hides and shows; both exports
-// download the API's files; the SQL tab answers as the API does; only the rows near the view
-// are drawn; and the contrast modes. In UTC, so that the spec writes the table's instants
-// without the app's formatter.
+// filter narrows the trades as the API does, kept in the page's address, a sort chosen by the
+// keys keeping its focus; a refused date clears once fixed, and Clear filters clears every
+// field; a selected row emits `selectedTrade` with the API's trade; the column chooser hides
+// and shows; both exports download the API's files; the SQL tab answers as the API does; only
+// the rows near the view are drawn, the header and the entry column staying in view, one row in
+// the tab order, and a page that fails keeping the rows read; a price of many places fits its
+// column; and the contrast modes. In UTC, so that the spec writes the table's instants without
+// the app's formatter.
 test.use({ timezoneId: "UTC" })
 
 const trade = z.looseObject({
@@ -165,6 +168,57 @@ function grid(page: Page): Locator {
   return page.getByTestId("trade-grid")
 }
 
+/** Listens in the page for the next `selectedTrade`, the listener in place once this resolves,
+ * so that no action can come before it, and gives the trade it hears. */
+async function listenForSelectedTrade(
+  page: Page
+): Promise<() => Promise<unknown>> {
+  const listening = await page.evaluateHandle(() => ({
+    heard: new Promise((resolve) => {
+      window.addEventListener(
+        "selectedTrade",
+        (event) => resolve(event instanceof CustomEvent ? event.detail : null),
+        { once: true }
+      )
+    }),
+  }))
+  return () => listening.evaluate((box) => box.heard)
+}
+
+/** The trades route answering 5,000 copies of the seeded run's first trade, each its own, 200 a
+ * page, a page's cursor the number of its first trade; a page whose cursor `fails` holds
+ * answers 500. The cursors asked, `first` for the first page, in the order asked. */
+async function routeManyTrades(
+  page: Page,
+  key: string,
+  fails: (cursor: string) => boolean = () => false
+): Promise<string[]> {
+  const template = (await tradesOf(page, key)).trades[0]
+  const cursors: string[] = []
+  await page.route(
+    (url) => url.pathname === `/v1/runs/${key}/trades`,
+    async (route) => {
+      const cursor = new URL(route.request().url()).searchParams.get("cursor")
+      cursors.push(cursor ?? "first")
+      if (cursor !== null && fails(cursor)) {
+        await route.fulfill({
+          status: 500,
+          json: { detail: "The trades could not be read. Try again." },
+        })
+        return
+      }
+      const start = cursor === null ? 0 : Number(cursor)
+      const trades = Array.from({ length: 200 }, (_, at) => ({
+        ...template,
+        trade: start + at,
+      }))
+      const next = start + 200 < 5_000 ? String(start + 200) : null
+      await route.fulfill({ json: { trades, next_cursor: next, total: 5_000 } })
+    }
+  )
+  return cursors
+}
+
 test("every cell of the seeded run's trades is the API's, opened from the run's page", async ({
   loggedIn: page,
 }) => {
@@ -229,6 +283,27 @@ test("a header sorts the trades as the API does and says how, the worst MAE firs
   ).toHaveAttribute("aria-sort", "none")
 })
 
+test("a sort chosen by the keys keeps its focus, and Enter again turns its order", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  await page.goto(`/runs/run/trades?key=${key}`)
+  await expect(page.getByTestId("trade-row").first()).toBeVisible()
+  const sort = page.getByTestId("sort-mae_ticks")
+  const header = page.getByRole("columnheader", { name: "MAE ticks" })
+
+  await sort.focus()
+  await page.keyboard.press("Enter")
+
+  await expect(header).toHaveAttribute("aria-sort", "descending")
+  await expect(sort).toBeFocused()
+
+  await page.keyboard.press("Enter")
+
+  await expect(header).toHaveAttribute("aria-sort", "ascending")
+  await expect(sort).toBeFocused()
+})
+
 test("a filter keeps the trades the API keeps, and the address keeps it through a reload", async ({
   loggedIn: page,
 }) => {
@@ -283,6 +358,83 @@ test("a date out of order is refused at its field, and no trade matches a day wi
   await expect(page).not.toHaveURL(/start=|end=/)
 })
 
+test("a refused date clears once fixed, and Clear filters clears every field and goes to From", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  const every = (await tradesOf(page, key)).total
+  await page.goto(`/runs/run/trades?key=${key}`)
+  const from = page.getByRole("textbox", { name: "From" })
+  const to = page.getByRole("textbox", { name: "To" })
+  const unreadable = page.getByText("Type a date such as 2026-03-05.")
+
+  await from.fill("x")
+  await from.press("Enter")
+
+  await expect(unreadable).toBeVisible()
+  await expect(from).toHaveAttribute("aria-invalid", "true")
+
+  await from.fill("")
+  await from.press("Enter")
+
+  await expect(unreadable).toHaveCount(0)
+  await expect(from).toHaveAttribute("aria-invalid", "false")
+
+  await to.fill("2026-03-01")
+  await to.press("Enter")
+  await from.fill("x")
+  await from.press("Enter")
+  await expect(page.getByTestId("trades-count")).toHaveText(
+    "No trade matches these filters."
+  )
+
+  await page.getByRole("button", { name: "Clear filters" }).click()
+
+  await expect(from).toBeFocused()
+  await expect(from).toHaveValue("")
+  await expect(to).toHaveValue("")
+  await expect(unreadable).toHaveCount(0)
+  await expect(page.getByTestId("trades-count")).toHaveText(
+    `${every.toLocaleString("en-US")} trades`
+  )
+})
+
+test("an averaged exit price and a price under a millionth fit their columns whole", async ({
+  loggedIn: page,
+}) => {
+  // A scale-out averages a trade's exits into many places, which every exit price lines up to.
+  const key = await theSeededKey(page)
+  const seeded = await tradesOf(page, key)
+  const [averaged, tiny, ...rest] = seeded.trades
+  const trades = [
+    { ...averaged, exit_price: "5017.083333333333" },
+    { ...tiny, entry_price: "0.000000123" },
+    ...rest,
+  ]
+  await page.route(
+    (url) => url.pathname === `/v1/runs/${key}/trades`,
+    (route) => route.fulfill({ json: { ...seeded, trades } })
+  )
+  await page.goto(`/runs/run/trades?key=${key}`)
+  const rows = page.getByTestId("trade-row")
+  await expect(rows.nth(1)).toBeVisible()
+
+  for (const column of ["Entry price", "Exit price"]) {
+    const cells = rows.locator(`td:nth-child(${SHOWN.indexOf(column) + 1})`)
+    const clipped = await cells.evaluateAll(
+      (found) =>
+        found.filter((cell) => cell.scrollWidth > cell.clientWidth).length
+    )
+    expect(clipped, column).toBe(0)
+  }
+  await expect(
+    rows.nth(0).locator("td").nth(SHOWN.indexOf("Exit price"))
+  ).toHaveText("5017.083333333333")
+  await expect(
+    rows.nth(1).locator("td").nth(SHOWN.indexOf("Entry price"))
+  ).toHaveText("0.000000123")
+})
+
 test("selecting a row emits selectedTrade with the API's trade, and the keys move it", async ({
   loggedIn: page,
 }) => {
@@ -292,29 +444,17 @@ test("selecting a row emits selectedTrade with the API's trade, and the keys mov
   await page.goto(`/runs/run/trades?key=${key}`)
   const rows = page.getByTestId("trade-row")
   await expect(rows.nth(2)).toBeVisible()
-  const heard = (): Promise<unknown> =>
-    page.evaluate(
-      () =>
-        new Promise((resolve) => {
-          window.addEventListener(
-            "selectedTrade",
-            (event) =>
-              resolve(event instanceof CustomEvent ? event.detail : null),
-            { once: true }
-          )
-        })
-    )
 
-  const third = heard()
+  const third = await listenForSelectedTrade(page)
   await rows.nth(2).click()
 
-  expect(await third).toEqual(expected.trades[2])
+  expect(await third()).toEqual(expected.trades[2])
   await expect(rows.nth(2)).toHaveAttribute("aria-selected", "true")
 
-  const fourth = heard()
+  const fourth = await listenForSelectedTrade(page)
   await page.keyboard.press("ArrowDown")
 
-  expect(await fourth).toEqual(expected.trades[3])
+  expect(await fourth()).toEqual(expected.trades[3])
   const next = page.locator('[data-testid="trade-row"][data-index="3"]')
   await expect(next).toHaveAttribute("aria-selected", "true")
   await expect(next).toBeFocused()
@@ -438,6 +578,24 @@ test("the SQL tab answers a query as the API does and says why it refuses a writ
   await screenshot(page, "run-trades-sql")
   expect(errors).toEqual([])
 
+  await page
+    .getByTestId("run-sql")
+    .fill(
+      "SELECT count(*) AS trades, list(lots) AS lots, sum(pnl) AS pnl FROM trades"
+    )
+  await page.getByRole("button", { name: "Run query" }).click()
+
+  await expect(page.getByTestId("run-sql-count")).toHaveText("1 row")
+  expect(
+    await page
+      .getByTestId("run-sql-row")
+      .first()
+      .locator("td")
+      .evaluateAll((cells) =>
+        cells.map((cell) => getComputedStyle(cell).textAlign)
+      )
+  ).toEqual(["right", "left", "right"])
+
   await page.getByTestId("run-sql").fill(write)
   await page.getByTestId("run-sql").press("Control+Enter")
 
@@ -455,22 +613,7 @@ test("only the rows near the view are drawn, and a scroll to the end reads the n
 }) => {
   // Done means 1's other half: 5,000 trades page through the table without loading them all.
   const key = await theSeededKey(page)
-  const template = (await tradesOf(page, key)).trades[0]
-  const cursors: string[] = []
-  await page.route(
-    (url) => url.pathname === `/v1/runs/${key}/trades`,
-    async (route) => {
-      const cursor = new URL(route.request().url()).searchParams.get("cursor")
-      cursors.push(cursor ?? "first")
-      const start = cursor === null ? 0 : Number(cursor)
-      const trades = Array.from({ length: 200 }, (_, at) => ({
-        ...template,
-        trade: start + at,
-      }))
-      const next = start + 200 < 5_000 ? String(start + 200) : null
-      await route.fulfill({ json: { trades, next_cursor: next, total: 5_000 } })
-    }
-  )
+  const cursors = await routeManyTrades(page, key)
   await page.goto(`/runs/run/trades?key=${key}`)
   await expect(page.getByTestId("trades-count")).toHaveText("5,000 trades")
   expect(await page.getByTestId("trade-row").count()).toBeLessThan(60)
@@ -481,6 +624,62 @@ test("only the rows near the view are drawn, and a scroll to the end reads the n
   await expect.poll(() => cursors).toEqual(["first", "200"])
   await expect(page.locator('[data-index="199"]')).toBeVisible()
   expect(await page.getByTestId("trade-row").count()).toBeLessThan(60)
+})
+
+test("scrolled down and right, the header row and the entry column stay, and one row is tabbable", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  await routeManyTrades(page, key)
+  await page.goto(`/runs/run/trades?key=${key}`)
+  await expect(page.getByTestId("trades-count")).toHaveText("5,000 trades")
+
+  // 120 rows down, the row under the header is the 121st, whole.
+  await grid(page).evaluate((box) => box.scrollTo(box.scrollWidth, 40 * 120))
+
+  const row = page.locator('[data-testid="trade-row"][data-index="120"]')
+  await expect(row).toBeInViewport()
+  await expect(
+    page.getByRole("columnheader", { name: "Entry", exact: true })
+  ).toBeInViewport()
+  await expect(
+    page.getByRole("columnheader", { name: "Ambiguous" })
+  ).toBeInViewport()
+  await expect(row.locator("td").first()).toBeInViewport()
+  await expect(
+    row.locator("td").nth(SHOWN.indexOf("Entry price"))
+  ).not.toBeInViewport()
+  const tabbable = page.locator('[data-testid="trade-row"][tabindex="0"]')
+  await expect(tabbable).toHaveCount(1)
+  await expect(tabbable).toHaveAttribute("data-index", "120")
+})
+
+test("a page that fails to come keeps the rows read, and Try again reads it", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  let failing = true
+  const cursors = await routeManyTrades(page, key, () => failing)
+  await page.goto(`/runs/run/trades?key=${key}`)
+  await expect(page.getByTestId("trades-count")).toHaveText("5,000 trades")
+
+  await grid(page).evaluate((box) => box.scrollTo(0, box.scrollHeight))
+
+  const again = page.getByRole("button", { name: "Try again" })
+  await expect(again).toBeVisible()
+  await expect(
+    page.getByText("The trades could not be read. Try again.")
+  ).toBeVisible()
+  await expect(page.locator('[data-index="199"]')).toBeVisible()
+  expect(cursors).toEqual(["first", "200"])
+
+  failing = false
+  await again.click()
+
+  await expect(again).toHaveCount(0)
+  await expect.poll(() => cursors).toEqual(["first", "200", "200"])
+  await grid(page).evaluate((box) => box.scrollTo(0, box.scrollHeight))
+  await expect.poll(() => cursors).toEqual(["first", "200", "200", "400"])
 })
 
 test("more contrast raises the hairlines and the body and subtle text in both themes", async ({

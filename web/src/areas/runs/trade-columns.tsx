@@ -27,22 +27,27 @@ export const TRADE_TABLE_FEATURES = tableFeatures({
   columnVisibilityFeature,
 })
 
-/** What the trade table's cells read beyond their trade: the run's currency, and the places each
- * price column lines its points up at, the most its trades hold. */
+/** A column of decimals as the trades read so far write it: the most places any holds, at which
+ * every point lines up, and the characters of the widest so written. */
+export type DecimalColumn = Readonly<{ places: number; characters: number }>
+
+/** What the trade table's cells read beyond their trade: the run's currency, and how each price
+ * column lines its points up (`DecimalColumn`). */
 export type TradeLook = Readonly<{
   currency: Currency | null
-  entryPlaces: number
-  exitPlaces: number
+  entry: DecimalColumn
+  exit: DecimalColumn
 }>
 
 /** A column of the trade table (web/DESIGN.md, Patterns, Trade table): the trade's field it
- * shows, its header, its width, whether it holds figures, aligned right, whether it shows until
- * hidden, how the server sorts by it, if it does, and its cell. */
+ * shows, its header, its width, or how it fits its widest cell with the look, whether it holds
+ * figures, aligned right, whether it shows until hidden, how the server sorts by it, if it
+ * does, and its cell. */
 export type TradeColumn = Readonly<{
   id: string
   field: keyof Trade
   label: string
-  width: string
+  width: string | ((look: TradeLook) => string)
   figure: boolean
   shown: boolean
   sort: Readonly<{ by: TradeSort; descFirst: boolean }> | null
@@ -75,6 +80,12 @@ function chip(contract: string): ReactNode {
   return <IdentityChip>{contract}</IdentityChip>
 }
 
+/** The width of a price column: 8 rem, or its widest text and the cell's padding where wider,
+ * each monospaced figure a `ch`. */
+function fitted(column: DecimalColumn): string {
+  return `max(8rem, calc(${column.characters}ch + 1rem))`
+}
+
 /** Every column the trade table can show, in the order it shows them: the step's own first,
  * shown until hidden, then the rest of the trade's columns, hidden until shown. */
 export const TRADE_COLUMNS: readonly TradeColumn[] = [
@@ -96,11 +107,11 @@ export const TRADE_COLUMNS: readonly TradeColumn[] = [
     id: "entry_price",
     field: "entry_price",
     label: "Entry price",
-    width: "8rem",
+    width: (look) => fitted(look.entry),
     figure: true,
     shown: true,
     sort: null,
-    cell: (trade, look) => alignedText(trade.entry_price, look.entryPlaces),
+    cell: (trade, look) => alignedText(trade.entry_price, look.entry.places),
   },
   {
     id: "exit_ts",
@@ -116,14 +127,14 @@ export const TRADE_COLUMNS: readonly TradeColumn[] = [
     id: "exit_price",
     field: "exit_price",
     label: "Exit price",
-    width: "8rem",
+    width: (look) => fitted(look.exit),
     figure: true,
     shown: true,
     sort: null,
     cell: (trade, look) =>
       trade.exit_price === null
         ? NONE
-        : alignedText(trade.exit_price, look.exitPlaces),
+        : alignedText(trade.exit_price, look.exit.places),
   },
   {
     id: "side",
@@ -446,15 +457,20 @@ export function tradeColumn(id: string): TradeColumn {
   return found
 }
 
-const helper = createColumnHelper<typeof TRADE_TABLE_FEATURES, Trade>()
+/** The width the column `column` takes with `look`. */
+export function columnWidth(column: TradeColumn, look: TradeLook): string {
+  return typeof column.width === "string" ? column.width : column.width(look)
+}
+
+const columnBuilder = createColumnHelper<typeof TRADE_TABLE_FEATURES, Trade>()
 
 /** The trade table's columns as TanStack Table defines them: each reads its trade's field, the
  * server sorting by those that sort, and draws its cell with `look`; the entry's instant, which
  * names a trade, never hides. */
 export function tableColumns(look: TradeLook) {
-  return helper.columns(
+  return columnBuilder.columns(
     TRADE_COLUMNS.map((column) =>
-      helper.accessor((trade) => trade[column.field], {
+      columnBuilder.accessor((trade) => trade[column.field], {
         id: column.id,
         header: column.label,
         cell: (context) => column.cell(context.row.original, look),

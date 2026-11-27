@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate, useSearch } from "@tanstack/react-router"
 import { Download } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { runStatisticsQuery } from "@/api/run-results"
 import { runQuery } from "@/api/runs"
 import {
@@ -20,7 +20,7 @@ import { RunKey } from "./RunStatusLine"
 import { resultsLine } from "./run-words"
 import { SqlTab } from "./SqlTab"
 import { TradesTable } from "./TradesTable"
-import { type TradesAsked, TradesToolbar } from "./TradesToolbar"
+import { FROM_FIELD, type TradesAsked, TradesToolbar } from "./TradesToolbar"
 
 const TITLE = "Trades"
 
@@ -54,6 +54,13 @@ function TradesOfRun({
   const statistics = useQuery(runStatisticsQuery(runKey))
   const navigate = useNavigate({ from: "/runs/run/trades" })
   const [visibility, setVisibility] = useState(keptColumns)
+  const [clears, setClears] = useState(0)
+  useEffect(() => {
+    const from = document.getElementById(FROM_FIELD)
+    if (clears > 0 && from !== null) {
+      from.focus()
+    }
+  }, [clears])
   const shown = shownOf(search)
   const filtered = FILTERS.some((filter) => search[filter] !== undefined)
   const saved = run.data?.state === "saved" ? run.data : null
@@ -112,6 +119,7 @@ function TradesOfRun({
             className="flex min-h-0 flex-col gap-5 data-[state=inactive]:hidden"
           >
             <TradesToolbar
+              key={clears}
               search={search}
               exitReasons={
                 breakdowns === null ? [] : Object.keys(breakdowns.exit_reason)
@@ -137,7 +145,10 @@ function TradesOfRun({
                   order: order === "asc" ? undefined : order,
                 })
               }
-              onClear={() => ask(CLEARED)}
+              onClear={() => {
+                ask(CLEARED)
+                setClears((count) => count + 1)
+              }}
             />
           </TabsContent>
           <TabsContent

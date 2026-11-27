@@ -1,10 +1,12 @@
 import { flexRender, type Header, useTable } from "@tanstack/react-table"
+import type { VirtualItem } from "@tanstack/react-virtual"
 import { cn } from "cn"
 import { ArrowDown, ArrowUp } from "lucide-react"
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import type { Trade, TradeSort } from "@/api/trades"
 import { announceSelectedTrade } from "./selected-trade"
 import {
+  columnWidth,
   TRADE_TABLE_FEATURES,
   type TradeLook,
   tableColumns,
@@ -23,7 +25,7 @@ const ARIA_SORT = { asc: "ascending", desc: "descending" } as const
 
 type TradeGridProps = Readonly<{
   trades: readonly Trade[]
-  total: number
+  total: number | null
   look: TradeLook
   visibility: Readonly<Record<string, boolean>>
   sort: TradeSort
@@ -34,8 +36,9 @@ type TradeGridProps = Readonly<{
 
 /** The trades read so far as a data grid (web/DESIGN.md, Patterns, Data grid): a card that
  * scrolls both ways, no taller than its rows, its header row and its entry column standing
- * still, only the rows near its view drawn; a row chosen by the pointer, Enter, or Space, or
- * reached by the arrows, is the selected trade, which `announceSelectedTrade` tells the page. */
+ * still, only the rows near its view drawn, busy without rows while `total` is not known yet; a
+ * row chosen by the pointer, Enter, or Space, or reached by the arrows, is the selected trade,
+ * which `announceSelectedTrade` tells the page. */
 export function TradeGrid({
   trades,
   total,
@@ -116,10 +119,10 @@ export function TradeGrid({
     }
   }
   const selectedIndex = trades.findIndex((trade) => trade.trade === selected)
-  const reachable = selectedIndex === -1 ? 0 : selectedIndex
+  const reachable = tabbableRow(rows, selectedIndex, virtualizer.scrollOffset)
   const headers = table.getHeaderGroups().at(0)?.headers ?? []
-  const widths = columnWidths(
-    headers.map((header) => tradeColumn(header.column.id).width)
+  const widths = edgeWidths(
+    headers.map((header) => columnWidth(tradeColumn(header.column.id), look))
   )
   const modelRows = table.getRowModel().rows
   return (
@@ -133,15 +136,14 @@ export function TradeGrid({
       <table
         role="grid"
         aria-label="Trades"
-        aria-rowcount={total + 1}
+        aria-rowcount={total === null ? -1 : total + 1}
+        aria-busy={total === null}
         className="table-fixed border-separate border-spacing-0"
-        style={{
-          width: `max(100%, ${widths.reduce((sum, width) => sum + width, 0)}rem)`,
-        }}
+        style={{ width: `max(100%, calc(${widths.join(" + ")}))` }}
       >
         <colgroup>
           {headers.map((header, index) => (
-            <col key={header.id} style={{ width: `${widths[index]}rem` }} />
+            <col key={header.id} style={{ width: widths[index] }} />
           ))}
         </colgroup>
         <thead data-slot="grid-head">
@@ -185,14 +187,30 @@ export function TradeGrid({
   )
 }
 
-/** The visible columns' widths in rem, the first and the last widened by the card's edge. */
-function columnWidths(widths: readonly string[]): number[] {
-  return widths.map(
-    (width, index) =>
-      Number.parseFloat(width) +
-      (index === 0 ? EDGE : 0) +
-      (index === widths.length - 1 ? EDGE : 0)
-  )
+/** The visible columns' widths as CSS lengths, the first and the last widened by the card's
+ * edge. */
+function edgeWidths(widths: readonly string[]): string[] {
+  return widths.map((width, index) => {
+    const edges =
+      (index === 0 ? EDGE : 0) + (index === widths.length - 1 ? EDGE : 0)
+    return edges === 0 ? width : `calc(${width} + ${edges}rem)`
+  })
+}
+
+/** The row that Tab reaches and the arrows move from: the selected trade's while it is drawn,
+ * else the first drawn whole under the header row, so that a scrolled grid keeps one row in the
+ * tab order. */
+function tabbableRow(
+  rows: readonly VirtualItem[],
+  selected: number,
+  scrolled: number | null
+): number | null {
+  if (rows.some((drawn) => drawn.index === selected)) {
+    return selected
+  }
+  const top = (scrolled === null ? 0 : scrolled) + ROW_HEIGHT
+  const inView = rows.find((drawn) => drawn.start >= top)
+  return inView === undefined ? null : inView.index
 }
 
 function cellLook(figure: boolean): string {

@@ -10,9 +10,10 @@ import { ROW_HEIGHT, useVirtualRows } from "./virtual-rows"
 
 /** The query a SQL tab opens with: the trades as their table shows them, a page's worth. */
 const FIRST_QUERY = "SELECT * FROM trades ORDER BY trade LIMIT 100"
-/** DuckDB's types of whole numbers and decimals, whose cells align right. */
+/** DuckDB's types of whole numbers and decimals, whose cells align right; a list of them, an
+ * interval, and every other type align left. */
 const FIGURE_TYPE =
-  /^(U?(TINY|SMALL|BIG|HUGE)?INT(EGER)?|DOUBLE|FLOAT|REAL|DECIMAL)/
+  /^(U?(TINY|SMALL|BIG|HUGE)?INT(EGER)?|DOUBLE|FLOAT|REAL|DECIMAL(\(\d+,\s*\d+\))?)$/
 
 /** The trade table's SQL tab (web/DESIGN.md, Patterns, SQL tab): one SELECT over the run's
  * artifacts, run by Run query or Ctrl+Enter, the server's refusal under it in its words, and the

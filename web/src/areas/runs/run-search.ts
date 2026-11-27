@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { components } from "@/api/schema"
+import { isTradeDate } from "@/ui/trade-date"
 
 /** The statuses a run takes, its job's until it is saved. */
 export const RUN_STATUSES = [
@@ -84,24 +85,32 @@ const ORDERS = [
   "asc",
   "desc",
 ] as const satisfies readonly Schemas["SortOrder"][]
-const TRADE_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
 const FIDELITY = /^(trades|tbbo|[0-9]+[smhd])$/
 
 /** A saved run's trades (step 5.8): the run by its key, the SQL tab or the table, and what the
  * table asks, its filters and its order, kept in the address as the Runs page keeps its filters,
- * so that a reload and a link keep them; a value the page cannot read is left out. */
-export const tradesSearch = z.object({
-  key: runSearch.shape.key,
-  tab: z.literal("sql").optional().catch(undefined),
-  side: z.enum(SIDES).optional().catch(undefined),
-  exit_reason: z.enum(FILL_ROLES).optional().catch(undefined),
-  start: z.string().regex(TRADE_DATE).optional().catch(undefined),
-  end: z.string().regex(TRADE_DATE).optional().catch(undefined),
-  pnl_sign: z.enum(PNL_SIGNS).optional().catch(undefined),
-  fidelity: z.string().regex(FIDELITY).optional().catch(undefined),
-  ambiguous: z.boolean().optional().catch(undefined),
-  sort: z.enum(TRADE_SORTS).optional().catch(undefined),
-  order: z.enum(ORDERS).optional().catch(undefined),
-})
+ * so that a reload and a link keep them; a value the page cannot read is left out, a date the
+ * calendar does not hold among them, and both dates where From comes after To. */
+export const tradesSearch = z
+  .object({
+    key: runSearch.shape.key,
+    tab: z.literal("sql").optional().catch(undefined),
+    side: z.enum(SIDES).optional().catch(undefined),
+    exit_reason: z.enum(FILL_ROLES).optional().catch(undefined),
+    start: z.string().refine(isTradeDate).optional().catch(undefined),
+    end: z.string().refine(isTradeDate).optional().catch(undefined),
+    pnl_sign: z.enum(PNL_SIGNS).optional().catch(undefined),
+    fidelity: z.string().regex(FIDELITY).optional().catch(undefined),
+    ambiguous: z.boolean().optional().catch(undefined),
+    sort: z.enum(TRADE_SORTS).optional().catch(undefined),
+    order: z.enum(ORDERS).optional().catch(undefined),
+  })
+  .transform((search) =>
+    search.start !== undefined &&
+    search.end !== undefined &&
+    search.start > search.end
+      ? { ...search, start: undefined, end: undefined }
+      : search
+  )
 
 export type TradesSearch = z.infer<typeof tradesSearch>
