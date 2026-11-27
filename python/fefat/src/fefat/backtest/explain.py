@@ -18,37 +18,30 @@ fidelities, a trade of trade prints across a roll, and a trade entered by revers
 are refused (`BACKLOG.md`)."""
 
 import os
-import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
-from pathlib import PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import polars as pl
 
+from fefat.backtest.explain_episode import Episode, Trade, episode_of
 from fefat.backtest.pinned_data import pinned_snapshots
-from fefat.backtest.record import RollRecord, RunRecord
+from fefat.backtest.record import RunRecord
 from fefat.config import resolve_paths
-from fefat.market.api import load, roll_calendar
 from fefat.market.calendar import SessionTable
 from fefat.market.fees import TABLES
 from fefat.market.fidelity import TickFidelity, fidelity_in_words, parse_fidelity
-from fefat.market.layout import Partition
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import Timeframe
-from fefat.market.snapshot import FileDigest, Snapshot
 from fefat.market.store import Store
 from fefat.reference.costs import RunFees
 from fefat.reference.engine import ReferenceEngine
 from fefat.reference.hours import CalendarHours
-from fefat.reference.rolls import RollRow, rolls_within, tape_across_rolls
 from fefat.reference.run_documents import fees_document, hours_document
 from fefat.reference.rust_batch import FillView
 from fefat.reference.rust_run import fill_text
-from fefat.reference.strategy import Decision, decisions_of
-from fefat.reference.tape import BarRecord, FundingRate, Record, stored_bars, tape_of_trades
+from fefat.reference.tape import BarRecord, Record
 from fefat.reference.template import TemplateStrategy
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_text, instrument_parameters, money_text, price_text
@@ -56,8 +49,6 @@ from fefat.strategy.spec import StrategySpec
 
 if TYPE_CHECKING:
     from fefat.backtest.runs import Run
-
-type Trade = dict[str, Any]
 
 
 @dataclass(frozen=True, repr=False)
@@ -94,21 +85,6 @@ class EnginesDisagreementError(AssertionError):
         self.reference, self.rust = reference, rust
 
 
-@dataclass(frozen=True)
-class _Episode:
-    """What the reference replays of a trade: its records, the rolls they cross, the front they
-    start on, the signal frame the template reads, the decisions, the cash at the first, and the
-    funding paid while it is open."""
-
-    tape: tuple[Record, ...]
-    rolls: tuple[RollRow, ...]
-    contract: str
-    frame: pl.DataFrame
-    decisions: tuple[Decision, ...]
-    cash: int
-    funding: tuple[FundingRate, ...]
-
-
 def explain(run: "Run", trade_id: int) -> Explanation:
     """Trade `trade_id` of `run` replayed through the reference engine (module docstring);
     `EnginesDisagreementError` when its fills are not the Rust engine's."""
@@ -130,7 +106,7 @@ def explain(run: "Run", trade_id: int) -> Explanation:
     root = record.instrument.root
     sessions = instrument_table(paths.data_dir).sessions_of(root, paths.cache_dir)
     fees = _the_runs_fees_and_calendar(run, sessions)
-    episode = _episode(run, trade, fidelity, exit_date, store, snapshots)
+    episode = episode_of(run, trade, fidelity, exit_date, store, snapshots)
     first_id = _first_order(run.orders, trade)
     replayed = _replayed(record, episode, (fidelity, fees), first_id, sessions)
     reference = _through_exit((FillView.of(fill) for fill in replayed.fills), trade)
@@ -232,138 +208,9 @@ def _the_runs_fees_and_calendar(run: "Run", sessions: SessionTable) -> RunFees:
     return fees
 
 
-def _episode(
-    run: "Run",
-    trade: Trade,
-    fidelity: TickFidelity | Timeframe,
-    exit_date: date,
-    store: Store,
-    snapshots: dict[str, Snapshot],
-) -> _Episode:
-    """The records, rolls, signal rows, decisions, cash, and funding of the trade's episode."""
-    entered, left = trade["entry_decision"], trade["exit_ts"]
-    decided = run.signals.filter(pl.col("ts_close") == entered).row(0, named=True)
-    account = run.equity(str(run.record.strategy.spec["timeframe"]))
-    flat = account.filter(pl.col("ts") == entered).row(0, named=True)
-    if flat["position"] != 0:
-        raise ValueError(
-            f"Expected trade {trade['entry_order']} entered from flat, got it entered by "
-            f"reversing a position of {flat['position']} lots, which a replay from flat cannot "
-            "give (BACKLOG.md)."
-        )
-    first = decided["trade_date"]
-    if isinstance(fidelity, Timeframe):
-        tape, rolls, contract = _bars(run.record, fidelity, (first, exit_date), (entered, left))
-    else:
-        snapshot = snapshots[str(TickFidelity.TRADES)]
-        prints = _prints(trade, decided, (first, exit_date), run.record.rolls, (store, snapshot))
-        tape, rolls, contract = _cut(prints, entered, left), (), decided["contract"]
-    frame = run.signals.filter(pl.col("ts_close") >= entered, pl.col("trade_date") <= exit_date)
-    return _Episode(
-        tape=tape,
-        rolls=rolls,
-        contract=contract,
-        frame=frame,
-        decisions=decisions_of(frame.filter(pl.col("ts_close") <= left)),
-        cash=flat["cash"],
-        funding=_funding(run.record, tape[0].starts_at(), left),
-    )
-
-
-def _bars(
-    record: RunRecord,
-    timeframe: Timeframe,
-    dates: tuple[date, date],
-    instants: tuple[int, int],
-) -> tuple[tuple[Record, ...], tuple[RollRow, ...], str]:
-    """The episode's stored bars of `timeframe`, which the engine replayed, not bars `load`
-    would build from finer data, spliced as `load` splices them, or of the run's one contract
-    unspliced (`RunConfig.contract`), and cut to the episode; the rolls they cross, none on one
-    contract; and the front of the first. `load`'s warnings are the run's record's."""
-    root, provider = record.instrument.root, record.config.provider
-    contract = record.config.contract
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        frame = load(
-            root if contract is None else contract,
-            str(timeframe),
-            *dates,
-            fidelity=timeframe,
-            provider=provider,
-        ).collect()
-    if contract is not None:
-        return _cut(stored_bars(frame), *instants), (), contract
-    calendar = roll_calendar(root, provider=provider)
-    bars, _ = tape_across_rolls(frame, calendar)
-    tape = _cut(bars, *instants)
-    first = frame.filter(pl.col("ts_close") == tape[0].available_at())
-    return tape, rolls_within(calendar, tape), first.get_column("contract").item()
-
-
-def _prints(
-    trade: Trade,
-    decided: dict[str, Any],
-    dates: tuple[date, date],
-    rolls: Sequence[RollRecord],
-    pinned: tuple[Store, Snapshot],
-) -> tuple[Record, ...]:
-    """The trade prints of the episode's contract from the run's snapshot, from the last one at
-    or before the entry's decision to the exit, cut before they become records: refused for an
-    episode that crosses one of the run's rolls, which transfers or, under flatten, closes the
-    trade (F-ROL-02, F-ROL-04), since the replay of prints takes one contract's."""
-    contract = trade["entry_contract"]
-    crossed = [roll for roll in rolls if dates[0] < roll.trade_date <= dates[1]]
-    if crossed or {decided["contract"], trade["exit_contract"]} != {contract}:
-        across = (
-            f"crosses the roll of {crossed[0].trade_date} to {crossed[0].contract}"
-            if crossed
-            else f"runs from {decided['contract']} to {trade['exit_contract']}"
-        )
-        raise ValueError(
-            f"Expected trade {trade['entry_order']} of trade prints within one front, got an "
-            f"episode that {across}: a replay of prints across a roll waits (BACKLOG.md)."
-        )
-    store, snapshot = pinned
-    held = [digest for digest in snapshot.partitions if _holds(digest, contract, dates)]
-    frame = pl.concat([store.read_pinned_partition(snapshot, digest) for digest in held])
-    entered, left = trade["entry_decision"], trade["exit_ts"]
-    before = frame.filter(pl.col("ts_recv") <= entered).get_column("ts_recv").max()
-    start = before if isinstance(before, int) else entered
-    return tape_of_trades(frame.filter(pl.col("ts_recv").is_between(start, left)))
-
-
-def _holds(digest: FileDigest, contract: str, dates: tuple[date, date]) -> bool:
-    """Whether the pinned partition holds `contract`'s prints on one of `dates`' trade dates."""
-    partition = Partition.from_relative_path(PurePosixPath(digest.path))
-    key = partition.key
-    return partition.contract == contract and isinstance(key, date) and dates[0] <= key <= dates[1]
-
-
-def _cut(records: Sequence[Record], entered: int, left: int) -> tuple[Record, ...]:
-    """The records from the last one available at or before the decision at `entered`, whose
-    price the decision reads, to the last available by `left`, the fill that left the trade
-    flat."""
-    before = [record for record in records if record.available_at() <= entered]
-    during = [record for record in records if entered < record.available_at() <= left]
-    return (*before[-1:], *during)
-
-
-def _funding(record: RunRecord, first: int, last: int) -> tuple[FundingRate, ...]:
-    """The funding rates the run paid from `first` to `last`, as its config gave the engine,
-    each read back through the reference's own model, which refuses a malformed one, and
-    written for it in fixed notation, since `str` writes a rate of zero as `0E-9`."""
-    rates = (
-        FundingRate.model_validate(
-            {"ts": instant_text(rate["ts"]), "rate": format(Decimal(rate["rate"]).scaleb(-9), "f")}
-        )
-        for rate in record.engine_config["funding"]
-    )
-    return tuple(rate for rate in rates if first <= rate.ts <= last)
-
-
 def _replayed(
     record: RunRecord,
-    episode: _Episode,
+    episode: Episode,
     priced: tuple[TickFidelity | Timeframe, RunFees],
     first_id: int,
     sessions: SessionTable,
