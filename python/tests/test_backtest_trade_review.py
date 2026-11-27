@@ -50,9 +50,31 @@ def atr_breakout() -> ff.SignalStrategy:
     )
 
 
-def backtest(config: RunConfig | None = None) -> Run:
+def short_breakdown() -> ff.SignalStrategy:
+    """The breakout turned over: short under the lowest close of the hour before, its stop at
+    one and a half ATRs over the entry, its target at 2 R."""
+    close = pl.col("close")
+    return ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        features={
+            "lowest": close.rolling_min(12).shift(1),
+            "atr": (pl.col("high") - pl.col("low")).rolling_mean(14),
+        },
+        long_entry=pl.lit(False),
+        short_entry=close < pl.col("lowest"),
+        execution=ff.Execution(
+            entry=ff.Market(),
+            stop=ff.Stop(atr=1.5),
+            targets=[ff.Target(r=2)],
+            sizing=ff.Fixed(1),
+        ),
+    )
+
+
+def backtest(config: RunConfig | None = None, strategy: ff.SignalStrategy | None = None) -> Run:
     with pytest.warns(UserWarning, match="F-FEE-01"):
-        return ff.backtest.run(atr_breakout(), START, END, config)
+        return ff.backtest.run(atr_breakout() if strategy is None else strategy, START, END, config)
 
 
 def signal_bars(start: str, end: str) -> pl.DataFrame:
@@ -116,27 +138,27 @@ def test_a_fill_lies_on_the_bar_its_fidelity_places_it_on() -> None:
 
 
 def test_the_features_the_exit_rules_read_as_a_distance_are_those_of_atr_rules() -> None:
-    spec = {
-        "execution": {
-            "stop": {"kind": "atr", "multiple": 1.5, "feature": "atr"},
-            "targets": [
-                {"price": {"kind": "atr", "multiple": 3, "feature": "wide_atr"}},
-                {"price": {"kind": "r_multiple", "multiple": 2}},
-            ],
-            "trailing": {"by": {"kind": "atr", "multiple": 2, "feature": "atr"}},
-        }
-    }
-    plain = {
-        "execution": {
-            "stop": {"kind": "ticks", "ticks": 8},
-            "targets": [{"price": {"kind": "ticks", "ticks": 16}}],
-            "trailing": {"by": {"kind": "column"}},
-        }
-    }
+    # The execution as the spec's model holds it (step 5.9's step review: parsed, not read as
+    # a document whose fields a default could hide).
+    execution = ff.Execution(
+        entry=ff.Market(),
+        stop=ff.Stop(atr=1.5),
+        targets=[ff.Target(atr=3, feature="wide_atr"), ff.Target(r=2)],
+        trailing=ff.Trailing(atr=2),
+        sizing=ff.Fixed(1),
+    )
+    plain = ff.Execution(
+        entry=ff.Market(),
+        stop=ff.Stop(ticks=8),
+        targets=[ff.Target(ticks=16)],
+        trailing=ff.Trailing(column=True),
+        sizing=ff.Fixed(1),
+    )
+    percent = ff.Execution(entry=ff.Market(), stop=ff.Stop(percent=1), sizing=ff.Fixed(1))
 
-    assert distance_features(spec) == ("atr", "wide_atr")
+    assert distance_features(execution) == ("atr", "wide_atr")
     assert distance_features(plain) == ()
-    assert distance_features({"execution": {"stop": {"kind": "percent", "percent": 1}}}) == ()
+    assert distance_features(percent) == ()
 
 
 def test_a_window_holds_every_fill_of_its_trades_on_their_bars_with_their_levels() -> None:
@@ -203,3 +225,54 @@ def test_a_feature_read_as_a_distance_is_in_the_instruments_units_and_the_rest_a
     assert features.get_column("atr").to_list() == [
         None if value is None else value / PRICE_SCALE for value in signals.get_column("atr")
     ]
+
+
+def test_a_trade_from_a_windows_first_open_to_past_its_last_close_shows_on_it() -> None:
+    # Step 5.9's code review: a fill on a bar stamped at a window's first open lies on the bar
+    # before it, and a print at its last close on the bar after it (F-BAR-06), so a trade from
+    # such an edge to past the other end shows on the window as one that spans it.
+    on_minutes = backtest(RunConfig(fidelity=Timeframe.parse("1m")))
+    on_prints = backtest()
+    for run, edge in ((on_minutes, "entry"), (on_prints, "exit")):
+        long_enough = pl.col("exit_ts") - pl.col("entry_ts") > 2 * MINUTE
+        trade = run.trades.with_row_index("trade").filter(long_enough).row(0, named=True)
+        entered, left = trade["entry_ts"], trade["exit_ts"]
+        bars = pl.DataFrame(
+            {
+                "ts_open": [entered if edge == "entry" else entered + MINUTE],
+                "ts_close": [left - MINUTE if edge == "entry" else left],
+            }
+        )
+
+        window = review_window(run, bars)
+
+        assert trade["trade"] in window.trades.get_column("trade").to_list(), edge
+        fills = window.fills.filter(pl.col("trade") == trade["trade"])
+        assert fills.get_column("bar_open").is_null().all(), edge
+
+
+def test_a_window_without_bars_still_names_the_strategys_features() -> None:
+    # Step 5.9's code review: a page of no bars, as a window of a weekend gives, names each of
+    # the strategy's features with no values, so that a chart joining it to its other windows
+    # keeps their panes.
+    run = backtest()
+    bars = signal_bars("2026-03-06", "2026-03-06").clear()
+
+    window = review_window(run, bars)
+
+    assert window.features.columns == ["ts_close", "highest", "atr"]
+    assert window.features.is_empty()
+    assert window.trades.is_empty()
+
+
+def test_a_short_trades_stop_first_stands_its_initial_risk_over_its_entry() -> None:
+    # Step 5.9's step review: the other runs here are long, so the short side of the stop's
+    # first level had no test.
+    run = backtest(strategy=short_breakdown())
+
+    window = review_window(run, signal_bars(START, END))
+
+    assert window.trades.height > 0
+    for trade in window.trades.iter_rows(named=True):
+        assert trade["side"] == "short"
+        assert trade["stop_first"] == trade["entry_price"] + trade["initial_risk_ticks"] * TICK

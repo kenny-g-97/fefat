@@ -11,21 +11,21 @@ of its fills lies on the window, or when it spans it; and a feature is read at e
 when it is known (D-12). A feature the strategy's exit rules read as a distance, such as the ATR
 of an ATR stop, is in the instrument's units; every other feature is as the signals hold it."""
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import polars as pl
 
 from fefat.backtest.artifacts import scan_artifact
 from fefat.market.engine_units import instrument_parameters, price_in_units
 from fefat.market.fidelity import TickFidelity
+from fefat.strategy.exits import AtrStop, AtrTarget, AtrTrail
+from fefat.strategy.spec import Execution, StrategySpec
 
 if TYPE_CHECKING:
     from fefat.backtest.runs import Run
 
 _PRINTS = tuple(str(fidelity) for fidelity in TickFidelity)
-_DISTANCE = "atr"
 
 
 @dataclass(frozen=True)
@@ -67,21 +67,21 @@ def fills_on_bars(fills: pl.DataFrame, bars: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def distance_features(spec: Mapping[str, Any]) -> tuple[str, ...]:
-    """The features the exit rules of the strategy's `spec` read as a distance in the bars' 1e-9
-    units of price (F-RND-01): those of an ATR stop, ATR targets, and an ATR trail, once each."""
-    execution = spec.get("execution", {})
-    rules = [execution.get("stop")]
-    rules += [target.get("price") for target in execution.get("targets", [])]
-    trailing = execution.get("trailing")
-    rules.append(None if trailing is None else trailing.get("by"))
-    named = [rule["feature"] for rule in rules if rule is not None and rule["kind"] == _DISTANCE]
+def distance_features(execution: Execution) -> tuple[str, ...]:
+    """The features the exit rules of a strategy's `execution` read as a distance in the bars'
+    1e-9 units of price (F-RND-01): those of an ATR stop, ATR targets, and an ATR trail, once
+    each."""
+    trail = None if execution.trailing is None else execution.trailing.by
+    rules = (execution.stop, *(target.price for target in execution.targets), trail)
+    named = [rule.feature for rule in rules if isinstance(rule, AtrStop | AtrTarget | AtrTrail)]
     return tuple(dict.fromkeys(named))
 
 
 def review_window(run: "Run", bars: pl.DataFrame) -> ReviewWindow:
     """The trades of `run` on the window of `bars`, which hold `ts_open` and `ts_close` and are
-    in order (module docstring)."""
+    in order (module docstring): a trade spans the window from its first open, where a fill on
+    a bar stamped then lies on the bar before (F-BAR-06), to its last close, where a print
+    then lies on the bar after."""
     fills = fills_on_bars(_traded_fills(run), bars)
     trades = run.trades.with_row_index("trade").with_columns(pl.col("trade").cast(pl.Int64))
     if bars.is_empty():
@@ -89,14 +89,15 @@ def review_window(run: "Run", bars: pl.DataFrame) -> ReviewWindow:
     else:
         first, last = bars.item(0, "ts_open"), bars.item(-1, "ts_close")
         on_it = fills.filter(pl.col("bar_open").is_not_null()).get_column("trade")
-        spanning = (pl.col("entry_ts") < first) & (pl.col("exit_ts") > last)
+        spanning = (pl.col("entry_ts") <= first) & (pl.col("exit_ts") >= last)
         shown = trades.filter(pl.col("trade").is_in(on_it.implode()) | spanning)
-    features, left_out = _features(run, bars)
+    distances = distance_features(StrategySpec.model_validate(run.record.strategy.spec).execution)
+    features, left_out = _features(run, bars, distances)
     return ReviewWindow(
         trades=_with_levels(run, shown),
         fills=fills.filter(pl.col("trade").is_in(shown.get_column("trade").implode())),
         features=features,
-        distances=distance_features(run.record.strategy.spec),
+        distances=distances,
         left_out=left_out,
     )
 
@@ -140,13 +141,16 @@ def _with_levels(run: "Run", trades: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _features(run: "Run", bars: pl.DataFrame) -> tuple[pl.DataFrame, tuple[str, ...]]:
+def _features(
+    run: "Run", bars: pl.DataFrame, distances: tuple[str, ...]
+) -> tuple[pl.DataFrame, tuple[str, ...]]:
     """The strategy's features at each bar's close, null where the signals hold none, each a
-    number: a distance in the instrument's units, any other as the signals hold it; and the
-    features of another type, which no chart draws, by name."""
+    number: one of `distances` in the instrument's units, any other as the signals hold it, a
+    window of no bars naming each with no values; and the features of another type, which no
+    chart draws, by name."""
     names = run.record.strategy.features
     closes = bars.select("ts_close")
-    if bars.is_empty() or not names:
+    if not names:
         return closes, ()
     signals = scan_artifact(run.folder, "signals")
     schema = signals.collect_schema()
@@ -157,12 +161,12 @@ def _features(run: "Run", bars: pl.DataFrame) -> tuple[pl.DataFrame, tuple[str, 
             f"{run.hash[:12]}, got none of {', '.join(missing)}."
         )
     drawn = tuple(name for name in names if schema[name].is_numeric() or schema[name] == pl.Boolean)
-    rows = (
-        signals.select("ts_close", *drawn)
-        .filter(pl.col("ts_close").is_between(bars.item(0, "ts_close"), bars.item(-1, "ts_close")))
-        .collect()
+    within = (
+        pl.lit(value=False)
+        if bars.is_empty()
+        else pl.col("ts_close").is_between(bars.item(0, "ts_close"), bars.item(-1, "ts_close"))
     )
-    distances = distance_features(run.record.strategy.spec)
+    rows = signals.select("ts_close", *drawn).filter(within).collect()
     aligned = closes.join(rows, on="ts_close", how="left", maintain_order="left")
     values = [
         price_in_units(name) if name in distances else pl.col(name).cast(pl.Float64)
