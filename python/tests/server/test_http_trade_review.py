@@ -25,7 +25,7 @@ from fefat.reference.units import instant_nanoseconds
 from fefat_app.container import Container
 from local_server import logged_in
 from notebook_runs import store_with
-from test_http_trades import made
+from test_http_trades import csrf, made
 from test_run_records import the_run
 
 SECOND = 1_000_000_000
@@ -35,6 +35,8 @@ TICK = 250_000_000
 MARCH_6 = date(2026, 3, 6)
 RUN_WINDOW = ("2026-03-05", "2026-03-09")
 """The breakout workspace's window, the conftest's."""
+DEADLINE_SECONDS = 60
+"""How long a test waits for a job a worker of the pool runs."""
 
 
 @pytest.fixture
@@ -240,3 +242,75 @@ def test_the_chart_needs_a_login(client: TestClient) -> None:
     )
 
     assert answer.status_code == 401
+
+
+def finished(client: TestClient, job_id: str) -> dict[str, Any]:
+    """The job `job_id` as it ended, read until then, which a worker of the pool runs."""
+    deadline = time.monotonic() + DEADLINE_SECONDS
+    job = client.get(f"/v1/jobs/{job_id}").json()
+    while job["status"] in ("queued", "running") and time.monotonic() < deadline:
+        time.sleep(0.1)
+        job = client.get(f"/v1/jobs/{job_id}").json()
+    return job
+
+
+def test_an_explanation_is_a_job_whose_fills_are_the_ledgers(client: TestClient, run: Run) -> None:
+    # Done means 2: the explain endpoint's fills equal the ledger. D-93: it answers 202 with an
+    # `explain` job, whose result is the explanation, the reference engine's log as data.
+    trade = run.trades.row(2, named=True)
+
+    started = client.post(
+        f"/v1/runs/{run.hash}/explain/{trade['entry_order']}", headers=csrf(client)
+    )
+    ended = finished(client, started.json()["id"])
+
+    assert started.status_code == 202
+    assert {name: started.json()[name] for name in ("kind", "payload", "status")} == {
+        "kind": "explain",
+        "payload": {"run_key": run.hash, "trade_id": trade["entry_order"]},
+        "status": "queued",
+    }
+    assert (ended["status"], ended["error"]) == ("succeeded", None)
+    explained = ended["result"]
+    fills = ledger(run).filter(pl.col("trade") == 2)
+    assert [(fill["order"], fill["time"], fill["price"]) for fill in explained["fills"]] == [
+        (row["order"], utc_text(row["ts"]), price_text(row["price"]))
+        for row in fills.iter_rows(named=True)
+    ]
+    filled = {
+        (event["order"], event["time"])
+        for event in explained["events"]
+        if event["kind"] == "filled"
+    }
+    assert {(fill["order"], fill["time"]) for fill in explained["fills"]} <= filled
+    assert explained["kind"] == "explained"
+    assert explained["heading"].startswith(f"Trade {trade['entry_order']}: long 1 ES")
+    assert explained["replayed"].startswith("Replayed through the reference engine on 1-minute")
+
+
+def test_a_replay_refused_is_explained_in_words_that_name_no_folder_of_this_pc(
+    client: TestClient, run: Run
+) -> None:
+    # The amendment: a refusal reads in the trader's words; D-80: no local path leaves the PC.
+    paths = resolve_paths(os.environ)
+    shutil.rmtree(paths.data_dir / "synthetic" / "ohlcv-1m")
+    trade_id = run.trades.item(0, "entry_order")
+
+    started = client.post(f"/v1/runs/{run.hash}/explain/{trade_id}", headers=csrf(client))
+    ended = finished(client, started.json()["id"])
+
+    assert ended["status"] == "succeeded"
+    refused = ended["result"]
+    assert (refused["kind"], refused["trade_id"]) == ("refused", trade_id)
+    assert "its data was deleted since the run" in refused["reason"]
+    assert refused["reason"].endswith("The store read: your data folder.")
+    assert str(paths.home) not in refused["reason"]
+
+
+def test_an_id_that_is_no_trades_is_refused_and_queues_no_job(client: TestClient, run: Run) -> None:
+    unknown = client.post(f"/v1/runs/{run.hash}/explain/2", headers=csrf(client))
+    unsigned = client.post(f"/v1/runs/{run.hash}/explain/{run.trades.item(0, 'entry_order')}")
+
+    assert (unknown.status_code, unsigned.status_code) == (404, 403)
+    assert "its entry order, such as 1, " in unknown.json()["detail"]
+    assert [job for job in client.get("/v1/jobs").json() if job["kind"] == "explain"] == []

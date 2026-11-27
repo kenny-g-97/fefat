@@ -1,8 +1,10 @@
 """A saved run's trades in context (step 5.9, D-93): a page of its chart, its bars from the store at
 the prices each contract traded at, with the trades the page shows, their fills on its bars and
-their levels, and the strategy's features beside the bars (`fefat.backtest.review_window`). The
-run is found, and its files refused, as its results are (`Runs.reading`); a window the SDK
-refuses is refused apart, as the bars' route refuses it."""
+their levels, and the strategy's features beside the bars (`fefat.backtest.review_window`); and
+a trade's explanation, an `explain` job, since a replay through the reference engine can take
+seconds (`fefat_app.jobs.trade_explanations`). The run is found, and its files refused, as its
+results are (`Runs.reading`); a window the SDK refuses is refused apart, as the bars' route
+refuses it."""
 
 from dataclasses import dataclass
 from datetime import date
@@ -16,7 +18,9 @@ from fefat.market.calendar import utc_text
 from fefat.market.engine_units import money_text, price_text
 from fefat.market.store import Store
 from fefat.reference.orders import OrderRole, PositionSide, Side
+from fefat_app.job_models import Job, JobKind
 from fefat_app.runs import ResultsRefusedError
+from fefat_app.services.jobs import Jobs
 from fefat_app.services.market_bars import (
     BarPrices,
     BarsPage,
@@ -30,7 +34,9 @@ from fefat_app.trade_review import (
     ChartFill,
     ChartPage,
     ChartTrade,
+    ExplainPayload,
     FeatureUnit,
+    NoSuchTradeError,
     StopLevels,
 )
 
@@ -39,11 +45,30 @@ _NANOSECONDS_PER_SECOND = 1_000_000_000
 
 @dataclass(frozen=True)
 class TradeReview:
-    """A saved run's chart, over its runs and the store's bars (module docstring)."""
+    """A saved run's chart, over its runs and the store's bars, and its trades' explanations, as
+    the jobs run them (module docstring)."""
 
     runs: Runs
     store: Store
     cache_folder: Path
+    jobs: Jobs
+
+    def explain(self, run: str, trade_id: int) -> Job:
+        """The `explain` job of the trade `trade_id`, its entry order, of the saved run `run`,
+        queued, or the one queued or running and not asked to stop; refused with
+        `NoSuchTradeError` for an id no trade has, so that no job is queued to fail, and as the
+        run's results are."""
+        with self.runs.reading(run) as opened:
+            ids = opened.trades.get_column("entry_order")
+            known = ids.is_in([trade_id]).any()
+        if not known:
+            shown = ", ".join(str(each) for each in ids.head(5).to_list())
+            raise NoSuchTradeError(
+                f"Expected the id of a trade of run {opened.hash[:12]}, its entry order, such "
+                f"as {shown or 'none'}, got {trade_id}."
+            )
+        payload = ExplainPayload(run_key=opened.hash, trade_id=trade_id)
+        return self.jobs.start_unless_under_way(JobKind.EXPLAIN, payload.model_dump(mode="json"))
 
     def chart(self, run: str, start: str, end: date) -> ChartPage:
         """The page of the saved run `run`'s chart from `start`, a trade date or the instant a

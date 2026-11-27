@@ -34,6 +34,7 @@ export const KIND_LABELS: Readonly<Record<Job["kind"], string>> = {
   ingest: "Upload",
   demo: "Demo job",
   python_snippet: "Python snippet",
+  explain: "Trade explanation",
 }
 
 /** What the jobs drawer calls each status of a job. */

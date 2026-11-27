@@ -116,7 +116,7 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
         runs=runs,
         imports=Imports(executor, jobs, UploadFolders(paths.uploads_dir, clock), paths, settings),
         trade_table=TradeTable(runs, DuckDbQueries()),
-        trade_review=TradeReview(runs, store, paths.cache_dir),
+        trade_review=TradeReview(runs, store, paths.cache_dir, jobs),
     )
 
 

@@ -121,7 +121,7 @@ def container(
             runs=runs,
             imports=Imports(warm_executor, jobs, uploads, paths, settings),
             trade_table=TradeTable(runs, DuckDbQueries()),
-            trade_review=TradeReview(runs, store, paths.cache_dir),
+            trade_review=TradeReview(runs, store, paths.cache_dir, jobs),
         )
     finally:
         dispatcher.close()

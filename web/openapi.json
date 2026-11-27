@@ -4121,7 +4121,8 @@
           "agent_turn",
           "ingest",
           "demo",
-          "python_snippet"
+          "python_snippet",
+          "explain"
         ],
         "title": "JobKind",
         "type": "string"
@@ -12695,6 +12696,114 @@
           }
         ],
         "summary": "Run Executions File",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run}/explain/{trade_id}": {
+      "post": {
+        "description": "Start the explanation of the trade `trade_id` of the saved run: an `explain` job that\nreplays it through the reference engine on the run's saved spec, signals, and pinned data,\nwhose result is its events and its fills, or why the replay refused it; the job of the same\ntrade already queued or running where there is one. Refused with 404 for an id that is no\ntrade's of the run.",
+        "operationId": "explain_trade_v1_runs__run__explain__trade_id__post",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The trade's id, its entry order.",
+            "in": "path",
+            "name": "trade_id",
+            "required": true,
+            "schema": {
+              "description": "The trade's id, its entry order.",
+              "minimum": 0,
+              "title": "Trade Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Explain Trade",
         "tags": [
           "runs"
         ]

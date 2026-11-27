@@ -777,6 +777,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/runs/{run}/explain/{trade_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explain Trade
+         * @description Start the explanation of the trade `trade_id` of the saved run: an `explain` job that
+         *     replays it through the reference engine on the run's saved spec, signals, and pinned data,
+         *     whose result is its events and its fills, or why the replay refused it; the job of the same
+         *     trade already queued or running where there is one. Refused with 404 for an id that is no
+         *     trade's of the run.
+         */
+        post: operations["explain_trade_v1_runs__run__explain__trade_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/runs/{run}/market": {
         parameters: {
             query?: never;
@@ -2955,7 +2979,7 @@ export interface components {
          * @description What a job runs (`01-architecture.md` section 6); a later phase adds its kinds.
          * @enum {string}
          */
-        JobKind: "backtest" | "feature_preview" | "feature_validate" | "analytics" | "study" | "prop_sim" | "source_sync" | "import" | "trade_import" | "catalog_sync" | "reproduce" | "agent_turn" | "ingest" | "demo" | "python_snippet";
+        JobKind: "backtest" | "feature_preview" | "feature_validate" | "analytics" | "study" | "prop_sim" | "source_sync" | "import" | "trade_import" | "catalog_sync" | "reproduce" | "agent_turn" | "ingest" | "demo" | "python_snippet" | "explain";
         /**
          * JobStatus
          * @description Where a job stands (`01-architecture.md` section 6): queued, then running, then one of
@@ -7279,6 +7303,76 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    explain_trade_v1_runs__run__explain__trade_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+                /** @description The trade's id, its entry order. */
+                trade_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
