@@ -1,12 +1,4 @@
-import type { BarColumns, Timeframe } from "@/api/bar-windows"
 import type { CatalogStatus, InstrumentVersion } from "@/api/catalog"
-import type { ChartTime } from "@/charts/chart-time"
-import { rollMarks } from "@/charts/chart-marks"
-import type {
-  CandleSeries,
-  ChartPane,
-  HistogramSeries,
-} from "@/charts/drawn-series"
 
 /** A contract the trader typed: none, to chart the root, a contract of the root, or a refusal
  * in words. */
@@ -14,41 +6,6 @@ export type ContractChoice =
   | Readonly<{ kind: "root" }>
   | Readonly<{ kind: "contract"; contract: string }>
   | Readonly<{ kind: "refused"; message: string }>
-
-/** The panes the chart viewer draws of `bars`: the candles, each roll of a spliced series marked
- * and every other session shaded, over the volume while the style shows it. A daily bar is
- * placed by its trade date and shades nothing, being a session of its own. */
-export function chartPanes(
-  bars: BarColumns,
-  timeframe: Timeframe,
-  volumeShown: boolean
-): readonly ChartPane[] {
-  const daily = timeframe === "1d"
-  const time: readonly ChartTime[] = daily ? bars.trade_date : bars.time
-  const candles: CandleSeries = {
-    kind: "candles",
-    id: "price",
-    time,
-    open: bars.open,
-    high: bars.high,
-    low: bars.low,
-    close: bars.close,
-    ...(daily ? {} : { sessions: bars.trade_date }),
-    markers: rollMarks(time, bars.contract),
-  }
-  const price: ChartPane = { id: "price", stretch: 4, series: [candles] }
-  if (!volumeShown) {
-    return [price]
-  }
-  const volume: HistogramSeries = {
-    kind: "histogram",
-    id: "volume",
-    time,
-    value: bars.volume,
-    rising: bars.close.map((close, index) => close >= bars.open[index]),
-  }
-  return [price, { id: "volume", stretch: 1, series: [volume] }]
-}
 
 /** The roots the store holds data of: the catalog's products first, in its order, then the
  * trader's own. */
