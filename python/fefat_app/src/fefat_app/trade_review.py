@@ -8,7 +8,7 @@ text."""
 
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -170,7 +170,3 @@ class ExplanationRefused(BaseModel):
     kind: Literal["refused"] = "refused"
     trade_id: int
     reason: str
-
-
-type TradeExplanation = Annotated[TradeExplained | ExplanationRefused, Field(discriminator="kind")]
-"""An `explain` job's result, told apart by `kind`."""
