@@ -8,8 +8,9 @@ From step 5.2 (D-93), the library's kinds: a strategy's code validated, a strate
 and a feature version saved, each through the SDK in the runner, never in the server; what the
 SDK refuses comes back as the runner's answer, with the line of the code it is at, rather than as
 a failure. From step 5.3, a saved strategy version's lookup, before a backtest is queued, and its
-backtest, which a job runs (`fefat_app.runs`). From step 5.12, the import wizard's preview and
-import (`fefat_app.imports`). The kinds and the limits are `fefat_app.execution_kinds`'."""
+backtest, which a job runs (`fefat_app.runs`), and from step 5.10 a saved run's reproduction
+through the same kind (`fefat_app.reproductions`). From step 5.12, the import wizard's preview
+and import (`fefat_app.imports`). The kinds and the limits are `fefat_app.execution_kinds`'."""
 
 from collections.abc import Callable
 from datetime import date
@@ -23,6 +24,7 @@ from fefat.strategy.source_lint import StrategyLintFinding
 from fefat_app.execution_kinds import ExecutionKind as ExecutionKind
 from fefat_app.execution_kinds import ExecutionLimits as ExecutionLimits
 from fefat_app.imports import ImportOutput, ImportPreviewOutput, ImportPreviewSpec, ImportSpec
+from fefat_app.reproductions import Reproduction
 from fefat_app.runs import RequestedRun, RunToMake, SavedRunFound
 
 
@@ -118,13 +120,16 @@ class RunLookupSpec(BaseModel):
 
 class BacktestSpec(BaseModel):
     """A saved strategy version's backtest, run as a notebook runs it (`ff.backtest.run`), its
-    stages reported as they come; the payload of a `backtest` job."""
+    stages reported as they come; the payload of a `backtest` job. From step 5.10, where it
+    `reproduces` a saved run, the run made again from the version's code and the run's pinned data
+    into FEFAT's cache folder (`ff.backtest.reproduce`), the payload of a `reproduce` job."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal[ExecutionKind.BACKTEST] = ExecutionKind.BACKTEST
     run: RequestedRun
     limits: ExecutionLimits
+    reproduces: Hash | None = None
 
 
 type LibrarySpec = StrategyValidationSpec | StrategySaveSpec | FeatureSaveSpec
@@ -317,12 +322,14 @@ class RunLookupOutput(BaseModel):
 
 
 class BacktestOutput(BaseModel):
-    """What a backtest gives: the key of its run, saved in the runs' folder."""
+    """What a backtest gives: the key of its run, saved in the runs' folder; and for a
+    reproduction, that run's key and the reproduction's verdict, or why it was refused."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal[ExecutionKind.BACKTEST] = ExecutionKind.BACKTEST
     run_key: Hash
+    reproduction: Reproduction | None = None
 
 
 class ExecutionSucceeded(BaseModel):

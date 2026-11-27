@@ -44,10 +44,10 @@ def run_explanation(
     try:
         explanation = explain(saved_run(paths.runs_dir, asked.run_key), asked.trade_id)
     except (ValueError, EnginesDisagreementError, FileNotFoundError) as refused:
-        reason = _without_folders(str(refused), paths, asked.run_key)
+        reason = without_folders(str(refused), paths, asked.run_key)
         return ExplanationRefused(trade_id=asked.trade_id, reason=reason).model_dump(mode="json")
     except Exception as crashed:
-        words = _without_folders(f"{type(crashed).__name__}: {crashed}", paths, asked.run_key)
+        words = without_folders(f"{type(crashed).__name__}: {crashed}", paths, asked.run_key)
         raise ReplayCrashedError(words) from crashed
     progress.advance(100, f"Replayed trade {asked.trade_id}")
     return _explained(explanation).model_dump(mode="json")
@@ -93,7 +93,7 @@ def _fill(fill: FillView) -> ExplainedFill:
     )
 
 
-def _without_folders(reason: str, paths: FefatPaths, run_key: str) -> str:
+def without_folders(reason: str, paths: FefatPaths, run_key: str) -> str:
     """`reason` naming the run's folder as the run, and the data folder and FEFAT's home in
     words, so that no folder of this PC reaches the page (D-80)."""
     return (

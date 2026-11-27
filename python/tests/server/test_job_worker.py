@@ -109,7 +109,7 @@ def test_a_kind_the_worker_cannot_run_fails_with_the_reason(job_records: JobTabl
     assert ended.status == JobStatus.FAILED
     assert ended.error == (
         "ValueError: Expected a job kind the worker runs (demo, feature_preview, python_snippet, "
-        "catalog_sync, backtest, import, explain), got study."
+        "catalog_sync, backtest, import, explain, reproduce), got study."
     )
 
 

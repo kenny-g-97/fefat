@@ -1,14 +1,15 @@
 """The runs over the API (step 5.3, D-93, ADR-0020): a backtest of a saved strategy version asked
 for, answered with the run its request finds saved, or queued as a `backtest` job; a page of the
 runs (step 5.6); a run with its metrics; a run's job cancelled; what a run would read before
-anything runs; and a stress, the same run at more ticks of slippage. A submission indexes the
+anything runs; a stress, the same run at more ticks of slippage; and, from step 5.10, saved runs
+side by side and a saved run's reproduction, a `reproduce` job. A submission indexes the
 library first, so that a version a notebook saved is found and a library the index cannot follow
 refuses it before anything runs, checks the version's file as indexed, and looks the run up in
 the executor (`fefat_app.services.code_runs`), which builds the strategy from the version's code
 there, never in the server; the run's row and its queued job are made in one transaction by the
 runs' records, which the dispatcher then runs."""
 
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from datetime import date
@@ -31,6 +32,7 @@ from fefat.backtest import (
     results_by_side,
     trade_distributions,
 )
+from fefat.backtest.compare import RunComparison, ShareCurve, share_curve, side_by_side
 from fefat.backtest.estimates import estimated, held_instruments
 from fefat.backtest.saved_runs import saved_run
 from fefat.config import FefatPaths
@@ -38,7 +40,7 @@ from fefat.market.engine_units import money_in_units
 from fefat.market.schema import Timeframe
 from fefat.reference.settings import SlippageTicks
 from fefat_app.execution import BacktestSpec
-from fefat_app.job_models import ACTIVE, JobStatus
+from fefat_app.job_models import ACTIVE, Job, JobKind, JobStatus
 from fefat_app.library import (
     IndexedStrategy,
     IndexedStrategyVersion,
@@ -259,6 +261,48 @@ class Runs:
         opened = self._opened(run)
         with _results_read(opened.hash, self.paths):
             return market_exposure(opened, max_points)
+
+    def compare(self, runs: Sequence[str]) -> RunComparison:
+        """The saved runs `runs` side by side, the first the reference (`ff.backtest.compare_runs`,
+        step 5.10): each refused as `_opened` refuses, its curve read under its own guard, so that
+        a file gone or damaged is named by its run, and runs the SDK cannot set side by side, as
+        those in two currencies, refused with `ResultsRefusedError`."""
+        opened = tuple(self._opened(each) for each in runs)
+        curves: list[ShareCurve] = []
+        for each in opened:
+            with self.results_read(each):
+                curves.append(share_curve(each))
+        try:
+            return side_by_side(opened, curves)
+        except ValueError as refused:
+            raise ResultsRefusedError(str(refused)) from refused
+
+    def reproduce(self, run: str) -> Job:
+        """The `reproduce` job of the saved run `run` (step 5.10), queued, or the one queued or
+        running and not asked to stop: its version's code built again in the executor and run on
+        the data and the settings the run's record pins (`ff.backtest.reproduce`); refused as
+        `_opened` refuses, and with `ResultsRefusedError` for a run of a strategy built in a
+        notebook, whose strategy FEAT cannot build again."""
+        opened = self._opened(run)
+        record = opened.record
+        pin = record.strategy.saved_version
+        if pin is None:
+            raise ResultsRefusedError(
+                f"Expected a run of a saved strategy version, got run {opened.hash[:12]} of a "
+                "strategy built in a notebook, which FEAT cannot build again: reproduce it in "
+                "the notebook with ff.backtest.reproduce."
+            )
+        requested = RequestedRun(
+            strategy=pin.name,
+            version=pin.version,
+            hash=pin.hash,
+            parameters=pin.parameters,
+            start=record.window.start,
+            end=record.window.end,
+            settings=RunConfig.model_validate(record.config.model_dump()),
+        )
+        spec = BacktestSpec(run=requested, limits=BACKTEST_LIMITS, reproduces=opened.hash)
+        return self.jobs.start_unless_under_way(JobKind.REPRODUCE, spec.model_dump(mode="json"))
 
     @contextmanager
     def reading(self, run: str) -> Generator[Run]:
