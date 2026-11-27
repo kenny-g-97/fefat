@@ -37,8 +37,21 @@ def price_text(units: int) -> str:
 
 def price_in_units(column: str) -> pl.Expr:
     """The prices of `column`, in 1e-9 units, in the instrument's units, each the float nearest
-    its decimal, as the API sends them (step 5.1): 4_990_250_000_000 is 4990.25."""
-    return pl.col(column) / PRICE_SCALE
+    its decimal, as the API sends them (step 5.1): 4_990_250_000_000 is 4990.25. Divided in
+    Python, as `money_in_units` divides, since Polars multiplies by the scale's inverse, which
+    put two prices in five a bit off on a tick of 0.1 (step 5.9)."""
+    return pl.col(column).map_batches(
+        _prices_in_units, return_dtype=pl.Float64, is_elementwise=True
+    )
+
+
+def _prices_in_units(units: pl.Series) -> pl.Series:
+    """`units`, prices in 1e-9 units, each divided exactly rounded, a missing one kept missing."""
+    return pl.Series(
+        units.name,
+        [None if each is None else each / PRICE_SCALE for each in units.to_list()],
+        dtype=pl.Float64,
+    )
 
 
 def money_text(units: int) -> str:

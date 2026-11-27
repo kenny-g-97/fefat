@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 import fefat as ff
 from fefat.config import resolve_paths
+from fefat.market.engine_units import price_text
 from fefat.market.layout import Dataset, SeriesKind
 from fefat.market.schema import parse_schema_name
 from fefat.market.store import Store
@@ -33,21 +34,27 @@ MARCH_6 = date(2026, 3, 6)
 
 def as_sent(bars: pl.DataFrame) -> dict[str, list[Any]]:
     """`load`'s bars as the API sends them: by open, then contract, their opens in seconds, their
-    trade dates as text, and their prices in the instrument's units."""
-    return (
+    trade dates as text, and their prices in the instrument's units, each the float nearest its
+    decimal, read from the price's text rather than worked out as the API works it out."""
+    sent = (
         bars.sort("ts_open", "contract")
         .select(
             time=pl.col("ts_open") // PRICE_SCALE,
             trade_date=pl.col("trade_date").dt.to_string("%Y-%m-%d"),
-            open=pl.col("open") / PRICE_SCALE,
-            high=pl.col("high") / PRICE_SCALE,
-            low=pl.col("low") / PRICE_SCALE,
-            close=pl.col("close") / PRICE_SCALE,
+            open=pl.col("open"),
+            high=pl.col("high"),
+            low=pl.col("low"),
+            close=pl.col("close"),
             volume=pl.col("volume"),
             contract=pl.col("contract"),
         )
         .to_dict(as_series=False)
     )
+    prices = {
+        name: [float(price_text(units)) for units in sent[name]]
+        for name in ("open", "high", "low", "close")
+    }
+    return {**sent, **prices}
 
 
 def pages_of(client: TestClient, asked: dict[str, str]) -> list[dict[str, Any]]:
