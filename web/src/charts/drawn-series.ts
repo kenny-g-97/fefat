@@ -7,14 +7,24 @@ import {
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type ISeriesPrimitive,
+  LineSeries,
   LineStyle,
   type SeriesMarker,
   type Time,
 } from "lightweight-charts"
 import { type ChartLook, lastBarColour, legibleText } from "./chart-look"
-import { type ChartMarker, type SessionSpan, sessionSpans } from "./chart-marks"
+import {
+  type ChartMarker,
+  inTimeOrder,
+  type SessionSpan,
+  sessionSpans,
+} from "./chart-marks"
+import { formatFeature } from "@/ui/figures"
 import { type ChartTime, chartTime } from "./chart-time"
 import { SessionShading } from "./session-shading"
+
+/** The finest step a feature's axis counts in, the readout's four decimals. */
+const FEATURE_STEP = 0.0001
 
 /** A candle series: its bars column by column, as the API sends them, with the trade date of
  * each bar for the sessions' shading, its markers, and primitives of the caller's own. */
@@ -41,7 +51,16 @@ export type HistogramSeries = Readonly<{
   rising?: readonly boolean[]
 }>
 
-export type ChartSeries = CandleSeries | HistogramSeries
+/** A line series, such as a feature of a strategy's in a pane of its own, null where it has no
+ * value, as before its warm-up ends. */
+export type LineSeries = Readonly<{
+  kind: "line"
+  id: string
+  time: readonly ChartTime[]
+  value: readonly (number | null)[]
+}>
+
+export type ChartSeries = CandleSeries | HistogramSeries | LineSeries
 
 /** A pane of the chart, top to bottom, its share of the height, and its series. */
 export type ChartPane = Readonly<{
@@ -71,8 +90,14 @@ type DrawnHistogram = {
   last: HistogramSeries
 }
 
+type DrawnLine = {
+  kind: "line"
+  api: ISeriesApi<"Line">
+  last: LineSeries
+}
+
 /** A series the chart draws, with what it last drew. */
-export type Drawn = DrawnCandles | DrawnHistogram
+export type Drawn = DrawnCandles | DrawnHistogram | DrawnLine
 
 type Wanted = Readonly<{ series: ChartSeries; pane: number }>
 
@@ -144,6 +169,25 @@ function added(chart: IChartApi, series: ChartSeries, pane: number): Drawn {
   // The readout gives the volume, and the candles' last price is a line of the chart's own,
   // which the library's would leave for the last bar in view as the trader scrolls back.
   const unlabelled = { lastValueVisible: false, priceLineVisible: false }
+  if (series.kind === "line") {
+    // A feature's values need not be prices, so its axis writes them as the readout does.
+    const priceFormat = {
+      type: "custom",
+      formatter: (value: number) => formatFeature(value),
+      minMove: FEATURE_STEP,
+    } as const
+    const api = chart.addSeries(
+      LineSeries,
+      {
+        ...unlabelled,
+        lineWidth: 1,
+        crosshairMarkerVisible: false,
+        priceFormat,
+      },
+      pane
+    )
+    return { kind: "line", api, last: series }
+  }
   if (series.kind === "histogram") {
     const api = chart.addSeries(
       HistogramSeries,
@@ -180,6 +224,9 @@ function painted(each: Drawn, series: ChartSeries, painting: Painting): Drawn {
   }
   if (each.kind === "histogram" && series.kind === "histogram") {
     return paintedHistogram(each, series, painting)
+  }
+  if (each.kind === "line" && series.kind === "line") {
+    return paintedLine(each, series, painting)
   }
   throw new Error(
     `Expected the series ${series.id} drawn as ${series.kind}, got ${each.kind}.`
@@ -228,7 +275,9 @@ function paintedCandles(
     )
   }
   each.markers.setMarkers(
-    (series.markers ?? []).map((marker) => drawnMarker(marker, look))
+    inTimeOrder(series.markers ?? []).map((marker) =>
+      drawnMarker(marker, look.markers)
+    )
   )
   const sessions = series.sessions
   const spans = !bars
@@ -271,12 +320,53 @@ function paintedHistogram(
   return { ...each, byDirection, last: series }
 }
 
-function drawnMarker(marker: ChartMarker, look: ChartLook): SeriesMarker<Time> {
-  return {
+/** Paint a line in the accent, a value missing written as a gap, the library's whitespace. */
+function paintedLine(
+  each: DrawnLine,
+  series: LineSeries,
+  { look, bars }: Painting
+): DrawnLine {
+  each.api.applyOptions({ color: look.markers.accent })
+  if (series.value.length !== series.time.length) {
+    throw new Error(
+      `Expected a value for each of the ${series.time.length} bars of ${series.id}, got ${series.value.length}.`
+    )
+  }
+  if (bars) {
+    each.api.setData(
+      series.time.map((time, index) => {
+        const value = series.value[index]
+        return value === null
+          ? { time: chartTime(time) }
+          : { time: chartTime(time), value }
+      })
+    )
+  }
+  return { ...each, last: series }
+}
+
+/** A marker as the library draws it: above or below its bar, or, with a price, its shape's point
+ * on that price, the library's `atPriceTop` standing above the price and `atPriceBottom` under
+ * it. */
+export function drawnMarker(
+  marker: ChartMarker,
+  colours: ChartLook["markers"]
+): SeriesMarker<Time> {
+  const above = marker.position === "above"
+  const drawn = {
     time: chartTime(marker.time),
-    position: marker.position === "above" ? "aboveBar" : "belowBar",
     shape: marker.shape,
-    color: look.markers[marker.tone],
+    color: colours[marker.tone],
     text: marker.text,
+    ...(marker.id === undefined ? {} : { id: marker.id }),
+    ...(marker.size === undefined ? {} : { size: marker.size }),
+  }
+  if (marker.price === undefined) {
+    return { ...drawn, position: above ? "aboveBar" : "belowBar" }
+  }
+  return {
+    ...drawn,
+    position: above ? "atPriceTop" : "atPriceBottom",
+    price: marker.price,
   }
 }

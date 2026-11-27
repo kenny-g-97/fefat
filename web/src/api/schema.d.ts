@@ -689,6 +689,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/runs/{run}/chart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Chart
+         * @description A page of at most 20,000 of the saved run's bars on the trade dates from `from` to `to`, in
+         *     the strategy's timeframe, at the prices each contract traded at, which its fills hold, as
+         *     `GET /v1/market/bars` pages them; the instrument's tick; the strategy's features at each
+         *     bar's close, those its exit rules read as a distance in the instrument's units; and the
+         *     trades with a fill on the page or held across it, each with every fill, the bar each lies
+         *     on by F-BAR-06, its stop's first and last level, and its targets.
+         */
+        get: operations["run_chart_v1_runs__run__chart_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/runs/{run}/distribution": {
         parameters: {
             query?: never;
@@ -746,6 +771,30 @@ export interface paths {
         get: operations["run_executions_file_v1_runs__run__executions_csv_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/runs/{run}/explain/{trade_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explain Trade
+         * @description Start the explanation of the trade `trade_id` of the saved run: an `explain` job that
+         *     replays it through the reference engine on the run's saved spec, signals, and pinned data,
+         *     whose result is its events and its fills, or why the replay refused it; the job of the same
+         *     trade already queued or running where there is one. Refused with 404 for an id that is no
+         *     trade's of the run.
+         */
+        post: operations["explain_trade_v1_runs__run__explain__trade_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1738,6 +1787,66 @@ export interface components {
             root?: string | null;
         };
         /**
+         * ChartFeature
+         * @description One of the strategy's features beside the page's bars: its column's name, how its values
+         *     read, and its value at each bar's close, none where the signals hold none.
+         */
+        ChartFeature: {
+            /** Name */
+            name: string;
+            unit: components["schemas"]["FeatureUnit"];
+            /** Values */
+            values: (number | null)[];
+        };
+        /**
+         * ChartFill
+         * @description A fill of a trade, as the fills ledger holds it: its order, role, side, and lots, its
+         *     instant, its price as decimal text, the fidelity it priced on, and `bar_time`, the open in
+         *     whole seconds of the page's bar it lies on by F-BAR-06, none where it lies off the page.
+         */
+        ChartFill: {
+            /** Bar Time */
+            bar_time: number | null;
+            /** Fidelity */
+            fidelity: string;
+            /** Lots */
+            lots: number;
+            /** Order */
+            order: number;
+            /** Price */
+            price: string;
+            role: components["schemas"]["OrderRole"];
+            side: components["schemas"]["Side"];
+            /** Time */
+            time: string;
+        };
+        /**
+         * ChartPage
+         * @description A page of a saved run's chart: its bars as `GET /v1/market/bars` sends them, at the prices
+         *     each contract traded at, with `next_from` to send as the next page's `from`; the
+         *     instrument's tick; the strategy's features at each bar; and the trades with a fill on the
+         *     page, or held across it.
+         */
+        ChartPage: {
+            bars: components["schemas"]["BarColumns"];
+            /** Features */
+            features: components["schemas"]["ChartFeature"][];
+            /** Instrument */
+            instrument: string;
+            /** Next From */
+            next_from: string | null;
+            /** Provider */
+            provider: string;
+            /** Tick Size */
+            tick_size: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Trades */
+            trades: components["schemas"]["ChartTrade"][];
+            /** Warnings */
+            warnings: string[];
+        };
+        /**
          * ChartStyle
          * @description The charts' style (module docstring); its defaults are FEAT's, hollow green rising bars
          *     and hollow red falling ones, the builder's answer at step 5.4's plan, with the volume pane,
@@ -1769,6 +1878,28 @@ export interface components {
              * @default true
              */
             volume_shown: boolean;
+        };
+        /**
+         * ChartTrade
+         * @description A trade the page shows: its row, its id, its entry order, its side and lots, its net P&L
+         *     as decimal text, every fill of it in the order they were made, its stop, and each target's
+         *     last level.
+         */
+        ChartTrade: {
+            /** Entry Order */
+            entry_order: number;
+            /** Fills */
+            fills: components["schemas"]["ChartFill"][];
+            /** Lots */
+            lots: number;
+            /** Pnl */
+            pnl: string;
+            side: components["schemas"]["PositionSide"];
+            stop: components["schemas"]["StopLevels"];
+            /** Targets */
+            targets: string[];
+            /** Trade */
+            trade: number;
         };
         /**
          * Column
@@ -2208,6 +2339,14 @@ export interface components {
                 [key: string]: components["schemas"]["JsonValue"];
             };
         };
+        /**
+         * FeatureUnit
+         * @description How a feature's values read: `price`, in the instrument's units, as the distance the
+         *     strategy's exit rules read it as, such as an ATR; or `as_stored`, as the run's signals hold
+         *     it, since nothing says which other features are prices (the builder's answer at the plan).
+         * @enum {string}
+         */
+        FeatureUnit: "price" | "as_stored";
         /**
          * FeeChoice
          * @description A fee table a run can name, with the fee of the run's root it would pay (D-117).
@@ -2840,7 +2979,7 @@ export interface components {
          * @description What a job runs (`01-architecture.md` section 6); a later phase adds its kinds.
          * @enum {string}
          */
-        JobKind: "backtest" | "feature_preview" | "feature_validate" | "analytics" | "study" | "prop_sim" | "source_sync" | "import" | "trade_import" | "catalog_sync" | "reproduce" | "agent_turn" | "ingest" | "demo" | "python_snippet";
+        JobKind: "backtest" | "feature_preview" | "feature_validate" | "analytics" | "study" | "prop_sim" | "source_sync" | "import" | "trade_import" | "catalog_sync" | "reproduce" | "agent_turn" | "ingest" | "demo" | "python_snippet" | "explain";
         /**
          * JobStatus
          * @description Where a job stands (`01-architecture.md` section 6): queued, then running, then one of
@@ -3782,7 +3921,9 @@ export interface components {
          * RunStatistics
          * @description What a saved run's record says of how it went (step 5.7, D-116): its metrics, the currency
          *     their money is in, its net P&L as a share of its capital, the fidelity era of each trade date
-         *     it filled on, and its warnings.
+         *     it filled on, and its warnings; and, from step 5.9, the timeframe of its strategy's bars,
+         *     which a run of no saved version names nowhere else, and on which the trade review's chart
+         *     cuts its windows.
          */
         RunStatistics: {
             currency: components["schemas"]["Currency"];
@@ -3791,6 +3932,8 @@ export interface components {
             metrics: components["schemas"]["Metrics"];
             /** Pnl Share */
             pnl_share: number;
+            /** Timeframe */
+            timeframe: string;
             /** Warnings */
             warnings: string[];
         };
@@ -4184,6 +4327,13 @@ export interface components {
          */
         Severity: "high" | "medium";
         /**
+         * Side
+         * @description An order's side. The specification writes each rule for a buy, and a sell mirrors it
+         *     (`docs/spec/fill-semantics.md` §1).
+         * @enum {string}
+         */
+        Side: "buy" | "sell";
+        /**
          * SideResults
          * @description The figures of a run's trades of one side, or of all of them (module docstring), money in
          *     the instrument's currency, the time held in minutes, and the excursions in ticks.
@@ -4336,6 +4486,17 @@ export interface components {
          * @enum {string}
          */
         SourceKind: "vendor" | "exchange-archive" | "platform";
+        /**
+         * StopLevels
+         * @description A trade's stop: its first level, from its entry's price and its initial risk, and its last,
+         *     as the orders hold it once a breakeven, a trail, or a roll moved it; none without a stop.
+         */
+        StopLevels: {
+            /** First */
+            first: string | null;
+            /** Last */
+            last: string | null;
+        };
         /**
          * StoredDataset
          * @description A dataset of trades, TBBO, or bars the store holds (`fefat.market.status`): its id; its
@@ -6925,6 +7086,79 @@ export interface operations {
             };
         };
     };
+    run_chart_v1_runs__run__chart_get: {
+        parameters: {
+            query: {
+                /** @description The trade date the window starts on, such as `2026-03-06`, or the instant a page opens at, a page's `next_from`, such as `2026-03-06T03:20:00Z`. */
+                from: string;
+                /** @description The trade date the window ends on. */
+                to: string;
+            };
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChartPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     run_distribution_v1_runs__run__distribution_get: {
         parameters: {
             query?: never;
@@ -7069,6 +7303,76 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    explain_trade_v1_runs__run__explain__trade_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+                /** @description The trade's id, its entry order. */
+                trade_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7442,6 +7746,8 @@ export interface operations {
                 pnl_sign?: components["schemas"]["PnlSign"] | null;
                 fidelity?: string | null;
                 ambiguous?: boolean | null;
+                /** @description A trade's row, from 0. */
+                trade?: number | null;
                 sort?: components["schemas"]["TradeSort"];
                 order?: components["schemas"]["SortOrder"];
                 /** @description The `next_cursor` of the page before. */
@@ -7523,6 +7829,8 @@ export interface operations {
                 pnl_sign?: components["schemas"]["PnlSign"] | null;
                 fidelity?: string | null;
                 ambiguous?: boolean | null;
+                /** @description A trade's row, from 0. */
+                trade?: number | null;
                 sort?: components["schemas"]["TradeSort"];
                 order?: components["schemas"]["SortOrder"];
             };

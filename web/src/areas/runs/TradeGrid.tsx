@@ -2,7 +2,14 @@ import { flexRender, type Header, useTable } from "@tanstack/react-table"
 import type { VirtualItem } from "@tanstack/react-virtual"
 import { cn } from "cn"
 import { ArrowDown, ArrowUp } from "lucide-react"
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
+import {
+  type KeyboardEvent,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import type { Trade, TradeSort } from "@/api/trades"
 import { announceSelectedTrade } from "./selected-trade"
 import {
@@ -38,6 +45,8 @@ type TradeGridProps = Readonly<{
   onOrder: (sort: TradeSort, order: SortOrder) => void
   onNearEnd: () => void
   readFor: string
+  selected: number | null
+  onSelect: (trade: Trade) => void
 }>
 
 /** The trades read so far as a data grid (web/DESIGN.md, Patterns, Data grid): a card that
@@ -45,7 +54,9 @@ type TradeGridProps = Readonly<{
  * still, only the rows near its view drawn, busy without rows while `total` is not known yet,
  * and back at its first row once `readFor`, the filters and the order its rows are read for,
  * changes; a row chosen by the pointer, Enter, or Space, or reached by the arrows, is the
- * selected trade, which `announceSelectedTrade` tells the page. */
+ * selected trade, which `onSelect` and `announceSelectedTrade` tell the page; the trade
+ * `selected`, by its row, whoever chose it, as the chart's Previous and Next do (step 5.9), is
+ * marked and scrolled into view. */
 export function TradeGrid({
   trades,
   total,
@@ -56,6 +67,8 @@ export function TradeGrid({
   onOrder,
   onNearEnd,
   readFor,
+  selected,
+  onSelect,
 }: TradeGridProps) {
   const box = useRef<HTMLDivElement>(null)
   const columns = useMemo(() => tableColumns(look), [look])
@@ -81,11 +94,17 @@ export function TradeGrid({
   })
   const { virtualizer, rows, above, below } = useVirtualRows(trades.length, box)
   const sideways = useScrolledSideways(box)
-  const [selected, setSelected] = useState<number | null>(null)
   const [focusing, setFocusing] = useState<number | null>(null)
+  const selectedIndex = trades.findIndex((trade) => trade.trade === selected)
   useEffect(() => {
     virtualizer.scrollToOffset(0)
   }, [readFor, virtualizer])
+  const reveal = useEffectEvent(() => {
+    if (selectedIndex >= 0) {
+      virtualizer.scrollToIndex(selectedIndex, { align: "auto" })
+    }
+  })
+  useEffect(() => reveal(), [selected])
   const lastDrawn = rows.at(-1)
   useEffect(() => {
     if (
@@ -108,7 +127,7 @@ export function TradeGrid({
   const choose = (index: number) => {
     const trade = trades.at(index)
     if (trade !== undefined) {
-      setSelected(trade.trade)
+      onSelect(trade)
       announceSelectedTrade(trade)
     }
   }
@@ -130,7 +149,6 @@ export function TradeGrid({
       setFocusing(to)
     }
   }
-  const selectedIndex = trades.findIndex((trade) => trade.trade === selected)
   const reachable = tabbableRow(rows, selectedIndex, virtualizer.scrollOffset)
   const headers = table.getHeaderGroups().at(0)?.headers ?? []
   const widths = edgeWidths(

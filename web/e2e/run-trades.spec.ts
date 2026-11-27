@@ -315,6 +315,8 @@ test("an order read before opens at its first row, wherever the grid was scrolle
   await expect(page).toHaveURL(/sort=mae_ticks/)
   await page.getByTestId("sort-entry_ts").click()
   await expect(page).not.toHaveURL(/sort=/)
+  // From step 5.9 the trade review's chart stands over the table, so the page scrolls to it.
+  await grid(page).scrollIntoViewIfNeeded()
   await grid(page).evaluate((box) => box.scrollTo(0, box.scrollHeight))
   await expect(first).not.toBeInViewport()
 
@@ -694,6 +696,8 @@ test("scrolled down and right, the header row and the entry column stay, and one
   await routeManyTrades(page, key)
   await page.goto(`/runs/run/trades?key=${key}`)
   await expect(page.getByTestId("trades-count")).toHaveText("5,000 trades")
+  // From step 5.9 the trade review's chart stands over the table, so the page scrolls to it.
+  await grid(page).scrollIntoViewIfNeeded()
 
   // 120 rows down, the row under the header is the 121st, whole.
   await grid(page).evaluate((box) => box.scrollTo(box.scrollWidth, 40 * 120))

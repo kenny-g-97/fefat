@@ -202,3 +202,13 @@ def read_artifact(folder: Path, name: str) -> pl.DataFrame:
     require_column_types(frame, ARTIFACT_SCHEMAS[name], f"the {name} artifact's of {folder}")
     require_states(frame, name, folder)
     return frame
+
+
+def scan_artifact(folder: Path, name: str) -> pl.LazyFrame:
+    """The artifact `name` of the run in `folder`, read lazily, so that a reader takes the rows
+    and the columns it needs alone, as the trade review reads a trade path's fills without its
+    minute marks (step 5.9); unchecked, where `read_artifact` checks the whole file, so that a
+    damaged file is refused as Polars reads it."""
+    if name not in ARTIFACT_SCHEMAS:
+        raise ValueError(f"Expected an artifact ({', '.join(ARTIFACT_SCHEMAS)}), got {name!r}.")
+    return pl.scan_parquet(folder / f"{name}.parquet")

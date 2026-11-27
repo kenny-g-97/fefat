@@ -90,7 +90,8 @@ const FIDELITY = /^(trades|tbbo|[0-9]+[smhd])$/
 /** A saved run's trades (step 5.8): the run by its key, the SQL tab or the table, and what the
  * table asks, its filters and its order, kept in the address as the Runs page keeps its filters,
  * so that a reload and a link keep them; a value the page cannot read is left out, a date the
- * calendar does not hold among them, and both dates where From comes after To. */
+ * calendar does not hold among them, and both dates where From comes after To. From step 5.9 the
+ * trade the chart shows, `trade`, its row, so that a link opens the chart on it. */
 export const tradesSearch = z
   .object({
     key: runSearch.shape.key,
@@ -104,6 +105,7 @@ export const tradesSearch = z
     ambiguous: z.boolean().optional().catch(undefined),
     sort: z.enum(TRADE_SORTS).optional().catch(undefined),
     order: z.enum(ORDERS).optional().catch(undefined),
+    trade: z.number().int().nonnegative().optional().catch(undefined),
   })
   .transform((search) =>
     search.start !== undefined &&

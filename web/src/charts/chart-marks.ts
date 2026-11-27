@@ -2,14 +2,39 @@ import type { MarkerTone } from "./chart-look"
 import type { ChartTime } from "./chart-time"
 
 /** A marker on a candle series: where, its words, above or below its bar, its shape, and how it
- * reads. */
+ * reads; with a `price`, above or below that price rather than its bar, the shape's point on
+ * it, as a fill's marker stands at its fill's price; with an `id`, told apart under the pointer
+ * (`PriceChart`'s `onMarkerHover`); and with a `size`, as many times the library's own, as the
+ * selected trade's fills stand out. */
 export type ChartMarker = Readonly<{
   time: ChartTime
   text: string
   position: "above" | "below"
   shape: "arrowUp" | "arrowDown" | "circle" | "square"
   tone: MarkerTone
+  price?: number
+  id?: string
+  size?: number
 }>
+
+/** `markers` in the order of their times, those of one time as given: the library finds the
+ * markers in view by halving their list, and a pane's marks of several kinds, such as its rolls
+ * and a run's fills, come in apart. */
+export function inTimeOrder(
+  markers: readonly ChartMarker[]
+): readonly ChartMarker[] {
+  return markers.toSorted((one, other) => timeOrder(one.time, other.time))
+}
+
+/** How two times of one time axis compare: opens in seconds by their number, trade dates as
+ * their text reads. */
+function timeOrder(one: ChartTime, other: ChartTime): number {
+  if (typeof one === "number" && typeof other === "number") {
+    return one - other
+  }
+  const [first, second] = [String(one), String(other)]
+  return first < second ? -1 : first > second ? 1 : 0
+}
 
 /** A session of a chart's bars: the time of its first bar and of its last, and whether it is
  * shaded. */

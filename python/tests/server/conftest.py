@@ -41,6 +41,7 @@ from fefat_app.services.logins import LoginAttempts, Logins
 from fefat_app.services.runs import Runs
 from fefat_app.services.stored_data import StoredDataDeletions
 from fefat_app.services.strategies import SavedStrategies
+from fefat_app.services.trade_review import TradeReview
 from fefat_app.services.trade_table import TradeTable
 from fefat_app.uploads import UploadFolders
 from local_server import LOOPBACK, STARTED_AT, SettableClock, running_runners
@@ -120,6 +121,7 @@ def container(
             runs=runs,
             imports=Imports(warm_executor, jobs, uploads, paths, settings),
             trade_table=TradeTable(runs, DuckDbQueries()),
+            trade_review=TradeReview(runs, store, paths.cache_dir, jobs),
         )
     finally:
         dispatcher.close()

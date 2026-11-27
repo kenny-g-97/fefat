@@ -316,6 +316,9 @@ def _filtered(filters: TradeFilters) -> tuple[list[str], list[object]]:
         values.append(filters.end)
     if filters.pnl_sign is not None:
         terms.append(_SIGNS[filters.pnl_sign])
+    if filters.trade is not None:
+        terms.append("trade = ?")
+        values.append(filters.trade)
     return terms, values
 
 

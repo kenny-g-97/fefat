@@ -5,7 +5,8 @@ trade shows its stop's trigger and its fill; on 1-minute bars every trade of the
 the one held across the fixtures' roll of 2026-03-09 among them, on the store's own bars when its
 prints disagree; an id that is no trade's, fills
 the engines do not share, a trade of prints across the roll, and data changed since the run are
-refused."""
+refused. From step 5.9 the explanation keeps the reference engine's log entries as data, and a
+session that holds no record by the decision replays from the trade date before."""
 
 import json
 import os
@@ -18,15 +19,23 @@ import polars as pl
 import pytest
 
 import fefat as ff
-from fefat.backtest import Run, RunConfig
-from fefat.backtest.explain import EnginesDisagreementError
+from fefat.backtest import Run, RunConfig, explain_episode
+from fefat.backtest.explain import EnginesDisagreementError, Explanation
 from fefat.config import resolve_paths
 from fefat.market.schema import Timeframe
+from fefat.market.snapshot import FileDigest, Snapshot
+from fefat.market.store import Store
+from fefat.reference.event_log import EventKind
 from fefat.reference.settings import RollHandling
+from fefat.reference.units import instant_text
 from fefat.strategy.spec import OppositeSignal
 from notebook_runs import breakout, store_with
 
 START, END = "2026-03-05", "2026-03-09"
+MARCH_6 = date(2026, 3, 6)
+MARCH_9 = date(2026, 3, 9)
+SECOND = 1_000_000_000
+FIVE_MINUTES = 5 * 60 * SECOND
 
 
 @pytest.fixture(autouse=True)
@@ -37,6 +46,87 @@ def fixture_store() -> None:
 def backtest(config: RunConfig | None = None) -> Run:
     with pytest.warns(UserWarning, match="F-FEE-01"):
         return ff.backtest.run(breakout(), START, END, config)
+
+
+def first_entered_on(run: Run, trade_date: date) -> tuple[dict[str, Any], int]:
+    """The run's first trade entered on `trade_date`, and the open of that session, the first
+    bucket's of the signals' grid."""
+    trade = run.trades.filter(pl.col("entry_trade_date") == trade_date).row(0, named=True)
+    closes = run.signals.filter(pl.col("trade_date") == trade_date).get_column("ts_close")
+    first = closes.min()
+    assert isinstance(first, int)
+    return trade, first - FIVE_MINUTES
+
+
+def replayed_from(explanation: Explanation) -> str:
+    """The instant the replay's records start at, as the explanation's second line writes it."""
+    words = explanation.lines[1]
+    assert words.startswith("Replayed through the reference engine on "), words
+    return words.removesuffix(":").rsplit(" ", 1)[1]
+
+
+def test_the_explanation_keeps_the_reference_engines_log_entries_as_data() -> None:
+    # Step 5.9 (D-93): the trade review reads the replay's events as data, each an instant, a
+    # kind, an order, a rule, and a text, beside the lines the explanation prints.
+    run = backtest()
+    trade = run.trades.row(1, named=True)
+
+    explanation = run.explain(trade["entry_order"])
+
+    entries = explanation.entries
+    assert entries
+    assert [entry.ts for entry in entries] == sorted(entry.ts for entry in entries)
+    filled = {(entry.order, entry.ts) for entry in entries if entry.kind is EventKind.FILLED}
+    assert {(fill.order, fill.ts) for fill in explanation.fills} <= filled
+    for entry in entries:
+        assert any(entry.text in line for line in explanation.lines), entry.text
+
+
+def test_a_session_without_a_bar_by_the_decision_replays_from_the_trade_date_before(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Step 5.9 (BACKLOG's explanation line, from the Phase 2 exit's reviews): where the
+    # decision's session holds no bar by the decision, as one whose first buckets hold no trade,
+    # the replay takes the mark the session before left, as the Rust engine does (F-MRK-01),
+    # rather than replaying without one. The fixtures' 1-minute bars start on 2026-03-06, so the
+    # trade is the first of 03-09, the session after, across the weekend and the roll to ESM2026.
+    run = backtest(RunConfig(fidelity=Timeframe.parse("1m")))
+    trade, opened = first_entered_on(run, MARCH_9)
+    decided = trade["entry_decision"]
+
+    def without_the_sessions_start(*asked: Any, **options: Any) -> pl.LazyFrame:
+        bars = ff.market.load(*asked, **options)
+        return bars.filter((pl.col("trade_date") != MARCH_9) | (pl.col("ts_close") > decided))
+
+    monkeypatch.setattr(explain_episode, "load", without_the_sessions_start)
+
+    explanation = run.explain(trade["entry_order"])
+
+    assert explanation.fills
+    assert replayed_from(explanation) < instant_text(opened)
+
+
+def test_a_session_without_a_print_by_the_decision_replays_from_the_trade_date_before(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The same on trade prints: the last print of the trade date before is the mark.
+    run = backtest()
+    trade, opened = first_entered_on(run, MARCH_6)
+    decided = trade["entry_decision"]
+    read = Store.read_pinned_partition
+
+    def without_the_sessions_start(
+        store: Store, snapshot: Snapshot, digest: FileDigest
+    ) -> pl.DataFrame:
+        prints = read(store, snapshot, digest)
+        return prints.filter(~pl.col("ts_recv").is_between(opened, decided))
+
+    monkeypatch.setattr(Store, "read_pinned_partition", without_the_sessions_start)
+
+    explanation = run.explain(trade["entry_order"])
+
+    assert explanation.fills
+    assert replayed_from(explanation) < instant_text(opened)
 
 
 def test_a_losing_trade_shows_its_stops_trigger_and_its_fill_with_rule_and_slippage(

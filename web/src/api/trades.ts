@@ -1,4 +1,8 @@
-import { infiniteQueryOptions, useMutation } from "@tanstack/react-query"
+import {
+  infiniteQueryOptions,
+  queryOptions,
+  useMutation,
+} from "@tanstack/react-query"
 import { api } from "./client"
 import { answer } from "./problems"
 import type { components, paths } from "./schema"
@@ -12,8 +16,9 @@ export type QueryAnswer = components["schemas"]["QueryAnswer"]
 type TradesAsked = NonNullable<
   paths["/v1/runs/{run}/trades"]["get"]["parameters"]["query"]
 >
-/** Which trades a table shows, in which order, as its page's address keeps them. */
-export type TradesShown = Omit<TradesAsked, "cursor" | "limit">
+/** Which trades a table shows, in which order, as its page's address keeps them; the trade the
+ * chart shows is no filter of the table's, so that a selection reads nothing again. */
+export type TradesShown = Omit<TradesAsked, "cursor" | "limit" | "trade">
 /** What a trade is ordered by. */
 export type TradeSort = NonNullable<TradesShown["sort"]>
 
@@ -49,6 +54,28 @@ export function runTradesQuery(runKey: string, shown: TradesShown) {
       readTrades(runKey, shown, pageParam),
     initialPageParam: null,
     getNextPageParam: (page) => page.next_cursor,
+    staleTime: Infinity,
+  })
+}
+
+/** The trade of the saved run `runKey` whose row is `row` among those `shown`'s filters keep,
+ * which a link to the trade review names (step 5.9), read alone where the table has not read
+ * it; none past the run's last, or where the filters hide it. */
+export function runTradeQuery(runKey: string, row: number, shown: TradesShown) {
+  return queryOptions({
+    queryKey: ["run-results", runKey, "trade", row, shown],
+    queryFn: async () => {
+      const page = answer(
+        await api.GET("/v1/runs/{run}/trades", {
+          params: {
+            path: { run: runKey },
+            query: { ...shown, trade: row, limit: 1 },
+          },
+        })
+      )
+      const found = page.trades.at(0)
+      return found === undefined ? null : found
+    },
     staleTime: Infinity,
   })
 }

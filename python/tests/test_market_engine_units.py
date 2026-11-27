@@ -51,6 +51,26 @@ def test_a_price_column_reads_in_the_instruments_units_as_the_float_nearest_its_
     assert prices[:3] == [4990.25, -0.25, 76.43]
 
 
+def test_every_price_of_a_long_column_is_the_float_nearest_its_decimal() -> None:
+    # Step 5.9 (BACKLOG's "`price_in_units` a bit off the nearest float"): the trade review's
+    # contract test holds the chart's prices to the fills ledger, and a multiplication by the
+    # scale's inverse put two prices in five a bit off on a tick of 0.1.
+    held = [5_000_000_000_000 + tick * 100_000_000 for tick in range(4_000)]
+
+    prices = pl.DataFrame({"close": held}).select(price_in_units("close")).to_series().to_list()
+
+    assert prices == [float(price_text(units)) for units in held]
+
+
+def test_a_missing_price_stays_missing() -> None:
+    held = pl.Series("stop_price", [4_990_250_000_000, None], dtype=pl.Int64)
+
+    prices = held.to_frame().select(price_in_units("stop_price")).to_series()
+
+    assert prices.dtype == pl.Float64
+    assert prices.to_list() == [4990.25, None]
+
+
 def test_money_reads_in_the_currency_as_the_float_nearest_its_decimal() -> None:
     # Step 5.7: the points a chart draws go out as numbers, which no client scales again.
     held = [51_250_500_000, -84_514, 1, 0]

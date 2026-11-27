@@ -9,7 +9,7 @@ there, never in the server; the run's row and its queued job are made in one tra
 runs' records, which the dispatcher then runs."""
 
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -211,6 +211,7 @@ class Runs:
             metrics=record.metrics,
             fidelity_eras=record.fidelity_eras,
             warnings=record.warnings,
+            timeframe=str(record.strategy.spec["timeframe"]),
         )
 
     def equity_curve(self, run: str, max_points: int) -> EquityCurve:
@@ -264,8 +265,14 @@ class Runs:
         """The folder of the saved run `run`, refused as `_opened` refuses, and what reading its
         files refuses in the block refused as `_results_read` refuses (step 5.8)."""
         opened = self._opened(run)
-        with _results_read(opened.hash, self.paths):
+        with self.results_read(opened):
             yield opened
+
+    def results_read(self, opened: Run) -> AbstractContextManager[None]:
+        """What reading the files of `opened`, a run `reading` opened, refuses in the block, as
+        `reading` refuses it, for a read once that block has ended, as the trade review's after
+        the store's bars (step 5.9)."""
+        return _results_read(opened.hash, self.paths)
 
     def _opened(self, run: str) -> Run:
         """The folder of the saved run `run`: `NoSuchRunError` where no run has that id or key,

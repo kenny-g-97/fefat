@@ -28,6 +28,7 @@ class JobKind(StrEnum):
     INGEST = "ingest"
     DEMO = "demo"
     PYTHON_SNIPPET = "python_snippet"
+    EXPLAIN = "explain"
 
 
 class JobStatus(StrEnum):

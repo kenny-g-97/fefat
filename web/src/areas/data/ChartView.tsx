@@ -3,7 +3,7 @@ import {
   useQueries,
   useQuery,
 } from "@tanstack/react-query"
-import { type ReactNode, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import {
   barWindows,
   type HeldDates,
@@ -17,14 +17,21 @@ import {
   type WindowBars,
 } from "@/api/bars"
 import type { ChartStyle } from "@/api/settings"
+import { chartPanes } from "@/charts/bar-panes"
+import { ChartReadout } from "@/charts/ChartReadout"
 import { PriceChart, type VisibleBars } from "@/charts/PriceChart"
+import {
+  type ChartFrameProps,
+  ChartFrame as KeptChartFrame,
+} from "@/ui/chart-frame"
+import { ChartWarnings } from "@/ui/chart-warnings"
 import { decimalsOf } from "@/ui/figures"
+import { FILLS } from "@/ui/frame-size"
 import { usePageScrolls } from "@/ui/page-scroll"
-import { ResizableFrame } from "@/ui/resizable-frame"
 import { SectionFailure } from "@/ui/section-failure"
-import { ChartReadout } from "./ChartReadout"
-import { CHART_FRAME, useChartFrameSize } from "./chart-frame-size"
-import { chartPanes } from "./chart-panes"
+
+/** Where this browser keeps the size the trader gave the chart viewer's frame. */
+const KEPT_AS = "fefat_chart_frame_size"
 
 /** Fewer bars than this before the view ask for the window before them. */
 const PRELOAD_BARS = 500
@@ -141,13 +148,7 @@ function ChartWindows({
       {failure !== undefined && (
         <SectionFailure error={failure.error} onRetry={failure.retry} />
       )}
-      {warnings.length > 0 && (
-        <ul className="flex shrink-0 flex-col gap-1 text-xs text-foreground-secondary">
-          {warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
-        </ul>
-      )}
+      <ChartWarnings warnings={warnings} />
     </>
   )
 }
@@ -179,46 +180,7 @@ function readWindows(
   }
 }
 
-type ChartFrameProps = Readonly<{
-  loading?: boolean
-  attributes?: Readonly<Record<`data-${string}`, string>>
-  children?: ReactNode
-}>
-
-/** The chart's card, busy while bars load, which tells a test whether it is still loading and
- * what it drew; before its first bars, it says that they load. It stands in a frame the trader
- * sizes by its edges (web/DESIGN.md, Patterns, Resizable frame), while bars load too, so that
- * the card they arrive in is the size it was. */
-function ChartFrame({
-  loading = true,
-  attributes = {},
-  children,
-}: ChartFrameProps) {
-  const [size, resize] = useChartFrameSize()
-  return (
-    <ResizableFrame
-      label="Chart"
-      size={size}
-      onResize={resize}
-      leastWidth={CHART_FRAME.leastWidth}
-      leastHeight={CHART_FRAME.leastHeight}
-      mostHeight={CHART_FRAME.mostHeight}
-    >
-      <div
-        data-testid="chart-view"
-        data-loading={String(loading)}
-        aria-busy={loading}
-        {...attributes}
-        className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-raised"
-      >
-        {children === undefined ? (
-          <p className="box-content flex min-h-10 items-center border-b px-4 py-2 text-xs text-muted-foreground">
-            Loading bars
-          </p>
-        ) : (
-          children
-        )}
-      </div>
-    </ResizableFrame>
-  )
+/** The chart viewer's card in its frame, which fills the page until the trader sizes it. */
+function ChartFrame(props: Omit<ChartFrameProps, "keptAs" | "fallback">) {
+  return <KeptChartFrame keptAs={KEPT_AS} fallback={FILLS} {...props} />
 }

@@ -45,9 +45,10 @@ export function barSeconds(length: string): number {
   return Number(parts[1]) * unit
 }
 
-/** The calendar days a window of `chosen` spans: as many as `BUCKETS_PER_WINDOW` buckets cover
- * on days traded around the clock, at least one and at most `DAYS_PER_WINDOW`. */
-export function windowDays(chosen: Timeframe): number {
+/** The calendar days a window of bars `chosen` long spans, a timeframe such as `5m`: as many as
+ * `BUCKETS_PER_WINDOW` buckets cover on days traded around the clock, at least one and at most
+ * `DAYS_PER_WINDOW`. */
+export function windowDays(chosen: string): number {
   const days = Math.floor(
     (BUCKETS_PER_WINDOW * barSeconds(chosen)) / SECONDS_IN_A_DAY
   )
@@ -56,10 +57,11 @@ export function windowDays(chosen: Timeframe): number {
 
 /** The windows of `held`, newest first, on a grid of `windowDays` fixed from 1970-01-01, so that
  * a window keeps its dates, and so its cached bars, however far the chart has scrolled; the
- * newest and the oldest are cut to the dates held. */
+ * newest and the oldest are cut to the dates held. A run's chart cuts its own on the
+ * strategy's timeframe, any bar length (step 5.9). */
 export function barWindows(
   held: HeldDates,
-  chosen: Timeframe
+  chosen: string
 ): readonly BarWindow[] {
   const days = windowDays(chosen)
   const first = dayNumber(held.first)
@@ -78,6 +80,61 @@ export function barWindows(
       to: tradeDate(Math.min(last, (index + 1) * days - 1)),
     }
   })
+}
+
+/** A run of windows of `barWindows`, by their indexes, the newest window 0: from `newest` to
+ * `oldest`, both among them. */
+export type WindowRange = Readonly<{ newest: number; oldest: number }>
+
+/** The index of the window of `windows`, newest first, whose dates hold `date`, a trade date
+ * such as 2026-03-06; the nearest where none does, the newest past them and the oldest before
+ * them. */
+export function windowAt(windows: readonly BarWindow[], date: string): number {
+  const holding = windows.findIndex((each) => each.from <= date)
+  return holding === -1 ? windows.length - 1 : holding
+}
+
+/** How many bars short of either end of those loaded the next window is asked for. */
+const GROWS_WITHIN = 500
+
+/** `range` one window older where fewer than 500 bars lie before the view, and one newer where
+ * fewer than 500 lie after it, within the `count` windows there are; `range` itself where
+ * neither, so that a caller sets no new state. */
+export function grownRange(
+  range: WindowRange,
+  visible: Readonly<{ before: number; after: number }>,
+  count: number
+): WindowRange {
+  const oldest =
+    visible.before < GROWS_WITHIN
+      ? Math.min(count - 1, range.oldest + 1)
+      : range.oldest
+  const newest =
+    visible.after < GROWS_WITHIN ? Math.max(0, range.newest - 1) : range.newest
+  return oldest === range.oldest && newest === range.newest
+    ? range
+    : { newest, oldest }
+}
+
+/** The run of `loaded`, a value of each window asked for in order, undefined for one not read
+ * yet, that holds the window `at` and reads in a row both ways from it; none while `at` is not
+ * read. */
+export function readAround<T>(
+  loaded: readonly (T | undefined)[],
+  at: number
+): Readonly<{ from: number; to: number }> | null {
+  if (at < 0 || loaded[at] === undefined) {
+    return null
+  }
+  let from = at
+  while (from > 0 && loaded[from - 1] !== undefined) {
+    from -= 1
+  }
+  let to = at
+  while (to < loaded.length - 1 && loaded[to + 1] !== undefined) {
+    to += 1
+  }
+  return { from, to }
 }
 
 /** The bars of the windows loaded in a row from the newest, oldest first, as one set of

@@ -4,25 +4,36 @@ import { crosshairTime } from "@/charts/chart-time"
 import { formatCount, formatPrice } from "@/ui/figures"
 import { IdentityChip } from "@/ui/identity-chip"
 
+/** A figure of the readout beside the bar's own: its label, its test id's end, and its text. */
+export type ReadoutField = Readonly<{
+  label: string
+  id: string
+  value: string
+}>
+
 type ChartReadoutProps = Readonly<{
   bars: BarColumns
   index: number | null
   decimals: number
   daily: boolean
   loading: boolean
+  extra?: (at: number) => readonly ReadoutField[]
 }>
 
 /** The bar under the crosshair, or else the last that traded, as the API gave it
  * (web/DESIGN.md, Patterns, Price chart): its contract and its open in the browser's zone or its
  * trade date, then its open, high, low, close, and volume, its prices at its instrument's
  * decimals, on one line, two, or three by the row's width alone, a label never apart from its
- * figure; and, while a window of bars loads, a word that it does, which moves nothing. */
+ * figure, then the figures `extra` gives of that bar, as the trade review gives the strategy's
+ * features (step 5.9); and, while a window of bars loads, a word that it does, which moves
+ * nothing. */
 export function ChartReadout({
   bars,
   index,
   decimals,
   daily,
   loading,
+  extra,
 }: ChartReadoutProps) {
   const last = bars.time.length - 1
   const at = index === null || index < 0 || index > last ? last : index
@@ -56,6 +67,7 @@ export function ChartReadout({
             </div>
           </dl>
           <Prices bars={bars} at={at} decimals={decimals} />
+          {extra !== undefined && <Fields fields={extra(at)} />}
         </>
       )}
       {loading && (
@@ -67,29 +79,12 @@ export function ChartReadout({
   )
 }
 
-function Prices({
-  bars,
-  at,
-  decimals,
-}: Readonly<{ bars: BarColumns; at: number; decimals: number }>) {
-  const fields: readonly Readonly<{
-    label: string
-    id: string
-    value: string
-  }>[] = [
-    { label: "Open", id: "open", value: formatPrice(bars.open[at], decimals) },
-    { label: "High", id: "high", value: formatPrice(bars.high[at], decimals) },
-    { label: "Low", id: "low", value: formatPrice(bars.low[at], decimals) },
-    {
-      label: "Close",
-      id: "close",
-      value: formatPrice(bars.close[at], decimals),
-    },
-    { label: "Volume", id: "volume", value: formatCount(bars.volume[at]) },
-  ]
-  // The lines follow the row's width, never the figures under the crosshair, which would move
-  // the chart under the pointer from one bar to the next: under 56 rem the prices start a line
-  // of their own, and under 40 rem, where five-digit prices leave it no room, the volume does.
+/** A row of figures, the bar's prices or those beside them, each a label and its figure on one
+ * line, after the bar's time however the row's width lays them out: under 56 rem they start a
+ * line of their own, and under 40 rem, where five-digit prices leave it no room, the volume
+ * does. The lines follow the row's width, never the figures under the crosshair, which would
+ * move the chart under the pointer from one bar to the next. */
+function Fields({ fields }: Readonly<{ fields: readonly ReadoutField[] }>) {
   return (
     <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 whitespace-nowrap @max-[56rem]:order-last @max-[56rem]:basis-full">
       {fields.map(({ label, id, value }) => (
@@ -110,5 +105,35 @@ function Prices({
         </div>
       ))}
     </dl>
+  )
+}
+
+function Prices({
+  bars,
+  at,
+  decimals,
+}: Readonly<{ bars: BarColumns; at: number; decimals: number }>) {
+  return (
+    <Fields
+      fields={[
+        {
+          label: "Open",
+          id: "open",
+          value: formatPrice(bars.open[at], decimals),
+        },
+        {
+          label: "High",
+          id: "high",
+          value: formatPrice(bars.high[at], decimals),
+        },
+        { label: "Low", id: "low", value: formatPrice(bars.low[at], decimals) },
+        {
+          label: "Close",
+          id: "close",
+          value: formatPrice(bars.close[at], decimals),
+        },
+        { label: "Volume", id: "volume", value: formatCount(bars.volume[at]) },
+      ]}
+    />
   )
 }
