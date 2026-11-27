@@ -199,6 +199,15 @@ test("Explain shows the trade's replay as a timeline beside the chart", async ({
   await expect(filled.first().getByTestId("explained-event-time")).toHaveText(
     second(third.entry_ts)
   )
+  // The chart narrowed beside the panel, and its readout keeps the features after the bar's own
+  // figures, however many lines they take.
+  const volume = await page.getByTestId("readout-volume").boundingBox()
+  const feature = await page.getByTestId("readout-feature-atr").boundingBox()
+  expect(volume).not.toBeNull()
+  expect(feature).not.toBeNull()
+  if (volume !== null && feature !== null) {
+    expect(feature.y).toBeGreaterThan(volume.y)
+  }
   await page.mouse.move(0, 0)
   await screenshot(page, "run-trade-chart-explained")
   await page.getByRole("button", { name: "Close the explanation" }).click()

@@ -129,7 +129,7 @@ function TradesOfRun({
           <TabsContent
             value="trades"
             forceMount
-            className="flex min-h-0 flex-col gap-5 data-[state=inactive]:hidden"
+            className="flex min-h-0 flex-col gap-6 data-[state=inactive]:hidden"
           >
             {dates !== null && statistics.status === "success" && (
               <TradeReview
@@ -142,40 +142,42 @@ function TradesOfRun({
                 onSelect={select}
               />
             )}
-            <TradesToolbar
-              key={clears}
-              search={search}
-              exitReasons={
-                breakdowns === null ? [] : Object.keys(breakdowns.exit_reason)
-              }
-              fidelities={
-                breakdowns === null ? [] : Object.keys(breakdowns.fidelity)
-              }
-              onAsk={ask}
-              chooser={
-                <ColumnChooser visibility={visibility} onChange={choose} />
-              }
-            />
-            <TradesTable
-              runKey={runKey}
-              shown={shown}
-              filtered={filtered}
-              everyTrade={saved === null ? null : saved.key_metrics.trades}
-              currency={saved === null ? null : saved.currency}
-              visibility={visibility}
-              onOrder={(sort, order) =>
-                ask({
-                  sort: sort === "entry_ts" ? undefined : sort,
-                  order: order === "asc" ? undefined : order,
-                })
-              }
-              onClear={() => {
-                ask(CLEARED)
-                setClears((count) => count + 1)
-              }}
-              selected={search.trade === undefined ? null : search.trade}
-              onSelect={select}
-            />
+            <div className="flex min-h-0 flex-1 flex-col gap-5">
+              <TradesToolbar
+                key={clears}
+                search={search}
+                exitReasons={
+                  breakdowns === null ? [] : Object.keys(breakdowns.exit_reason)
+                }
+                fidelities={
+                  breakdowns === null ? [] : Object.keys(breakdowns.fidelity)
+                }
+                onAsk={ask}
+                chooser={
+                  <ColumnChooser visibility={visibility} onChange={choose} />
+                }
+              />
+              <TradesTable
+                runKey={runKey}
+                shown={shown}
+                filtered={filtered}
+                everyTrade={saved === null ? null : saved.key_metrics.trades}
+                currency={saved === null ? null : saved.currency}
+                visibility={visibility}
+                onOrder={(sort, order) =>
+                  ask({
+                    sort: sort === "entry_ts" ? undefined : sort,
+                    order: order === "asc" ? undefined : order,
+                  })
+                }
+                onClear={() => {
+                  ask(CLEARED)
+                  setClears((count) => count + 1)
+                }}
+                selected={search.trade === undefined ? null : search.trade}
+                onSelect={select}
+              />
+            </div>
           </TabsContent>
           <TabsContent
             value="sql"

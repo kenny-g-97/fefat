@@ -11,7 +11,8 @@ import { ChartFrame } from "@/ui/chart-frame"
 import { decimalsOf } from "@/ui/figures"
 import { usePageScrolls } from "@/ui/page-scroll"
 import { useShownTheme } from "@/ui/theme"
-import { MarkerTooltip, type TooltipPlace } from "./MarkerTooltip"
+import { MarkerTooltip } from "./MarkerTooltip"
+import type { TooltipPlace } from "./tooltip-place"
 import { TRADE_CHART_FRAME } from "./trade-chart-frame"
 import {
   barPlaces,

@@ -79,10 +79,11 @@ export function ChartReadout({
   )
 }
 
-/** The figures beside the bar's own, each a label and its figure on one line. */
+/** The figures beside the bar's own, each a label and its figure on one line, after the bar's
+ * prices however the row's width lays them out. */
 function Fields({ fields }: Readonly<{ fields: readonly ReadoutField[] }>) {
   return (
-    <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 whitespace-nowrap">
+    <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 whitespace-nowrap @max-[56rem]:order-last @max-[56rem]:basis-full">
       {fields.map(({ label, id, value }) => (
         <div key={id} className="flex items-center gap-2">
           <dt className="text-muted-foreground">{label}</dt>
