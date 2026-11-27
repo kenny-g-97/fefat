@@ -53,8 +53,8 @@ export function CodeEditor(props: CodeEditorProps) {
 }
 
 /** The code as the editor shows it, in the editor's box with its gutter of line numbers, while
- * CodeMirror loads, so that nothing moves once it has. */
-function CodeText({
+ * CodeMirror loads, so that nothing moves once it has; the version diff's too (step 5.10). */
+export function CodeText({
   label,
   code,
   editable,

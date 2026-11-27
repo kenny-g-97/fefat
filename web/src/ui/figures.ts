@@ -38,6 +38,11 @@ const EDGE = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
   signDisplay: "negative",
 })
+const PERCENT_EDGE = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  maximumFractionDigits: 2,
+  signDisplay: "negative",
+})
 const FEATURE = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 4,
   signDisplay: "negative",
@@ -190,6 +195,12 @@ export function formatFigure(value: number): string {
 /** A share the API sends as a fraction, in percent at two decimals: 0.025 is `2.50%`. */
 export function formatShare(share: number): string {
   return PERCENT.format(share)
+}
+
+/** An axis's tick of a share, in percent with the decimals it holds: 1.02 is `102%`, 0.995
+ * `99.5%` (step 5.10). */
+export function shareEdge(share: number): string {
+  return PERCENT_EDGE.format(share)
 }
 
 /** A histogram's edge, with the decimals it holds and its thousands apart: `-1.5`, `12,500`. */

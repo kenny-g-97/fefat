@@ -10,18 +10,21 @@ import {
   useRunCancellation,
 } from "@/api/runs"
 import { Button } from "@/ui/button"
+import { Checkbox } from "@/ui/checkbox"
 import { formatCount, formatMoney, moneySign } from "@/ui/figures"
 import { IdentityChip } from "@/ui/identity-chip"
 import { PercentBar } from "@/ui/percent-bar"
 import { StatusBadge } from "@/ui/status-badge"
 import type { RunsSearch } from "./run-search"
-import { runDetail, slippageWords } from "./run-words"
+import { choiceWords, runDetail, slippageWords } from "./run-words"
 
-// shortcut: fixed tracks fit a window of 1280 px beside the sidebar, the strategy taking what is
-// left and a long name wrapping, the money's 7 rem a loss of -$123,456.78 or -2,721.56 USDT
-// (D-117); content-sized tracks through subgrid if a column outgrows them.
+// shortcut: fixed tracks fit a window of 1280 px beside the sidebar: the first, 12 px, under a
+// saved run's 16 px checkbox, which overhangs it by 4 px so that the strategy stands 8 px after it
+// (step 5.10); the strategy taking what is left and a long name wrapping; each date's 5.25 rem its
+// ten characters at 14 px; the money's 7 rem a loss of -$123,456.78 or -2,721.56 USDT (D-117);
+// content-sized tracks through subgrid if a column outgrows them.
 const COLUMNS =
-  "grid grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_5rem_6rem_7rem_3.5rem_7rem_4.5rem] items-center gap-x-3 gap-y-1 border px-2"
+  "grid grid-cols-[0.75rem_minmax(0,1fr)_5.25rem_5.25rem_5rem_6rem_7rem_3.5rem_7rem_4.5rem] items-center gap-x-3 gap-y-1 border px-2"
 const FIGURE = "text-right text-foreground-secondary"
 
 /** The header over the runs, on the rows' own columns (web/DESIGN.md, Patterns, Runs list). */
@@ -31,6 +34,7 @@ export function RunHead() {
       data-testid="run-head"
       className={cn(COLUMNS, "h-10 border-transparent border-b-border")}
     >
+      <span aria-hidden="true" />
       <span data-slot="list-head">Strategy</span>
       <span data-slot="list-head" className="text-right">
         From
@@ -55,20 +59,44 @@ export function RunHead() {
   )
 }
 
+type RunRowProps = Readonly<{
+  run: ListedRun
+  filters: RunsSearch
+  chosen: boolean
+  choosable: boolean
+  onChoose: (run: SavedRun, chosen: boolean) => void
+}>
+
 /** A run as a row that opens its page (web/DESIGN.md, Patterns, Runs list): what it ran, its
  * dates and slippage, its status, then how it went once saved, or its bar while it runs, what it
  * trades and its parameters on a line under them, with Cancel beside the row's link, since no
- * button sits inside one, and why where a Cancel was refused. The page is told the list's
- * `filters`, which its Back to Runs returns to. */
+ * button sits inside one, and why where a Cancel was refused. A saved run's checkbox at its start
+ * chooses it for a comparison (step 5.10), beside the link too, and waits while `choosable` is
+ * false, four runs being chosen. The page is told the list's `filters`, which its Back to Runs
+ * returns to. */
 export function RunRow({
   run,
   filters,
-}: Readonly<{ run: ListedRun; filters: RunsSearch }>) {
+  chosen,
+  choosable,
+  onChoose,
+}: RunRowProps) {
   const cancellation = useRunCancellation()
   return (
     <li>
       <div className="relative">
         <RunLink run={run} filters={filters} />
+        {run.state === "saved" && (
+          <span className="absolute top-3 left-2.25 flex">
+            <Checkbox
+              checked={chosen}
+              disabled={!chosen && !choosable}
+              onCheckedChange={(checked) => onChoose(run, checked === true)}
+              aria-label={`Compare ${choiceWords(run)}`}
+              data-testid="run-choose"
+            />
+          </span>
+        )}
         {run.state === "submitted" && isActive(run) && (
           <span className="absolute top-1 right-2">
             <Button
@@ -116,6 +144,7 @@ function RunLink({
         "group min-h-10 rounded-xl border-transparent py-2 hover:border-border hover:bg-muted"
       )}
     >
+      <span aria-hidden="true" />
       <span className="flex min-w-0 flex-wrap items-center gap-2">
         {run.strategy === null ? (
           <span className="text-foreground-secondary">No saved version</span>

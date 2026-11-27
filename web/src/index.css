@@ -33,6 +33,8 @@
   --negative: #c81e4a;
   --negative-soft: #fae9ed;
   --chart-2: #155e75;
+  --chart-3: #121212;
+  --chart-4: #868686;
   --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.06);
 
   --card-foreground: var(--foreground);
@@ -69,6 +71,8 @@
   --negative: #ff4d6d;
   --negative-soft: #1e0c0f;
   --chart-2: #0891b2;
+  --chart-3: #ededed;
+  --chart-4: #666666;
   --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.45);
 }
 
@@ -118,6 +122,8 @@
   --color-negative: var(--negative);
   --color-negative-soft: var(--negative-soft);
   --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -214,7 +220,11 @@ a:not([data-slot="button"]):active {
   outline-offset: 2px;
 }
 
-:is([data-slot="button"], [data-slot="radio-group-item"]):focus-visible {
+:is(
+  [data-slot="button"],
+  [data-slot="radio-group-item"],
+  [data-slot="checkbox"]
+):focus-visible {
   --tw-ring-color: transparent;
 }
 
@@ -331,6 +341,17 @@ main[tabindex="-1"]:focus-visible {
 /* A checked radio's dot is an indicator rather than a fill, so it takes the brand colour, which
    keeps 3 : 1 on a light card, where the fill orange gives 2.73 : 1 (WCAG 1.4.11). */
 [data-slot="radio-group-item"] {
+  --primary: var(--brand);
+}
+
+/* A checkbox is a radio's sibling (step 5.10): a 16 px box whose border takes the accent while
+   pressed, and which once checked is an indicator, filled in the brand colour with its check in
+   ink, 3.41 : 1 on the light theme's and 7.47 : 1 on the dark theme's. */
+[data-slot="checkbox"]:active {
+  border-color: var(--ring);
+}
+
+[data-slot="checkbox"] {
   --primary: var(--brand);
 }
 
@@ -746,6 +767,31 @@ a[data-slot="row-link"]:active {
   --stroke: var(--card);
 }
 
+/* The version diff (step 5.10, web/DESIGN.md, Patterns, Changes card): two read-only editors
+   12 px apart, each change in the accent, never the merge view's red and green, which mean money
+   and failure here: its lines on the hover step, its characters underlined 2 px in the brand
+   colour, 6.38 : 1 on the dark step and 4.53 : 1 on the light one, and a bar in the gutter. Each
+   rule outweighs the merge view's own theme by one class. */
+[data-slot="code-diff"] .cm-mergeViewEditors {
+  gap: 0.75rem;
+}
+
+[data-slot="code-diff"] .cm-editor.cm-merge-a .cm-changedLine,
+[data-slot="code-diff"] .cm-editor.cm-merge-b .cm-changedLine {
+  background-color: var(--accent);
+}
+
+[data-slot="code-diff"] .cm-editor.cm-merge-a .cm-changedText,
+[data-slot="code-diff"] .cm-editor.cm-merge-b .cm-changedText {
+  background: linear-gradient(var(--brand), var(--brand)) bottom / 100% 2px
+    no-repeat;
+}
+
+[data-slot="code-diff"] .cm-editor.cm-merge-a .cm-changedLineGutter,
+[data-slot="code-diff"] .cm-editor.cm-merge-b .cm-changedLineGutter {
+  background: var(--brand);
+}
+
 /* A contrast theme of Windows forces colours and drops box-shadows, a field's focus ring among
    them, so every focus takes an outline in the system's highlight there. */
 @media (forced-colors: active) {
@@ -762,6 +808,18 @@ a[data-slot="row-link"]:active {
   [data-slot="code-editor"] .cm-editor.cm-focused {
     outline: 2px solid Highlight;
     outline-offset: 2px;
+  }
+
+  /* The version diff's marks, drawn as backgrounds, take the system's highlight: its gutter's
+     bar, and its changed characters an underline. */
+  [data-slot="code-diff"] .cm-editor.cm-merge-a .cm-changedLineGutter,
+  [data-slot="code-diff"] .cm-editor.cm-merge-b .cm-changedLineGutter {
+    background-color: Highlight;
+  }
+
+  [data-slot="code-diff"] .cm-editor.cm-merge-a .cm-changedText,
+  [data-slot="code-diff"] .cm-editor.cm-merge-b .cm-changedText {
+    text-decoration: underline 2px Highlight;
   }
 
   /* The jobs button's failure dot keeps a mark there, its fill and its ring forced away, and so

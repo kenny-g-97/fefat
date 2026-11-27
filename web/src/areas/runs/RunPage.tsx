@@ -24,10 +24,12 @@ import { RunResults } from "./RunResults"
 import { RunParametersCard, RunSettingsCard } from "./RunSettingsCards"
 import { RunStatusCard } from "./RunStatusCard"
 import { RunStatusLine } from "./RunStatusLine"
+import { ReproductionLine } from "./ReproductionLine"
+import { useReproduction } from "./reproduction-run"
 import { foundWords, runLine } from "./run-words"
 
 /** Back to the list, as the row that opened this run had it filtered. */
-function BackToRuns() {
+export function BackToRuns() {
   const filters = useLocation({
     select: (location) => location.state.runsFilters,
   })
@@ -173,6 +175,10 @@ function ShownRun({ run }: Readonly<{ run: ListedRun }>) {
   const cached = shown.state === "saved" && cachedRun === shown.run_key
   const found = foundWords(shown, cached, askedVersion)
   const savedKey = run.state === "saved" ? run.run_key : null
+  const reproduction = useReproduction(savedKey)
+  const reproducing =
+    reproduction.state.kind === "starting" ||
+    reproduction.state.kind === "running"
   useEffect(() => {
     if (savedKey !== null && addressedById) {
       void navigate({
@@ -191,6 +197,16 @@ function ShownRun({ run }: Readonly<{ run: ListedRun }>) {
       action={
         shown.state === "saved" ? (
           <>
+            {shown.strategy !== null && (
+              <Button
+                variant="ghost"
+                data-testid="reproduce-run"
+                disabled={reproducing}
+                onClick={reproduction.reproduce}
+              >
+                Reproduce
+              </Button>
+            )}
             <RunPageLink to="/runs/run/trades" runKey={shown.run_key}>
               Trades
             </RunPageLink>
@@ -204,6 +220,7 @@ function ShownRun({ run }: Readonly<{ run: ListedRun }>) {
       {shown.state === "saved" ? (
         <div className="flex flex-col gap-6">
           <RunStatusLine run={shown} cached={cached} found={found} />
+          <ReproductionLine state={reproduction.state} />
           <RunResults runKey={shown.run_key} strategy={shown.strategy} />
           <div className="grid grid-cols-[minmax(16rem,1fr)_auto] items-start gap-6">
             <RunParametersCard run={shown} />

@@ -36,6 +36,14 @@ export type ProfitAndRisk = Pick<
   "net_pnl" | "max_drawdown" | "longest_drawdown_days" | "sharpe"
 >
 
+/** The colour of each look of a figure. */
+export const LOOKS: Readonly<Record<Written["look"], string>> = {
+  positive: "text-positive",
+  negative: "text-negative",
+  figure: "text-foreground",
+  none: "text-foreground-secondary",
+}
+
 /** A figure where nothing is counted, in body text. */
 export const NOTHING: Written = { text: NONE, look: "none" }
 

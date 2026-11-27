@@ -30,10 +30,12 @@ export const strategyName = z
 
 /** The page of a strategy's version, which its name and its number address (step 5.5): an
  * index's rebuild gives a strategy another id, its name never. A version left out is the
- * latest; a value the page cannot read is left out. */
+ * latest; `diff`, the version the Changes card sets beside it (step 5.10), the one before it
+ * where left out; a value the page cannot read is left out. */
 export const strategySearch = z.object({
   name: z.string().regex(STRATEGY_NAME).optional().catch(undefined),
   version: z.number().int().min(1).optional().catch(undefined),
+  diff: z.number().int().min(1).optional().catch(undefined),
 })
 
 export type StrategySearch = z.infer<typeof strategySearch>

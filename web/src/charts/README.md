@@ -168,3 +168,27 @@ Give it a parent that sets its height; it fills that box and redraws when it res
 | `onPointed` | Told the percent under the pointer or the keys, or null when the pointer leaves the chart, Escape is pressed, or the focus moves off it within the page: the caller's readout then shows `rest`. |
 
 `percentileOption` draws the paths' figure in the accent from none of the paths to all of them, a gap where a path has none, and the run's own figure as a dashed line in the purple (D-119), the axis kept to show it where it stands past every path, its end there rounded out to a whole number, since ECharts labels a bound it is given and the label strip holds whole numbers; under them an unseen line holds a point at every percent, as the fan's unfilled base does, since the keys show the tip on the first series and ECharts hides its crosshair at a point without a value; the percents run along a value axis from 0 to 100, labelled every tenth. A figure no path has is refused, since its chart has nothing to draw: the card says why in its place. It never animates and has no zoom, and its keys are the equity chart's.
+
+## ComparisonChart
+
+`ComparisonChart` draws two to four saved runs' equity over their capital on one axis of trade dates (step 5.10, D-126), in the equity chart's idiom, for the comparison page.
+
+```tsx
+<div className="h-80">
+  <ComparisonChart
+    label="Equity of 2 runs over their capital. The arrow keys step through the trade dates."
+    curves={comparison.runs.map((run) => run.curve)}
+    pointed={pointed}
+    onPointed={setPointed}
+  />
+</div>
+```
+
+| Prop | What it is |
+| --- | --- |
+| `label` | The chart's name for a screen reader. |
+| `curves` | Each run's `curve` of `POST /v1/runs/compare`, the reference's first: its `trade_dates` and its `shares`, its equity at each trade date's end over its capital, 1 at the capital. |
+| `pointed` | The trade date the readout shows, by its place among every run's dates (`comparedDays`), from `onPointed`. |
+| `onPointed` | Told the place of the trade date under the pointer or the keys, or null when the pointer leaves the chart, Escape is pressed, or the focus moves off it within the page: the caller's readout then shows the last trade date. |
+
+`comparisonOption` draws a line a run, the reference in the accent and the others in `--chart-2`, `--chart-3`, and `--chart-4` (web/DESIGN.md, Palette), each 3 : 1 or more on the card in both themes, over the dashed line at the capital in body text's grey (`capitalLine`), on a category axis of every trade date any run was valued on, a gap where a run was not; the value axis reads percent of the capital, its bounds keeping the capital in view and rounded out to a whole percent, since ECharts labels a bound it is given with the decimals it holds. It never animates and has no zoom, and its keys are the equity chart's.

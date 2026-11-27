@@ -22,6 +22,7 @@ import { Route as ShellDataDatasetRouteImport } from './routes/_shell/data/datas
 import { Route as ShellDataImportRouteImport } from './routes/_shell/data/import'
 import { Route as ShellDataSourcesRouteImport } from './routes/_shell/data/sources'
 import { Route as ShellRunsIndexRouteImport } from './routes/_shell/runs/index'
+import { Route as ShellRunsCompareRouteImport } from './routes/_shell/runs/compare'
 import { Route as ShellRunsRunRouteImport } from './routes/_shell/runs/run'
 import { Route as ShellStrategiesIndexRouteImport } from './routes/_shell/strategies/index'
 import { Route as ShellStrategiesNewRouteImport } from './routes/_shell/strategies/new'
@@ -93,6 +94,11 @@ const ShellRunsIndexRoute = ShellRunsIndexRouteImport.update({
   path: '/runs/',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellRunsCompareRoute = ShellRunsCompareRouteImport.update({
+  id: '/runs/compare',
+  path: '/runs/compare',
+  getParentRoute: () => ShellRoute,
+} as any)
 const ShellRunsRunRoute = ShellRunsRunRouteImport.update({
   id: '/runs/run',
   path: '/runs/run',
@@ -135,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/data/dataset': typeof ShellDataDatasetRoute
   '/data/import': typeof ShellDataImportRoute
   '/data/sources': typeof ShellDataSourcesRoute
+  '/runs/compare': typeof ShellRunsCompareRoute
   '/runs/run': typeof ShellRunsRunRoute
   '/strategies/new': typeof ShellStrategiesNewRoute
   '/strategies/strategy': typeof ShellStrategiesStrategyRoute
@@ -155,6 +162,7 @@ export interface FileRoutesByTo {
   '/data/dataset': typeof ShellDataDatasetRoute
   '/data/import': typeof ShellDataImportRoute
   '/data/sources': typeof ShellDataSourcesRoute
+  '/runs/compare': typeof ShellRunsCompareRoute
   '/runs/run': typeof ShellRunsRunRoute
   '/strategies/new': typeof ShellStrategiesNewRoute
   '/strategies/strategy': typeof ShellStrategiesStrategyRoute
@@ -177,6 +185,7 @@ export interface FileRoutesById {
   '/_shell/data/dataset': typeof ShellDataDatasetRoute
   '/_shell/data/import': typeof ShellDataImportRoute
   '/_shell/data/sources': typeof ShellDataSourcesRoute
+  '/_shell/runs/compare': typeof ShellRunsCompareRoute
   '/_shell/runs/run': typeof ShellRunsRunRoute
   '/_shell/strategies/new': typeof ShellStrategiesNewRoute
   '/_shell/strategies/strategy': typeof ShellStrategiesStrategyRoute
@@ -199,6 +208,7 @@ export interface FileRouteTypes {
     | '/data/dataset'
     | '/data/import'
     | '/data/sources'
+    | '/runs/compare'
     | '/runs/run'
     | '/strategies/new'
     | '/strategies/strategy'
@@ -219,6 +229,7 @@ export interface FileRouteTypes {
     | '/data/dataset'
     | '/data/import'
     | '/data/sources'
+    | '/runs/compare'
     | '/runs/run'
     | '/strategies/new'
     | '/strategies/strategy'
@@ -240,6 +251,7 @@ export interface FileRouteTypes {
     | '/_shell/data/dataset'
     | '/_shell/data/import'
     | '/_shell/data/sources'
+    | '/_shell/runs/compare'
     | '/_shell/runs/run'
     | '/_shell/strategies/new'
     | '/_shell/strategies/strategy'
@@ -348,6 +360,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellRunsIndexRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/runs/compare': {
+      id: '/_shell/runs/compare'
+      path: '/runs/compare'
+      fullPath: '/runs/compare'
+      preLoaderRoute: typeof ShellRunsCompareRouteImport
+      parentRoute: typeof ShellRoute
+    }
     '/_shell/runs/run': {
       id: '/_shell/runs/run'
       path: '/runs/run'
@@ -403,6 +422,7 @@ interface ShellRouteChildren {
   ShellDataDatasetRoute: typeof ShellDataDatasetRoute
   ShellDataImportRoute: typeof ShellDataImportRoute
   ShellDataSourcesRoute: typeof ShellDataSourcesRoute
+  ShellRunsCompareRoute: typeof ShellRunsCompareRoute
   ShellRunsRunRoute: typeof ShellRunsRunRoute
   ShellStrategiesNewRoute: typeof ShellStrategiesNewRoute
   ShellStrategiesStrategyRoute: typeof ShellStrategiesStrategyRoute
@@ -423,6 +443,7 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellDataDatasetRoute: ShellDataDatasetRoute,
   ShellDataImportRoute: ShellDataImportRoute,
   ShellDataSourcesRoute: ShellDataSourcesRoute,
+  ShellRunsCompareRoute: ShellRunsCompareRoute,
   ShellRunsRunRoute: ShellRunsRunRoute,
   ShellStrategiesNewRoute: ShellStrategiesNewRoute,
   ShellStrategiesStrategyRoute: ShellStrategiesStrategyRoute,

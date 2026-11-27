@@ -69,6 +69,16 @@ export function resultsLine(run: DatedRun): string {
   return lineOf(version, run)
 }
 
+/** A saved run as its checkbox names it for a comparison (step 5.10): its strategy and version,
+ * what it trades, its dates, and the parameters that tell it apart from another run of them. */
+export function choiceWords(
+  run: DatedRun & Pick<ListedRun, "parameters">
+): string {
+  return [resultsLine(run), parameterWords(run)]
+    .filter((words) => words !== "")
+    .join(", ")
+}
+
 /** `version`, what `run` trades, and its dates, each left out where it is empty. */
 function lineOf(version: string, run: DatedRun): string {
   return [version, tradedWords(run), `${run.start} to ${run.end}`]

@@ -12,11 +12,16 @@ import { Page } from "@/ui/page"
 import { QueryBody } from "@/ui/query-body"
 import { BackLink } from "@/ui/text-link"
 import { AbandonCard, AbandonedPanel } from "./AbandonedMark"
+import { ChangesCard } from "./ChangesCard"
 import { CodeCard } from "./CodeCard"
 import { ParametersCard } from "./ParametersCard"
 import { RunBacktest } from "./RunBacktest"
 import type { StrategySearch } from "./strategy-names"
-import { latestVersion, versionNumbered } from "./strategy-versions"
+import {
+  comparedVersion,
+  latestVersion,
+  versionNumbered,
+} from "./strategy-versions"
 import { VersionsCard } from "./VersionsCard"
 
 /** A strategy's page (step 5.5; web/DESIGN.md, Patterns, Strategy page), its name and a version
@@ -68,10 +73,11 @@ export function StrategyPage() {
   )
 }
 
-/** The cards of one version, drawn together once the version is read. The focus follows the
- * mark: a mark just made takes it, where the page shows it first, and a reopen gives it to the
- * Code card, which stands where the mark stood, rather than to the editor, where the next Tab
- * would indent the code. */
+/** The cards of one version, drawn together once the version is read, the Changes card after
+ * its code where the strategy has another version (step 5.10). The focus follows the mark: a mark
+ * just made takes it, where the page shows it first, and a reopen gives it to the Code card,
+ * which stands where the mark stood, rather than to the editor, where the next Tab would indent
+ * the code. */
 function ShownVersion({
   strategy,
   number,
@@ -81,6 +87,15 @@ function ShownVersion({
   const reopening = useReopening(strategy.id)
   const [marked, setMarked] = useState(false)
   const codeCard = useRef<HTMLElement>(null)
+  const asked = useSearch({
+    from: "/_shell/strategies/strategy",
+    select: (search) => search.diff,
+  })
+  const other = comparedVersion(
+    strategy.versions.map((each) => each.version),
+    number,
+    asked
+  )
   return (
     <QueryBody query={version}>
       {(saved) => (
@@ -102,6 +117,9 @@ function ShownVersion({
             />
           )}
           <CodeCard ref={codeCard} strategy={strategy} version={saved} />
+          {other !== undefined && (
+            <ChangesCard strategy={strategy} shown={saved} other={other} />
+          )}
           <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-6">
             <VersionsCard strategy={strategy} shown={number} />
             <ParametersCard version={saved} />
