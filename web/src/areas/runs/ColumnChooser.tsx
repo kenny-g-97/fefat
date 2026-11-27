@@ -43,7 +43,7 @@ export function ColumnChooser({ visibility, onChange }: ColumnChooserProps) {
           )
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => onChange(SHOWN_COLUMNS)}>
+        <DropdownMenuItem inset onSelect={() => onChange(SHOWN_COLUMNS)}>
           Show the table's own columns
         </DropdownMenuItem>
       </DropdownMenuContent>

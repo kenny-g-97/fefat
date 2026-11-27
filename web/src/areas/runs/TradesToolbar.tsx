@@ -52,7 +52,7 @@ export function TradesToolbar({
       aria-label="Filter trades"
       className="flex flex-col gap-4"
     >
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="flex flex-wrap items-start gap-4">
         <DateRange start={search.start} end={search.end} onAsk={onAsk} />
         <Choice id="trades-side" label="Side">
           <Picker
@@ -89,7 +89,7 @@ export function TradesToolbar({
         <Choice id="trades-exit" label="Exit reason">
           <Picker
             id="trades-exit"
-            className="w-48"
+            className="w-56"
             value={search.exit_reason ?? ALL}
             options={[
               { value: ALL, label: "All" },

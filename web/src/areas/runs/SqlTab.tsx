@@ -4,7 +4,6 @@ import { type QueryAnswer, useRunQuery } from "@/api/trades"
 import { Button } from "@/ui/button"
 import { counted } from "@/ui/figures"
 import { Label } from "@/ui/label"
-import { Panel } from "@/ui/panel"
 import { Textarea } from "@/ui/textarea"
 import { ROW_HEIGHT, useVirtualRows } from "./virtual-rows"
 
@@ -16,8 +15,9 @@ const FIGURE_TYPE =
   /^(U?(TINY|SMALL|BIG|HUGE)?INT(EGER)?|DOUBLE|FLOAT|REAL|DECIMAL(\(\d+,\s*\d+\))?)$/
 
 /** The trade table's SQL tab (web/DESIGN.md, Patterns, SQL tab): one SELECT over the run's
- * artifacts, run by Run query or Ctrl+Enter, the server's refusal under it in its words, and the
- * answer as a grid of its own, counted. */
+ * artifacts, typed over its answer as the table's filters stand over their grid, run by Run
+ * query or Ctrl+Enter, the server's refusal under it in its words, and the answer as a grid of
+ * its own, counted. */
 export function SqlTab({ runKey }: Readonly<{ runKey: string }>) {
   const query = useRunQuery(runKey)
   const [sql, setSql] = useState(FIRST_QUERY)
@@ -28,51 +28,47 @@ export function SqlTab({ runKey }: Readonly<{ runKey: string }>) {
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6">
-      <Panel
-        title="Query"
-        description="One SELECT over the run's artifacts, at most 10,000 rows"
+      <form
+        className="flex flex-col gap-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          run()
+        }}
       >
-        <form
-          className="flex flex-col gap-2"
-          onSubmit={(event) => {
-            event.preventDefault()
-            run()
+        <Label htmlFor="run-sql">SQL</Label>
+        <Textarea
+          id="run-sql"
+          data-testid="run-sql"
+          value={sql}
+          spellCheck={false}
+          aria-describedby="run-sql-tables"
+          onChange={(event) => setSql(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+              event.preventDefault()
+              run()
+            }
           }}
-        >
-          <Label htmlFor="run-sql">SQL</Label>
-          <Textarea
-            id="run-sql"
-            data-testid="run-sql"
-            value={sql}
-            spellCheck={false}
-            aria-describedby="run-sql-tables"
-            onChange={(event) => setSql(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-                event.preventDefault()
-                run()
-              }
-            }}
-          />
+        />
+        <div className="flex items-start justify-between gap-4">
           <p id="run-sql-tables" className="text-xs text-muted-foreground">
-            Tables: trades, fills, orders, log, costs, trade_paths, equity,
-            equity_daily, and signals, prices and money in the instrument's
-            units, instants in UTC. Ctrl+Enter runs the query.
+            One SELECT over the run's artifacts, at most 10,000 rows: trades,
+            fills, orders, log, costs, trade_paths, equity, equity_daily, and
+            signals, prices and money in the instrument's units, instants in
+            UTC. Ctrl+Enter runs the query.
           </p>
-          <div className="mt-3 flex items-start justify-between gap-4">
-            <p
-              role="alert"
-              data-testid="run-sql-refusal"
-              className="min-w-0 text-negative wrap-anywhere"
-            >
-              {query.status === "error" ? query.error.message : ""}
-            </p>
-            <Button type="submit" disabled={query.isPending}>
-              Run query
-            </Button>
-          </div>
-        </form>
-      </Panel>
+          <Button type="submit" disabled={query.isPending}>
+            Run query
+          </Button>
+        </div>
+        <p
+          role="alert"
+          data-testid="run-sql-refusal"
+          className="min-w-0 text-negative wrap-anywhere"
+        >
+          {query.status === "error" ? query.error.message : ""}
+        </p>
+      </form>
       {query.status === "success" && <AnswerGrid answer={query.data} />}
     </div>
   )
@@ -98,7 +94,7 @@ function AnswerGrid({ answer }: Readonly<{ answer: QueryAnswer }>) {
         data-slot="data-grid"
         data-testid="run-sql-answer"
         style={{ maxHeight: `${(answer.rows.length + 1) * ROW_HEIGHT + 2}px` }}
-        className="relative min-h-20 flex-[1_1_0px] overflow-auto rounded-xl border bg-card text-foreground-secondary shadow-raised"
+        className="relative min-h-40 flex-[1_1_0px] overflow-auto rounded-xl border bg-card text-foreground-secondary shadow-raised"
       >
         <table
           role="grid"

@@ -136,7 +136,11 @@ export function TradeGrid({
       ref={box}
       data-slot="data-grid"
       data-testid="trade-grid"
-      style={{ maxHeight: `${(trades.length + 1) * ROW_HEIGHT + 2}px` }}
+      style={
+        total === null
+          ? undefined
+          : { maxHeight: `${(trades.length + 1) * ROW_HEIGHT + 2}px` }
+      }
       className="relative min-h-40 flex-[1_1_0px] overflow-auto rounded-xl border bg-card text-foreground-secondary shadow-raised"
     >
       <table
@@ -257,7 +261,10 @@ function GridHead({
           data-slot="sort-button"
           data-testid={`sort-${column.id}`}
           onClick={header.column.getToggleSortingHandler()}
-          className="inline-flex items-center gap-1"
+          className={cn(
+            "inline-flex items-center gap-1",
+            column.figure && "flex-row-reverse"
+          )}
         >
           {column.label}
           {sorted === "asc" && (

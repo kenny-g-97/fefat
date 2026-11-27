@@ -594,11 +594,13 @@ main[tabindex="-1"]:focus-visible {
 }
 
 /* A data grid, a run's trades or a query's answer (step 5.8): a card that scrolls both ways,
-   its header row standing at its top and its first column at its left, on the card's surface; a
-   row on the control surface under the pointer and the hover step while pressed, as a row as
-   wide as its card answers a press, the selected trade on the active item's soft fill, and a
-   row's focus outline inside it, where the card's edge would cut it. A sortable column's header
-   is a button in the header's type, heading text under the pointer and once it sorts. */
+   its header row standing at its top and its first column at its left, on the card's surface,
+   with a hairline at that column's edge; a row on the control surface under the pointer and the
+   hover step while pressed, as a row as wide as its card answers a press, the selected trade on
+   the active item's soft fill with a 2 px brand line at its left edge, and a row's focus outline
+   inside it, where the card's edge would cut it, the first cell drawing its part, which it would
+   cover. A sortable column's header is a button in the header's type, heading text under the
+   pointer and once it sorts. */
 [data-slot="grid-head"] th {
   position: sticky;
   top: 0;
@@ -610,6 +612,7 @@ main[tabindex="-1"]:focus-visible {
   position: sticky;
   left: 0;
   z-index: 1;
+  border-right: 1px solid var(--border);
   background-color: var(--card);
 }
 
@@ -622,18 +625,29 @@ main[tabindex="-1"]:focus-visible {
   background-color: var(--muted);
 }
 
-[data-slot="grid-row"]:active,
-[data-slot="grid-row"]:active > td:first-child {
-  background-color: var(--accent);
-}
-
 [data-slot="grid-row"][aria-selected="true"],
 [data-slot="grid-row"][aria-selected="true"] > td:first-child {
   background-color: var(--brand-soft);
 }
 
+[data-slot="grid-row"]:active,
+[data-slot="grid-row"]:active > td:first-child {
+  background-color: var(--accent);
+}
+
+[data-slot="grid-row"][aria-selected="true"] > td:first-child {
+  box-shadow: inset 2px 0 0 var(--brand);
+}
+
 [data-slot="grid-row"]:focus-visible {
   outline-offset: -2px;
+}
+
+[data-slot="grid-row"]:focus-visible > td:first-child {
+  box-shadow:
+    inset 2px 0 0 var(--ring),
+    inset 0 2px 0 var(--ring),
+    inset 0 -2px 0 var(--ring);
 }
 
 [data-slot="sort-button"] {
@@ -784,7 +798,8 @@ a[data-slot="row-link"]:active {
     background-color: Highlight;
   }
 
-  [data-slot="grid-row"][aria-selected="true"] {
+  [data-slot="grid-row"][aria-selected="true"],
+  [data-slot="grid-row"][aria-selected="true"] > td:first-child {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }

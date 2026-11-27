@@ -347,6 +347,39 @@ test("a filter keeps the trades the API keeps, and the address keeps it through 
   await expect(page.getByTestId("trades-count")).toHaveText(count)
   await expect(page.getByRole("combobox", { name: "P&L" })).toHaveText("Losing")
   await expectRowsOf(page, losing, currency)
+})
+
+test("your check: the losing trades a stop closed, sorted by MAE, show the worst MAE first", async ({
+  loggedIn: page,
+}) => {
+  const key = await theSeededKey(page)
+  const currency = await currencyOf(page, key)
+  const worst = await tradesOf(page, key, {
+    pnl_sign: "negative",
+    exit_reason: "stop",
+    sort: "mae_ticks",
+    order: "desc",
+  })
+  const excursions = worst.trades.map((shown) => shown.mae_ticks)
+  expect(excursions.length).toBeGreaterThan(1)
+  expect(excursions).toEqual([...excursions].sort((one, other) => other - one))
+  await page.goto(`/runs/run/trades?key=${key}`)
+
+  await page.getByRole("combobox", { name: "P&L" }).click()
+  await page.getByRole("option", { name: "Losing" }).click()
+  await page.getByRole("combobox", { name: "Exit reason" }).click()
+  await page.getByRole("option", { name: "Stop" }).click()
+  await page.getByTestId("sort-mae_ticks").click()
+
+  await expect(page).toHaveURL(/pnl_sign=negative/)
+  await expect(page).toHaveURL(/exit_reason=stop/)
+  await expect(page).toHaveURL(/sort=mae_ticks/)
+  await expect(page).toHaveURL(/order=desc/)
+  const header = page.getByRole("columnheader", { name: "MAE ticks" })
+  await expect(header).toHaveAttribute("aria-sort", "descending")
+  await expectRowsOf(page, worst, currency)
+  await header.scrollIntoViewIfNeeded()
+  await expect(header).toBeInViewport()
   await screenshot(page, "run-trades-losing")
 })
 
@@ -486,6 +519,7 @@ test("selecting a row emits selectedTrade with the API's trade, and the keys mov
   await expect(next).toHaveAttribute("aria-selected", "true")
   await expect(next).toBeFocused()
   await expect(rows.nth(2)).toHaveAttribute("aria-selected", "false")
+  await screenshot(page, "run-trades-selected")
 })
 
 test("the column chooser hides and shows a column, and this browser keeps the choice", async ({

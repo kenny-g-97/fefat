@@ -75,7 +75,7 @@ export function TradesTable({
         <p
           role="status"
           data-testid="trades-count"
-          className="text-foreground-secondary"
+          className="min-h-5 text-foreground-secondary"
         >
           {countWords(total, filtered, everyTrade)}
         </p>
