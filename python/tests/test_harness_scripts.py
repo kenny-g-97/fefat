@@ -172,7 +172,8 @@ def seeding(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_the_seed_saves_the_demo_strategy_and_its_first_run_indexed(tmp_path: Path) -> None:
     # Step 5.3 (D-93): the specs' `demo-run-01` is the first run of the strategy `demo` that
     # `GET /v1/runs` lists; the seed makes it through the SDK on the fixtures and indexes both as
-    # `fefat db import-workspace` does, leaving no job.
+    # `fefat db import-workspace` does, leaving no job. Step 5.10: its version 2, a wider stop,
+    # and that version's run, newer, which the comparison and the version diff read.
     e2e_server.seed(tmp_path / "fefat-e2e", 8766, "horse battery")
 
     paths = resolve_paths(os.environ)
@@ -184,13 +185,26 @@ def test_the_seed_saves_the_demo_strategy_and_its_first_run_indexed(tmp_path: Pa
             .runs
         )
         jobs = JobTables(engine).recent(10)
-    (run,) = runs
-    (saved,) = saved_runs_in(paths.runs_dir)
-    assert [strategy.name for strategy in strategies] == ["demo"]
-    assert isinstance(run, SavedRun)
-    assert run.strategy is not None
-    assert (run.strategy.name, run.status, run.run_key) == ("demo", "succeeded", saved.hash)
-    assert saved.record.summary.trades >= 3
+    second, first = runs
+    saved = {run.hash: run for run in saved_runs_in(paths.runs_dir)}
+    (strategy,) = strategies
+    assert strategy.name == "demo"
+    assert [version.version for version in strategy.versions] == [1, 2]
+    for run, version in ((first, 1), (second, 2)):
+        assert isinstance(run, SavedRun)
+        assert run.strategy is not None
+        assert (run.strategy.name, run.strategy.version, run.status) == (
+            "demo",
+            version,
+            "succeeded",
+        )
+        assert saved[run.run_key].record.summary.trades >= 3
+    assert isinstance(first, SavedRun)
+    assert isinstance(second, SavedRun)
+    assert first.run_key != second.run_key
+    assert first.parameters == {"lookback": 12, "stop_atr": 1.5}
+    assert second.parameters == {"lookback": 12, "stop_atr": 2.0}
+    assert len(saved) == 2
     assert jobs == ()
 
 

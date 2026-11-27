@@ -15,8 +15,10 @@ test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } })
 
 const RUN_TIMEOUT = 120_000
 
+/** The Run backtest dialog of the seed's version 1 of demo, whose run is `demo-run-01`: its
+ * version 2, a wider stop, is the latest since step 5.10. */
 async function openTheDialog(page: Page) {
-  await page.goto("/strategies/strategy?name=demo")
+  await page.goto("/strategies/strategy?name=demo&version=1")
   await page.getByTestId("run-backtest").click()
   const dialog = page.getByRole("dialog", { name: "Run backtest" })
   await expect(dialog.getByTestId("run-launch")).toBeEnabled()

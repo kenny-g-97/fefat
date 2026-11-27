@@ -14,7 +14,7 @@ import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 
 // The Runs list, the run page, the Run backtest dialog, and Home's cards of step 5.6, against the
-// seeded server, reading its one saved run and saving none: the specs that launch runs stand in
+// seeded server, reading its saved runs and saving none: the specs that launch runs stand in
 // run-launch.spec.ts, after the delete's, which counts the saved runs. A run's progress comes from
 // its job's stream, so Done means 3 follows a real demo job through a row answered by the spec,
 // since a backtest on the three sessions of the fixtures ends within seconds.
@@ -89,8 +89,10 @@ async function theSeededRun(page: Page) {
   return seeded
 }
 
+/** The Run backtest dialog of the seed's version 1 of demo, whose run is `demo-run-01`: its
+ * version 2, a wider stop, is the latest since step 5.10. */
 async function openTheDialog(page: Page) {
-  await page.goto("/strategies/strategy?name=demo")
+  await page.goto("/strategies/strategy?name=demo&version=1")
   await page.getByTestId("run-backtest").click()
   const dialog = page.getByRole("dialog", { name: "Run backtest" })
   await expect(dialog.getByTestId("run-coverage")).toBeVisible()
