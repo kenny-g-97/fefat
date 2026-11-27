@@ -5,7 +5,11 @@ import { Button } from "@/ui/button"
 import { counted } from "@/ui/figures"
 import { Label } from "@/ui/label"
 import { Textarea } from "@/ui/textarea"
-import { ROW_HEIGHT, useVirtualRows } from "./virtual-rows"
+import {
+  gridHeights,
+  useScrolledSideways,
+  useVirtualRows,
+} from "./virtual-rows"
 
 /** The query a SQL tab opens with: the trades as their table shows them, a page's worth. */
 const FIRST_QUERY = "SELECT * FROM trades ORDER BY trade LIMIT 100"
@@ -79,6 +83,7 @@ export function SqlTab({ runKey }: Readonly<{ runKey: string }>) {
 function AnswerGrid({ answer }: Readonly<{ answer: QueryAnswer }>) {
   const box = useRef<HTMLDivElement>(null)
   const { rows, above, below } = useVirtualRows(answer.rows.length, box)
+  const sideways = useScrolledSideways(box)
   const figures = answer.columns.map((column) => FIGURE_TYPE.test(column.type))
   return (
     <section aria-label="Answer" className="flex min-h-0 flex-1 flex-col gap-3">
@@ -93,8 +98,9 @@ function AnswerGrid({ answer }: Readonly<{ answer: QueryAnswer }>) {
         ref={box}
         data-slot="data-grid"
         data-testid="run-sql-answer"
-        style={{ maxHeight: `${(answer.rows.length + 1) * ROW_HEIGHT + 2}px` }}
-        className="relative min-h-40 flex-[1_1_0px] overflow-auto rounded-xl border bg-card text-foreground-secondary shadow-raised"
+        data-sideways={sideways}
+        style={gridHeights(answer.rows.length)}
+        className="relative flex-[1_1_0px] overflow-auto rounded-xl border bg-card text-foreground-secondary shadow-raised"
       >
         <table
           role="grid"

@@ -12,7 +12,12 @@ import {
   tableColumns,
   tradeColumn,
 } from "./trade-columns"
-import { ROW_HEIGHT, useVirtualRows } from "./virtual-rows"
+import {
+  gridHeights,
+  ROW_HEIGHT,
+  useScrolledSideways,
+  useVirtualRows,
+} from "./virtual-rows"
 
 export type SortOrder = "asc" | "desc"
 
@@ -75,6 +80,7 @@ export function TradeGrid({
     enableMultiSort: false,
   })
   const { virtualizer, rows, above, below } = useVirtualRows(trades.length, box)
+  const sideways = useScrolledSideways(box)
   const [selected, setSelected] = useState<number | null>(null)
   const [focusing, setFocusing] = useState<number | null>(null)
   useEffect(() => {
@@ -136,12 +142,9 @@ export function TradeGrid({
       ref={box}
       data-slot="data-grid"
       data-testid="trade-grid"
-      style={
-        total === null
-          ? undefined
-          : { maxHeight: `${(trades.length + 1) * ROW_HEIGHT + 2}px` }
-      }
-      className="relative min-h-40 flex-[1_1_0px] overflow-auto rounded-xl border bg-card text-foreground-secondary shadow-raised"
+      data-sideways={sideways}
+      style={gridHeights(total === null ? null : trades.length)}
+      className="relative flex-[1_1_0px] overflow-auto rounded-xl border bg-card text-foreground-secondary shadow-raised"
     >
       <table
         role="grid"

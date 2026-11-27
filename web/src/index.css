@@ -595,7 +595,7 @@ main[tabindex="-1"]:focus-visible {
 
 /* A data grid, a run's trades or a query's answer (step 5.8): a card that scrolls both ways,
    its header row standing at its top and its first column at its left, on the card's surface,
-   with a hairline at that column's edge; a row on the control surface under the pointer and the
+   with a hairline at that column's edge while the grid scrolls sideways; a row on the control surface under the pointer and the
    hover step while pressed, as a row as wide as its card answers a press, the selected trade on
    the active item's soft fill with a 2 px brand line at its left edge, and a row's focus outline
    inside it, where the card's edge would cut it, the first cell drawing its part, which it would
@@ -612,8 +612,11 @@ main[tabindex="-1"]:focus-visible {
   position: sticky;
   left: 0;
   z-index: 1;
-  border-right: 1px solid var(--border);
   background-color: var(--card);
+}
+
+[data-slot="data-grid"][data-sideways="true"] :is(th, td):first-child {
+  border-right: 1px solid var(--border);
 }
 
 [data-slot="data-grid"] th:first-child {
