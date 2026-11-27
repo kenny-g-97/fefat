@@ -1,7 +1,9 @@
 """DuckDB over a saved run's artifacts (step 5.8, `fefat_app.artifact_queries`): the trader's one
 SELECT reads the run's views in the instrument's units, each column `UNIT_COLUMNS` names exactly,
-and is refused past its rows, its bytes, which DuckDB measures before Python reads a row, and its
-time, and a value DuckDB answers reaches the JSON as a browser reads it unchanged."""
+and is refused past its rows, its bytes, which DuckDB measures before Python reads a row, whatever
+the answer's columns are named, and its time, and where its read answers more than its measure;
+a value DuckDB answers reaches the JSON as a browser reads it unchanged, and no text loses a
+character to a home folder at the root."""
 
 import os
 import re
@@ -34,17 +36,44 @@ def test_an_answer_past_its_bytes_is_refused(run: Run) -> None:
         DuckDbQueries(most_bytes=1_000).select(run.folder, "SELECT * FROM fills")
 
 
+@pytest.mark.parametrize(
+    "sql", ["SELECT list(f) FROM fills f", "SELECT 0 AS answer, list(f) AS fills FROM fills f"]
+)
 def test_an_answer_past_its_bytes_is_refused_before_python_reads_a_row(
-    run: Run, monkeypatch: pytest.MonkeyPatch
+    run: Run, monkeypatch: pytest.MonkeyPatch, sql: str
 ) -> None:
     def unread(*read: object) -> object:
         raise AssertionError(f"Expected the answer refused in DuckDB, got {read[0]!r} read")
 
     with monkeypatch.context() as patched:
-        patched.setattr(artifact_queries, "_json_value", unread)
+        patched.setattr(artifact_queries, "json_value", unread)
 
         with pytest.raises(QueryRefusedError, match="1,000 bytes"):
-            DuckDbQueries(most_bytes=1_000).select(run.folder, "SELECT list(f) FROM fills f")
+            DuckDbQueries(most_bytes=1_000).select(run.folder, sql)
+
+
+def test_a_read_that_answers_more_rows_than_its_measure_is_refused(
+    run: Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # As a sample can: the measure here says one row of no bytes, the read answers four.
+    with monkeypatch.context() as patched:
+        patched.setattr(artifact_queries, "_MEASURED", "SELECT 1, 0")
+
+        with pytest.raises(QueryRefusedError, match="more than 3 rows"):
+            DuckDbQueries(most_rows=3).select(run.folder, "SELECT * FROM range(4)")
+
+
+def test_a_home_folder_at_the_root_changes_no_text(
+    run: Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = Path(run.folder.anchor)
+    text = f"{root.as_posix()}data/ES/2026-03"
+
+    with monkeypatch.context() as patched:
+        patched.setattr(Path, "home", lambda: root)
+        answer = DuckDbQueries().select(run.folder, f"SELECT '{text}' AS text")
+
+    assert answer.rows == ((text,),)
 
 
 def test_each_unit_column_reads_in_the_instruments_units(run: Run) -> None:

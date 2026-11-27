@@ -24,11 +24,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from fefat.backtest import FILLS, TRADES, Run
+from fefat.backtest.schemas import UNIT_COLUMNS, Unit
 from fefat.config import resolve_paths
 from fefat.market.calendar import utc_text
 from fefat.market.engine_units import PRICE_SCALE, micro_units, money_text, price_text
 from fefat.reference.units import instant_nanoseconds
 from fefat_app.container import Container
+from fefat_app.services.trade_table import _in_units
 from local_server import logged_in
 from test_run_records import the_run
 
@@ -606,6 +608,36 @@ def test_an_answer_names_no_folder_of_this_pc(client: TestClient, run: Run) -> N
     for folder in (run.folder, Path.home()):
         named = (folder.as_posix(), json.dumps(str(folder))[1:-1])
         assert not [text for text in texts if any(name in text for name in named)], folder
+
+
+def test_the_trades_view_holds_the_trade_tables_figures(client: TestClient, run: Run) -> None:
+    # The views' units (`UNIT_COLUMNS`) against `TradeRow`'s, which name each column's apart.
+    columns = list(UNIT_COLUMNS["trades"])
+    sql = f"SELECT {', '.join(columns)} FROM trades ORDER BY trade"
+
+    answer = asked_sql(client, run, sql).json()
+    page = client.get(f"/v1/runs/{run.hash}/trades").json()
+
+    assert len(answer["rows"]) == len(page["trades"]) == run.trades.height
+    for row, trade in zip(answer["rows"], page["trades"], strict=True):
+        for column, value in zip(columns, row, strict=True):
+            assert figure(value) == figure(trade[column]), column
+
+
+def figure(value: object) -> object:
+    """A decimal as the number it writes, whatever zeros end it; an instant, ending in Z, and
+    anything else as it is."""
+    if isinstance(value, float):
+        return Decimal(repr(value))
+    if isinstance(value, str) and not value.endswith("Z"):
+        return Decimal(value)
+    return value
+
+
+def test_a_fills_value_in_engine_units_that_is_no_whole_number_is_refused() -> None:
+    # The SDK's reader holds the fills' columns to their types, so no saved run reaches this.
+    with pytest.raises(ValueError, match="whole number of price units in the fills' price"):
+        _in_units(1.5, Unit.PRICE, "price")
 
 
 def test_the_query_of_an_unknown_run_answers_404(client: TestClient, run: Run) -> None:
