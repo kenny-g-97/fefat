@@ -7,7 +7,10 @@ import {
   joinedBars,
   timeframe,
   barSeconds,
+  grownRange,
+  readAround,
   tradedBars,
+  windowAt,
   windowDays,
 } from "./bar-windows"
 
@@ -74,6 +77,54 @@ describe("barWindows", () => {
     expect(() =>
       barWindows({ first: "2026-03-09", last: "2026-03-06" }, "5m")
     ).toThrow("Expected held dates in order, got 2026-03-09 to 2026-03-06.")
+  })
+})
+
+describe("the trade review's windows", () => {
+  // Step 5.9: the chart reads the window of the selected trade's entry first, then one older or
+  // newer as the view nears either end of the bars read, never every window of a long run.
+  const windows = barWindows(MES_YEAR, "5m")
+
+  it("finds the window that holds a date, and the nearest one outside them", () => {
+    const at = windowAt(windows, "2025-10-15")
+    const window = windows[at]
+
+    expect(window.from <= "2025-10-15" && "2025-10-15" <= window.to).toBe(true)
+    expect(windowAt(windows, "2026-05-01")).toBe(0)
+    expect(windowAt(windows, "2024-01-02")).toBe(windows.length - 1)
+  })
+
+  it("cuts a run's own timeframe, any bar length, on the same grid", () => {
+    expect(barWindows(MES_YEAR, "2m").length).toBeGreaterThan(windows.length)
+    expect(() => barWindows(MES_YEAR, "5 minutes")).toThrow(
+      'Expected a bar length such as 5m, got "5 minutes".'
+    )
+  })
+
+  it("grows one window older or newer near either end, and stays at the ends", () => {
+    const range = { newest: 3, oldest: 3 }
+
+    expect(grownRange(range, { before: 499, after: 800 }, 14)).toEqual({
+      newest: 3,
+      oldest: 4,
+    })
+    expect(grownRange(range, { before: 800, after: 10 }, 14)).toEqual({
+      newest: 2,
+      oldest: 3,
+    })
+    expect(grownRange(range, { before: 500, after: 500 }, 14)).toBe(range)
+    const ends = { newest: 0, oldest: 13 }
+    expect(grownRange(ends, { before: 0, after: 0 }, 14)).toBe(ends)
+  })
+
+  it("joins the windows read in a row around the centre, none while the centre is unread", () => {
+    expect(readAround(["a", "b", undefined, "d", "e"], 3)).toEqual({
+      from: 3,
+      to: 4,
+    })
+    expect(readAround(["a", "b", "c"], 1)).toEqual({ from: 0, to: 2 })
+    expect(readAround(["a", undefined, "c"], 1)).toBeNull()
+    expect(readAround(["a"], -1)).toBeNull()
   })
 })
 

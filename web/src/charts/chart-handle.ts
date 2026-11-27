@@ -38,12 +38,10 @@ export function chartHandle(
       }
       const width = Math.max(LEAST_BARS_SHOWN, (to - from + 1) * MARGIN)
       const centre = (from + to) / 2
-      created
-        .timeScale()
-        .setVisibleLogicalRange({
-          from: centre - width / 2,
-          to: centre + width / 2,
-        })
+      created.timeScale().setVisibleLogicalRange({
+        from: centre - width / 2,
+        to: centre + width / 2,
+      })
       return true
     },
     locate: (time, price) => {
@@ -65,6 +63,33 @@ export function chartHandle(
         y <= pane.getHeight()
       return inside ? { x, y } : null
     },
+  }
+}
+
+/** The view of `chart` as `drawn` stands, to put back once new bars are drawn: the same bars in
+ * view, however many arrived before them. The library keeps the newest bar's place as a series'
+ * bars are set anew, which would move a view scrolled back to the end of the bars a newer window
+ * brings (the trade review's, step 5.9); the chart viewer's older windows keep their view as
+ * they did. */
+export function keptView(
+  chart: IChartApi,
+  drawn: ReadonlyMap<string, Drawn>
+): (now: ReadonlyMap<string, Drawn>) => void {
+  const before = firstCandles(drawn)
+  const first = before === undefined ? undefined : before.last.time.at(0)
+  const range = chart.timeScale().getVisibleLogicalRange()
+  return (now) => {
+    const after = firstCandles(now)
+    if (range === null || first === undefined || after === undefined) {
+      return
+    }
+    const shift = after.last.time.indexOf(first)
+    if (shift >= 0) {
+      chart.timeScale().setVisibleLogicalRange({
+        from: range.from + shift,
+        to: range.to + shift,
+      })
+    }
   }
 }
 

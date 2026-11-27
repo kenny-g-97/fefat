@@ -16,7 +16,7 @@ import {
 } from "react"
 import type { ChartStyle } from "@/api/settings"
 import { useShownTheme } from "@/ui/theme"
-import { chartHandle, type PriceChartHandle } from "./chart-handle"
+import { chartHandle, keptView, type PriceChartHandle } from "./chart-handle"
 import { chartLook, readThemeTokens } from "./chart-look"
 import { fixedOptions, lookOptions } from "./chart-options"
 import { useChartKeys } from "./chart-steps"
@@ -107,6 +107,7 @@ export function PriceChart({
     if (current === null || watching === null) {
       return
     }
+    const keep = keptView(current, drawn.current)
     drawPanes(
       current,
       drawn.current,
@@ -114,6 +115,7 @@ export function PriceChart({
       look,
       priceFormat
     )
+    keep(drawn.current)
     setPanesDrawn(current.panes().length)
     reportVisibleBars(current.timeScale().getVisibleLogicalRange())
   })
