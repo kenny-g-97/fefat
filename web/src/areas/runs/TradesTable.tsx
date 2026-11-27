@@ -1,7 +1,12 @@
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { useMemo } from "react"
 import type { Currency } from "@/api/runs"
-import { runTradesQuery, type TradeSort, type TradesShown } from "@/api/trades"
+import {
+  runTradesQuery,
+  type Trade,
+  type TradeSort,
+  type TradesShown,
+} from "@/api/trades"
 import { Button } from "@/ui/button"
 import { alignedText, counted, formatCount, placesOfText } from "@/ui/figures"
 import { SectionFailure } from "@/ui/section-failure"
@@ -18,6 +23,8 @@ type TradesTableProps = Readonly<{
   visibility: Readonly<Record<string, boolean>>
   onOrder: (sort: TradeSort, order: SortOrder) => void
   onClear: () => void
+  selected: number | null
+  onSelect: (trade: Trade) => void
 }>
 
 /** The trade table of a saved run (web/DESIGN.md, Patterns, Trade table): a line in a status
@@ -25,7 +32,7 @@ type TradesTableProps = Readonly<{
  * that none matches with the way back, then the trades, read a page at a time as they scroll
  * into view, under their header row while the first page of an order or a filter is read, so
  * that a sort chosen by the keys keeps its focus; a page that fails to come leaves the rows
- * read above its reason and Try again. */
+ * read above its reason and Try again. The trade `selected`, by its row, is the chart's. */
 export function TradesTable({
   runKey,
   shown,
@@ -35,6 +42,8 @@ export function TradesTable({
   visibility,
   onOrder,
   onClear,
+  selected,
+  onSelect,
 }: TradesTableProps) {
   const trades = useInfiniteQuery(runTradesQuery(runKey, shown))
   const read = trades.data === undefined ? null : trades.data
@@ -102,6 +111,8 @@ export function TradesTable({
           onOrder={onOrder}
           onNearEnd={readOn}
           readFor={JSON.stringify(shown)}
+          selected={selected}
+          onSelect={onSelect}
         />
       )}
       {trades.status === "error" && isFetchNextPageError && (

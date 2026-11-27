@@ -14,8 +14,12 @@ import {
 } from "lightweight-charts"
 import { type ChartLook, lastBarColour, legibleText } from "./chart-look"
 import { type ChartMarker, type SessionSpan, sessionSpans } from "./chart-marks"
+import { formatFeature } from "@/ui/figures"
 import { type ChartTime, chartTime } from "./chart-time"
 import { SessionShading } from "./session-shading"
+
+/** The finest step a feature's axis counts in, the readout's four decimals. */
+const FEATURE_STEP = 0.0001
 
 /** A candle series: its bars column by column, as the API sends them, with the trade date of
  * each bar for the sessions' shading, its markers, and primitives of the caller's own. */
@@ -161,9 +165,20 @@ function added(chart: IChartApi, series: ChartSeries, pane: number): Drawn {
   // which the library's would leave for the last bar in view as the trader scrolls back.
   const unlabelled = { lastValueVisible: false, priceLineVisible: false }
   if (series.kind === "line") {
+    // A feature's values need not be prices, so its axis writes them as the readout does.
+    const priceFormat = {
+      type: "custom",
+      formatter: (value: number) => formatFeature(value),
+      minMove: FEATURE_STEP,
+    } as const
     const api = chart.addSeries(
       LineSeries,
-      { ...unlabelled, lineWidth: 1, crosshairMarkerVisible: false },
+      {
+        ...unlabelled,
+        lineWidth: 1,
+        crosshairMarkerVisible: false,
+        priceFormat,
+      },
       pane
     )
     return { kind: "line", api, last: series }
@@ -337,6 +352,7 @@ export function drawnMarker(
     color: colours[marker.tone],
     text: marker.text,
     ...(marker.id === undefined ? {} : { id: marker.id }),
+    ...(marker.size === undefined ? {} : { size: marker.size }),
   }
   if (marker.price === undefined) {
     return { ...drawn, position: above ? "aboveBar" : "belowBar" }

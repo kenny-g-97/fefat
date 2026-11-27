@@ -38,6 +38,7 @@ type PriceChartProps = Readonly<{
   style: ChartStyle
   priceFormat: PriceFormat
   wheel: "chart" | "page"
+  keepsBarsOnResize?: boolean
   ref?: Ref<PriceChartHandle>
   onVisibleBarsChange?: (bars: VisibleBars) => void
   onCrosshairMove?: (index: number | null) => void
@@ -56,6 +57,7 @@ export function PriceChart({
   style,
   priceFormat,
   wheel,
+  keepsBarsOnResize = false,
   ref,
   onVisibleBarsChange,
   onCrosshairMove,
@@ -145,6 +147,12 @@ export function PriceChart({
     chart.current?.applyOptions(lookOptions(look, wheel))
     restyle(drawn.current, look, priceFormat)
   }, [look, wheel, priceFormat])
+
+  useEffect(() => {
+    chart.current?.applyOptions({
+      timeScale: { lockVisibleTimeRangeOnResize: keepsBarsOnResize },
+    })
+  }, [keepsBarsOnResize])
 
   useEffect(() => paint(), [panes])
 

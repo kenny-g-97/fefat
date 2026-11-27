@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate, useSearch } from "@tanstack/react-router"
 import { Download } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { runStatisticsQuery } from "@/api/run-results"
 import { runQuery } from "@/api/runs"
 import {
   executionsFileAddress,
+  type Trade,
   tradesFileAddress,
   type TradesShown,
 } from "@/api/trades"
@@ -19,6 +20,7 @@ import type { TradesSearch } from "./run-search"
 import { RunKey } from "./RunStatusLine"
 import { resultsLine } from "./run-words"
 import { SqlTab } from "./SqlTab"
+import { TradeReview } from "./TradeReview"
 import { TradesTable } from "./TradesTable"
 import { FROM_FIELD, type TradesAsked, TradesToolbar } from "./TradesToolbar"
 
@@ -40,9 +42,10 @@ export function TradesPage() {
   return <TradesOfRun key={search.key} runKey={search.key} search={search} />
 }
 
-/** What the table shows of `search`: its filters and its order, without the run and the tab. */
+/** What the table shows of `search`: its filters and its order, without the run, the tab, and the
+ * trade the chart shows. */
 function shownOf(search: TradesSearch): TradesShown {
-  const { key: _key, tab: _tab, ...shown } = search
+  const { key: _key, tab: _tab, trade: _trade, ...shown } = search
   return shown
 }
 
@@ -66,11 +69,21 @@ function TradesOfRun({
   const saved = run.data?.state === "saved" ? run.data : null
   const breakdowns =
     statistics.status === "success" ? statistics.data.metrics.breakdowns : null
+  const first = saved === null ? null : saved.start
+  const last = saved === null ? null : saved.end
+  const dates = useMemo(
+    () => (first === null || last === null ? null : { first, last }),
+    [first, last]
+  )
+  // A filter, an order, or a selection changes the address alone: the page keeps its scroll,
+  // since from step 5.9 the chart stands over the table and the page grows past the window.
   const ask = (change: TradesAsked) =>
     void navigate({
       search: (before) => ({ ...before, ...change }),
       replace: true,
+      resetScroll: false,
     })
+  const select = (trade: Trade) => ask({ trade: trade.trade })
   const choose = (chosen: Readonly<Record<string, boolean>>) => {
     setVisibility(chosen)
     keepColumns(chosen)
@@ -118,6 +131,17 @@ function TradesOfRun({
             forceMount
             className="flex min-h-0 flex-col gap-5 data-[state=inactive]:hidden"
           >
+            {dates !== null && statistics.status === "success" && (
+              <TradeReview
+                runKey={runKey}
+                dates={dates}
+                timeframe={statistics.data.timeframe}
+                currency={saved === null ? null : saved.currency}
+                shown={shown}
+                row={search.trade}
+                onSelect={select}
+              />
+            )}
             <TradesToolbar
               key={clears}
               search={search}
@@ -149,6 +173,8 @@ function TradesOfRun({
                 ask(CLEARED)
                 setClears((count) => count + 1)
               }}
+              selected={search.trade === undefined ? null : search.trade}
+              onSelect={select}
             />
           </TabsContent>
           <TabsContent

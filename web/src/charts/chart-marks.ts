@@ -4,7 +4,8 @@ import type { ChartTime } from "./chart-time"
 /** A marker on a candle series: where, its words, above or below its bar, its shape, and how it
  * reads; with a `price`, above or below that price rather than its bar, the shape's point on
  * it, as a fill's marker stands at its fill's price; with an `id`, told apart under the pointer
- * (`PriceChart`'s `onMarkerHover`). */
+ * (`PriceChart`'s `onMarkerHover`); and with a `size`, as many times the library's own, as the
+ * selected trade's fills stand out. */
 export type ChartMarker = Readonly<{
   time: ChartTime
   text: string
@@ -13,6 +14,7 @@ export type ChartMarker = Readonly<{
   tone: MarkerTone
   price?: number
   id?: string
+  size?: number
 }>
 
 /** A session of a chart's bars: the time of its first bar and of its last, and whether it is

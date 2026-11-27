@@ -38,6 +38,10 @@ const EDGE = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
   signDisplay: "negative",
 })
+const FEATURE = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 4,
+  signDisplay: "negative",
+})
 
 const DECIMAL_TEXT = /^-?[0-9]+(?:[.][0-9]+)?$/
 
@@ -191,6 +195,14 @@ export function formatShare(share: number): string {
 /** A histogram's edge, with the decimals it holds and its thousands apart: `-1.5`, `12,500`. */
 export function formatEdge(edge: number): string {
   return EDGE.format(edge)
+}
+
+/** A feature of a strategy's at a bar, a float the API sends, in the chart's readout: its
+ * thousands apart and at most four decimals, since a float's last digits are noise, `1.2321`,
+ * `6,856,250,000,000`; `None` for a bar where it has no value, as before its warm-up ends
+ * (step 5.9). */
+export function formatFeature(value: number | null): string {
+  return value === null ? "None" : FEATURE.format(value)
 }
 
 /** The sign of money as the API sends it, read from its text. */

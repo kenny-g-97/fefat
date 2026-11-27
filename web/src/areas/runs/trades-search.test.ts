@@ -61,6 +61,16 @@ describe("what the trade table asks, kept in its address (step 5.8)", () => {
     expect([inverted.start, inverted.end]).toEqual([undefined, undefined])
     expect([inOrder.start, inOrder.end]).toEqual(["2026-03-05", "2026-03-05"])
   })
+
+  it("keeps the trade the chart shows by its row, and leaves out one it cannot read", () => {
+    // Step 5.9 (BACKLOG's "The selected trade in the address"): a link opens the chart on it.
+    expect(tradesSearch.parse({ key: KEY, trade: 2 }).trade).toBe(2)
+    for (const trade of [-1, 1.5, "2", null]) {
+      expect(tradesSearch.parse({ key: KEY, trade }).trade, String(trade)).toBe(
+        undefined
+      )
+    }
+  })
 })
 
 describe("the exports' addresses (step 5.8, D-119)", () => {
