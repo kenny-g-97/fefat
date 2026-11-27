@@ -12975,6 +12975,25 @@
             }
           },
           {
+            "description": "A trade's row, from 0.",
+            "in": "query",
+            "name": "trade",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A trade's row, from 0.",
+              "title": "Trade"
+            }
+          },
+          {
             "in": "query",
             "name": "sort",
             "required": false,
@@ -13231,6 +13250,25 @@
                 }
               ],
               "title": "Ambiguous"
+            }
+          },
+          {
+            "description": "A trade's row, from 0.",
+            "in": "query",
+            "name": "trade",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A trade's row, from 0.",
+              "title": "Trade"
             }
           },
           {

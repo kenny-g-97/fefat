@@ -60,7 +60,8 @@ class PnlSign(StrEnum):
 class TradeFilters(BaseModel):
     """Which of a run's trades to show, each filter left out keeping every trade: a side, an exit
     reason, the trade dates of the entry from `start` to `end`, the sign of the net P&L, the
-    fidelity of the entry's fill, and whether a fill of the trade's path is ambiguous (F-BAR-05)."""
+    fidelity of the entry's fill, whether a fill of the trade's path is ambiguous (F-BAR-05), and
+    one trade by its row, as a link to the trade review names it (step 5.9)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -71,6 +72,7 @@ class TradeFilters(BaseModel):
     pnl_sign: PnlSign | None = None
     fidelity: FidelityText | None = None
     ambiguous: bool | None = None
+    trade: int | None = Field(default=None, ge=0, description="A trade's row, from 0.")
 
     @model_validator(mode="after")
     def _start_on_or_before_its_end(self) -> Self:

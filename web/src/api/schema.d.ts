@@ -7442,6 +7442,8 @@ export interface operations {
                 pnl_sign?: components["schemas"]["PnlSign"] | null;
                 fidelity?: string | null;
                 ambiguous?: boolean | null;
+                /** @description A trade's row, from 0. */
+                trade?: number | null;
                 sort?: components["schemas"]["TradeSort"];
                 order?: components["schemas"]["SortOrder"];
                 /** @description The `next_cursor` of the page before. */
@@ -7523,6 +7525,8 @@ export interface operations {
                 pnl_sign?: components["schemas"]["PnlSign"] | null;
                 fidelity?: string | null;
                 ambiguous?: boolean | null;
+                /** @description A trade's row, from 0. */
+                trade?: number | null;
                 sort?: components["schemas"]["TradeSort"];
                 order?: components["schemas"]["SortOrder"];
             };

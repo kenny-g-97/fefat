@@ -313,6 +313,7 @@ FILTERS = {
     "on minutes": ({"fidelity": "1m"}, pl.col("fidelity") == "1m"),
     "ambiguous": ({"ambiguous": True}, pl.col("ambiguous")),
     "not ambiguous": ({"ambiguous": False}, ~pl.col("ambiguous")),
+    "one trade": ({"trade": 1_234}, pl.col("trade") == 1_234),
     "every filter": (
         {
             "side": "short",
@@ -344,6 +345,22 @@ def test_each_filter_keeps_the_trades_polars_keeps(client: TestClient, run: Run,
     assert expected.height > 0, name
     assert total == expected.height
     assert [trade["trade"] for trade in trades] == expected.get_column("trade").to_list()
+
+
+def test_a_trade_asked_by_its_row_is_that_trade_alone_or_none(client: TestClient, run: Run) -> None:
+    # Step 5.9 (BACKLOG's "The selected trade in the address"): a link to the trade review names
+    # its trade's row, which the table may not have read, so the chart reads that trade alone;
+    # a row past the run's last keeps none.
+    made(run, 3_000)
+    trades = f"/v1/runs/{run.hash}/trades"
+
+    one = client.get(trades, params={"trade": 2_999}).json()
+    past = client.get(trades, params={"trade": 3_000}).json()
+    refused = client.get(trades, params={"trade": -1})
+
+    assert (one["total"], [trade["trade"] for trade in one["trades"]]) == (1, [2_999])
+    assert past == {"trades": [], "next_cursor": None, "total": 0}
+    assert refused.status_code == 422
 
 
 def test_losing_stops_by_mae_put_the_worst_mae_first(client: TestClient, run: Run) -> None:
