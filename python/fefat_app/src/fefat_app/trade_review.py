@@ -145,16 +145,16 @@ class ExplainedFill(BaseModel):
 
 
 class TradeExplained(BaseModel):
-    """A trade replayed through the reference engine: its id, its heading and where the replay
-    started, as the notebook's `Run.explain` prints them, the events of its log in the order they
-    happened, and its fills."""
+    """A trade replayed through the reference engine: its id, its heading as the notebook's
+    `Run.explain` prints it, the instant its replay's first record starts at, the events of its
+    log in the order they happened, and its fills."""
 
     model_config = ConfigDict(frozen=True)
 
     kind: Literal["explained"] = "explained"
     trade_id: int
     heading: str
-    replayed: str
+    started_at: str
     events: tuple[ExplainedEvent, ...]
     fills: tuple[ExplainedFill, ...]
 

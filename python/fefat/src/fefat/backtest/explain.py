@@ -59,13 +59,15 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, repr=False)
 class Explanation:
     """A trade explained: its id, the lines printed, the fills of its episode, the reference
-    engine's and the Rust engine's alike, and the entries of the reference's log, in the order
-    they happened, which the lines write out."""
+    engine's and the Rust engine's alike, the entries of the reference's log, in the order they
+    happened, which the lines write out, and when the replay's first record starts, in
+    nanoseconds since the epoch, which the second line writes too."""
 
     trade_id: int
     lines: tuple[str, ...]
     fills: tuple[FillView, ...]
     entries: tuple[LogEntry, ...]
+    started_at: int
 
     def text(self) -> str:
         return "\n".join(self.lines)
@@ -119,15 +121,16 @@ def explain(run: "Run", trade_id: int) -> Explanation:
     reference = _through_exit((FillView.of(fill) for fill in replayed.fills), trade)
     if reference != rust:
         raise EnginesDisagreementError(trade_id, reference, rust)
+    started = episode.tape[0].starts_at()
     lines = (
         _heading(trade, record),
         f"Replayed through the reference engine on {fidelity_in_words(fidelity)} records from "
-        f"{instant_text(episode.tape[0].starts_at())}:",
+        f"{instant_text(started)}:",
         *replayed.log.lines(),
         "Fills, the reference engine's and the Rust engine's alike:",
         *_fill_lines(reference, episode.tape, run.orders),
     )
-    return Explanation(trade_id, lines, rust, tuple(replayed.log.entries))
+    return Explanation(trade_id, lines, rust, tuple(replayed.log.entries), started)
 
 
 def _first_order(orders: pl.DataFrame, trade: Trade) -> int:

@@ -44,12 +44,12 @@ def run_explanation(
 
 
 def _explained(explanation: Explanation) -> TradeExplained:
-    """The explanation as the job's result: its heading and where the replay started, the first
-    two lines `Run.explain` prints, its log's entries, and its fills."""
+    """The explanation as the job's result: its heading, the first line `Run.explain` prints, the
+    instant its replay started at, its log's entries, and its fills."""
     return TradeExplained(
         trade_id=explanation.trade_id,
         heading=explanation.lines[0],
-        replayed=explanation.lines[1].removesuffix(":"),
+        started_at=utc_text(explanation.started_at),
         events=tuple(
             ExplainedEvent(
                 time=utc_text(entry.ts),

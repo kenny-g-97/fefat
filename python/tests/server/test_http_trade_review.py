@@ -285,7 +285,8 @@ def test_an_explanation_is_a_job_whose_fills_are_the_ledgers(client: TestClient,
     assert {(fill["order"], fill["time"]) for fill in explained["fills"]} <= filled
     assert explained["kind"] == "explained"
     assert explained["heading"].startswith(f"Trade {trade['entry_order']}: long 1 ES")
-    assert explained["replayed"].startswith("Replayed through the reference engine on 1-minute")
+    # The replay starts at the mark before the decision, ahead of the entry's fill.
+    assert instant_nanoseconds(explained["started_at"]) < fills.item(0, "ts")
 
 
 def test_a_replay_refused_is_explained_in_words_that_name_no_folder_of_this_pc(
