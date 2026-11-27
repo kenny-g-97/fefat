@@ -276,3 +276,28 @@ def test_a_short_trades_stop_first_stands_its_initial_risk_over_its_entry() -> N
     for trade in window.trades.iter_rows(named=True):
         assert trade["side"] == "short"
         assert trade["stop_first"] == trade["entry_price"] + trade["initial_risk_ticks"] * TICK
+
+
+def test_a_column_stops_first_level_is_its_column_at_the_decision() -> None:
+    # Step 5.9's ponytail review: the engine keeps a trade's initial risk at a tick at least
+    # (F-RND-02), while a column stop stands at its column wherever the entry fills, so a stop
+    # the entry filled at or past stood at its column, not a tick from the fill. This one sits
+    # three ticks over each long's signal close.
+    close = pl.col("close")
+    over_the_close = ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        features={"highest": close.rolling_max(12).shift(1)},
+        long_entry=close > pl.col("highest"),
+        short_entry=pl.lit(False),
+        stop_price=close + 3 * TICK,
+        execution=ff.Execution(entry=ff.Market(), stop=ff.Stop(column=True), sizing=ff.Fixed(1)),
+    )
+    run = backtest(strategy=over_the_close)
+
+    window = review_window(run, signal_bars(START, END))
+
+    decided = run.signals.select(entry_decision="ts_close", column="stop_price")
+    levels = window.trades.join(decided, on="entry_decision", how="left")
+    assert levels.height > 0
+    assert levels.get_column("stop_first").to_list() == levels.get_column("column").to_list()

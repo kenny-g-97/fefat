@@ -3,7 +3,7 @@ a notebook, reads a page of bars and asks which of the run's trades show on it, 
 placed on the bars they belong to, their stop and target levels, and the strategy's features
 beside the bars.
 
-    window = review_window(run, bars)  # bars with ts_open and ts_close, as `load` gives them
+    window = review_window(run, bars)  # bars as `load(...).collect()` gives them
     window.trades; window.fills; window.features; window.distances
 
 A fill belongs on the bar its time falls in by F-BAR-06 (`fills_on_bars`); a trade shows when one
@@ -19,7 +19,7 @@ import polars as pl
 from fefat.backtest.artifacts import scan_artifact
 from fefat.market.engine_units import instrument_parameters, price_in_units
 from fefat.market.fidelity import TickFidelity
-from fefat.strategy.exits import AtrStop, AtrTarget, AtrTrail
+from fefat.strategy.exits import AtrStop, AtrTarget, AtrTrail, ColumnStop, StopRule
 from fefat.strategy.spec import Execution, StrategySpec
 
 if TYPE_CHECKING:
@@ -91,10 +91,11 @@ def review_window(run: "Run", bars: pl.DataFrame) -> ReviewWindow:
         on_it = fills.filter(pl.col("bar_open").is_not_null()).get_column("trade")
         spanning = (pl.col("entry_ts") <= first) & (pl.col("exit_ts") >= last)
         shown = trades.filter(pl.col("trade").is_in(on_it.implode()) | spanning)
-    distances = distance_features(StrategySpec.model_validate(run.record.strategy.spec).execution)
+    execution = StrategySpec.model_validate(run.record.strategy.spec).execution
+    distances = distance_features(execution)
     features, left_out = _features(run, bars, distances)
     return ReviewWindow(
-        trades=_with_levels(run, shown),
+        trades=_with_levels(run, shown, execution.stop),
         fills=fills.filter(pl.col("trade").is_in(shown.get_column("trade").implode())),
         features=features,
         distances=distances,
@@ -117,18 +118,11 @@ def _traded_fills(run: "Run") -> pl.DataFrame:
     return points.join(run.fills, on=["order", "ts"], how="inner").sort("trade", "ts", "order")
 
 
-def _with_levels(run: "Run", trades: pl.DataFrame) -> pl.DataFrame:
-    """`trades` with their stop's first level, `entry_price` less the initial risk for a long
-    and plus it for a short, null without a stop; their stop's last level and their targets',
-    each leg's last order of its role by id, as the orders artifact holds its last state."""
-    tick = instrument_parameters(run.record.instrument).tick
-    risk = pl.col("initial_risk_ticks") * tick
-    first = pl.when(pl.col("side") == "long").then(pl.col("entry_price") - risk)
+def _with_levels(run: "Run", trades: pl.DataFrame, stop: StopRule | None) -> pl.DataFrame:
+    """`trades` with their stop's first level (`_first_stops`), and their stop's last level and
+    their targets', as the orders artifact holds them, each leg placed once and moved in place."""
     legs = (
         run.orders.filter(pl.col("bracket_of").is_in(trades.get_column("entry_order").implode()))
-        .sort("id")
-        .group_by("bracket_of", "role")
-        .agg(pl.col("price").last())
         .sort("role")
         .group_by("bracket_of")
         .agg(
@@ -136,9 +130,32 @@ def _with_levels(run: "Run", trades: pl.DataFrame) -> pl.DataFrame:
             targets=pl.col("price").filter(pl.col("role").str.starts_with("target_")),
         )
     )
-    return trades.with_columns(stop_first=first.otherwise(pl.col("entry_price") + risk)).join(
+    return _first_stops(run, trades, stop).join(
         legs, left_on="entry_order", right_on="bracket_of", how="left", maintain_order="left"
     )
+
+
+def _first_stops(run: "Run", trades: pl.DataFrame, stop: StopRule | None) -> pl.DataFrame:
+    """`trades` with `stop_first`, where each trade's stop stood when its entry filled, null
+    without a stop: a column stop at the signal frame's `stop_price` at the entry's decision,
+    wherever the entry filled; any other stop a whole number of ticks from the fill, its initial
+    risk, `entry_price` less it for a long and plus it for a short, which the engine keeps at a
+    tick at least (F-RND-02), as those stops stand."""
+    if isinstance(stop, ColumnStop):
+        # shortcut: a roll between the decision and the fill moves the stop by its gap (F-ROL-03),
+        # which this level leaves out; read the placed level once the log records it (BACKLOG.md).
+        decided = trades.get_column("entry_decision").implode()
+        placed = (
+            scan_artifact(run.folder, "signals")
+            .filter(pl.col("ts_close").is_in(decided))
+            .select(entry_decision="ts_close", stop_first="stop_price")
+            .collect()
+        )
+        return trades.join(placed, on="entry_decision", how="left", maintain_order="left")
+    tick = instrument_parameters(run.record.instrument).tick
+    risk = pl.col("initial_risk_ticks") * tick
+    first = pl.when(pl.col("side") == "long").then(pl.col("entry_price") - risk)
+    return trades.with_columns(stop_first=first.otherwise(pl.col("entry_price") + risk))
 
 
 def _features(
