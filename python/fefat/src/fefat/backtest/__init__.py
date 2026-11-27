@@ -19,7 +19,8 @@ with replacement (step 5.20), each figure at every whole percent of them (step 5
 `market_exposure` how its days moved with one lot of its instrument held long, beside buy and
 hold (step 5.23); and `review_window` the trades a window of its bars shows, each fill on its
 bar, with their levels and the strategy's features beside the bars (step 5.9);
-and `compare_runs` sets two to four runs side by side, the first the reference (step 5.10).
+`compare_runs` sets two to four runs side by side, the first the reference, and `reproduce`
+runs a saved run again into a folder of its own and compares its trades' hash (step 5.10).
 `RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
 `fefat.backtest.schemas`, and the record is `fefat.backtest.record`. `fidelity_check` works a
 saved run's fidelity check out again (`fefat.backtest.fidelity`, step 2.12), and `reconcile`
@@ -41,6 +42,7 @@ from fefat.backtest.metrics import (
 )
 from fefat.backtest.reconcile import reconcile
 from fefat.backtest.record import FeaturePin, RunRecord
+from fefat.backtest.reproductions import ReproductionDiffered, ReproductionMatched, reproduce
 from fefat.backtest.resampling import (
     EquityFan,
     FigureByPercent,
@@ -98,6 +100,8 @@ __all__ = [
     "PeriodOutcome",
     "ProfitFactorByPercent",
     "RefusedCheck",
+    "ReproductionDiffered",
+    "ReproductionMatched",
     "ResultsBySide",
     "ReviewWindow",
     "Run",
@@ -118,6 +122,7 @@ __all__ = [
     "market_exposure",
     "monte_carlo",
     "reconcile",
+    "reproduce",
     "results_by_side",
     "review_window",
     "run",

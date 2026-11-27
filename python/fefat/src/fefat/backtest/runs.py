@@ -211,14 +211,9 @@ def _run_or_open(
     folder = paths.runs_dir / key
     if (folder / RECORD_FILE).is_file():
         return Run.open(folder)
-    written = StrategyRecord(
-        spec=inputs.spec.document(),
-        features=strategy.feature_columns(),
-        feature_versions=_pins(strategy),
-        saved_version=strategy.saved_version,
-    )
+    written = strategy_record(inputs, strategy)
     progress(RunStage.ENGINE_RUNNING)
-    artifacts, record = _ran(inputs, inputs.cache_paths(paths), written, key, frame_hash)
+    artifacts, record = engine_run(inputs, inputs.cache_paths(paths), written, key, frame_hash)
     _require_data_as_found(pinned, looked_up(strategy, *window, config, paths).pins, inputs)
     write_run(folder, artifacts, record)
     progress(RunStage.ARTIFACTS_WRITTEN)
@@ -246,6 +241,18 @@ def run_key(inputs: RunInputs, frame_hash: str) -> str:
     return fefat_engine.run_key(inputs.spec_json(), frame_hash, partitions, inputs.config_json())
 
 
+def strategy_record(inputs: RunInputs, strategy: SignalStrategy) -> StrategyRecord:
+    """What the record of a run of `strategy` on `inputs` says of it: its specification, its
+    features' columns, the version of each feature its slots read, and the saved strategy version
+    it was built from (step 5.3)."""
+    return StrategyRecord(
+        spec=inputs.spec.document(),
+        features=strategy.feature_columns(),
+        feature_versions=_pins(strategy),
+        saved_version=strategy.saved_version,
+    )
+
+
 def _pins(strategy: SignalStrategy) -> tuple[FeaturePin, ...]:
     """The version of each feature the strategy's slots read, each saved in the library where it
     is not yet (step 3.7), so that the run's record names it as the library keeps it."""
@@ -264,7 +271,7 @@ def _pin(slot: str, feature: FeatureSpec) -> FeaturePin:
     )
 
 
-def _ran(
+def engine_run(
     inputs: RunInputs,
     cache_paths: tuple[Path, ...],
     strategy: StrategyRecord,
@@ -272,7 +279,8 @@ def _ran(
     frame_hash: str,
 ) -> tuple[dict[str, pl.DataFrame], RunRecord]:
     """The run of `inputs` through the engine over its fronts' caches in `cache_paths`: its
-    artifacts and its record, which names `strategy`."""
+    artifacts and its record, which names `strategy` and keys it as `key`, its signal frame hashing
+    to `frame_hash`; a reproduction runs it again (step 5.10)."""
     caches = [str(path) for path in cache_paths]
     replay = str(inputs.config.replay)
     outputs = fefat_engine.run_signal_backtest(
