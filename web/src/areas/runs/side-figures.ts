@@ -47,12 +47,13 @@ export const LOOKS: Readonly<Record<Written["look"], string>> = {
 /** A figure where nothing is counted, in body text. */
 export const NOTHING: Written = { text: NONE, look: "none" }
 
-function figure(text: string): Written {
+/** A figure in heading text. */
+export function figure(text: string): Written {
   return { text, look: "figure" }
 }
 
 /** Money made or lost, as the API's decimal text, in its sign's colour, a zero in heading text. */
-function made(text: string, currency: Currency): Written {
+export function made(text: string, currency: Currency): Written {
   return { text: formatMoney(text, currency), look: signLook(text) }
 }
 
@@ -79,7 +80,11 @@ function paid(text: string, currency: Currency): Written {
   return figure(formatMoney(text, currency))
 }
 
-function orNone(value: number | null, write: (value: number) => string) {
+/** A figure in heading text written by `write`, or None in body text where nothing is counted. */
+export function orNone(
+  value: number | null,
+  write: (value: number) => string
+): Written {
   return value === null ? NOTHING : figure(write(value))
 }
 

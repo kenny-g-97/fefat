@@ -66,7 +66,7 @@ test("two runs compared, their versions diffed, and one reproduced, recorded", a
   await page.waitForTimeout(PAUSE_MS)
   await page.getByTestId("reproduce-run").click()
   await expect(page.getByTestId("reproduction")).toContainText(
-    "Reproduced: the trades match the saved run's",
+    /Reproduced [0-9-]+ [0-9:]+: the trades match the saved run's, hash/,
     { timeout: REPRODUCTION_TIMEOUT }
   )
   await page.waitForTimeout(PAUSE_MS * 2)

@@ -85,7 +85,6 @@ export function RunRow({
   return (
     <li>
       <div className="relative">
-        <RunLink run={run} filters={filters} />
         {run.state === "saved" && (
           <span className="absolute top-3 left-2.25 flex">
             <Checkbox
@@ -97,6 +96,7 @@ export function RunRow({
             />
           </span>
         )}
+        <RunLink run={run} filters={filters} />
         {run.state === "submitted" && isActive(run) && (
           <span className="absolute top-1 right-2">
             <Button

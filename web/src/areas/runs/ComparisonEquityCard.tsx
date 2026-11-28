@@ -1,12 +1,12 @@
 import { lazyRouteComponent } from "@tanstack/react-router"
 import { cn } from "cn"
-import { Suspense, useState } from "react"
+import { Suspense, useMemo, useState } from "react"
 import type { ComparedRun } from "@/api/comparisons"
 import { comparedDays, sharesOn } from "@/charts/comparison-option"
 import { formatShare } from "@/ui/figures"
 import { IdentityChip } from "@/ui/identity-chip"
 import { Panel } from "@/ui/panel"
-import { comparedDetail, comparedLabel, SERIES_MARKS } from "./compare-words"
+import { comparedDetails, comparedLabel, SERIES_MARKS } from "./compare-words"
 
 /** ECharts' chunk, loaded with the first chart a page shows, out of the app's first bundle
  * (D-93), as the equity chart's is. */
@@ -19,13 +19,16 @@ const KEY_DIGITS = 12
 
 /** The compared runs' equity over their capital on one chart (web/DESIGN.md, Patterns,
  * Comparison chart): its readout is the legend, each run's share of its capital at the trade date
- * under the pointer, or else at the last, under that date. */
+ * under the pointer, or else at the last, under that date, each run's line leading with what it
+ * differs from the others by. */
 export function ComparisonEquityCard({
   runs,
 }: Readonly<{ runs: readonly ComparedRun[] }>) {
   const [pointed, setPointed] = useState<number | null>(null)
-  const curves = runs.map((run) => run.curve)
-  const days = comparedDays(curves)
+  // Kept across renders, so that a pointer move sets no chart again (`ComparisonChart`).
+  const curves = useMemo(() => runs.map((run) => run.curve), [runs])
+  const days = useMemo(() => comparedDays(curves), [curves])
+  const details = useMemo(() => comparedDetails(runs), [runs])
   const at = pointed === null ? days.length - 1 : pointed
   return (
     <Panel
@@ -63,8 +66,12 @@ export function ComparisonEquityCard({
                   {comparedLabel(run)}
                 </span>
                 <IdentityChip>{run.run_key.slice(0, KEY_DIGITS)}</IdentityChip>
-                <span className="min-w-0 truncate text-xs text-muted-foreground">
-                  {comparedDetail(run)}
+                <span
+                  data-testid="comparison-detail"
+                  title={details[index]}
+                  className="min-w-0 truncate text-xs text-muted-foreground"
+                >
+                  {details[index]}
                 </span>
                 <span
                   data-testid="comparison-share"

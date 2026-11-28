@@ -17,6 +17,7 @@ import { TextLink } from "@/ui/text-link"
 import { RunFilters } from "./RunFilters"
 import { RunHead, RunRow } from "./RunRow"
 import { FEWEST_COMPARED, MOST_COMPARED, type RunsSearch } from "./run-search"
+import { oldestFirst } from "./run-words"
 
 /** The Runs page (web/DESIGN.md, Patterns, Runs list): every backtest, newest first, its bar live
  * while it runs through the jobs' streams, narrowed by the filters in its address; two to four saved
@@ -26,12 +27,15 @@ export function RunsPage() {
   const stressed = useLocation({
     select: (location) => location.state.stressed,
   })
-  const [chosen, setChosen] = useState<readonly SavedRun[]>([])
-  const choose = (run: SavedRun, wanted: boolean) =>
-    setChosen((now) => {
-      const others = now.filter((each) => each.run_key !== run.run_key)
-      return wanted ? [...others, run] : others
-    })
+  // The ticks belong to the filters they were made under, so that a run a change of the filters
+  // takes out of sight is never compared; they come back with those filters.
+  const asked = JSON.stringify(filters)
+  const [ticked, setTicked] = useState<Ticked>({ under: asked, runs: [] })
+  const chosen = ticked.under === asked ? ticked.runs : []
+  const choose = (run: SavedRun, wanted: boolean) => {
+    const others = chosen.filter((each) => each.run_key !== run.run_key)
+    setTicked({ under: asked, runs: wanted ? [...others, run] : others })
+  }
   return (
     <Page
       title="Runs"
@@ -60,6 +64,9 @@ export function RunsPage() {
   )
 }
 
+/** The runs ticked for a comparison, and the filters of the list they were ticked in. */
+type Ticked = Readonly<{ under: string; runs: readonly SavedRun[] }>
+
 /** Compare, a card's own action: a link to the comparison of the runs `chosen`, oldest first,
  * the reference, once two to four are; waiting otherwise. */
 function CompareChosen({
@@ -78,14 +85,15 @@ function CompareChosen({
       </Button>
     )
   }
-  const oldestFirst = [...chosen].sort((one, other) =>
-    one.created_at.localeCompare(other.created_at)
-  )
   return (
     <Button variant="ghost" asChild className="-my-2">
       <Link
         to="/runs/compare"
-        search={{ runs: oldestFirst.map((run) => run.run_key).join(",") }}
+        search={{
+          runs: oldestFirst(chosen)
+            .map((run) => run.run_key)
+            .join(","),
+        }}
         state={{ runsFilters: filters }}
         data-testid="runs-compare"
       >

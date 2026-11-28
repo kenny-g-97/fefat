@@ -12,12 +12,15 @@ import { theSeededKey } from "./support/seeded-run.ts"
 
 const REPRODUCTION_TIMEOUT = 90_000
 
+test.use({ timezoneId: "UTC" })
+
 const job = z.looseObject({
   id: z.string(),
   kind: z.string(),
   status: z.string(),
   payload: z.looseObject({ reproduces: z.string().optional() }),
   result: z.looseObject({ verdict: z.string() }).nullable(),
+  finished_at: z.string().nullable(),
 })
 
 test.afterEach(async ({ page }) => {
@@ -56,18 +59,24 @@ test("Reproduce makes the seeded run again and says its trades match", async ({
     await (await page.request.get(`/v1/jobs/${queued.id}`)).json()
   )
   expect(ended.result?.verdict).toBe("matched")
+  if (ended.finished_at === null) {
+    throw new Error("Expected the reproduction's end, got none.")
+  }
+  // The verdict says when its job ended, to the minute in the browser's time zone, UTC here.
+  const ending = ended.finished_at.slice(0, 16).replace("T", " ")
   const line = page.getByTestId("reproduction")
   await expect(line).toContainText(
-    "Reproduced: the trades match the saved run's"
+    `Reproduced ${ending}: the trades match the saved run's, hash`
   )
   await expect(page.getByTestId("reproduce-run")).toBeEnabled()
   await expect(page.getByTestId("reproduction-hash")).toBeVisible()
   await page.mouse.move(700, 36)
   await screenshot(page, "run-reproduced")
 
+  // A reload reads the run's newest reproduction, which another spec's may be.
   await page.reload()
   await expect(line).toContainText(
-    "Reproduced: the trades match the saved run's"
+    /Reproduced [0-9-]+ [0-9:]+: the trades match the saved run's, hash/
   )
   expect(errors).toEqual([])
 })

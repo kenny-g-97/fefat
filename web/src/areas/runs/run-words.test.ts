@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  choiceWords,
   foundWords,
   parameterWords,
   resultsLine,
@@ -151,5 +152,30 @@ describe("parameterWords", () => {
 
   it("is empty for a run that names none", () => {
     expect(parameterWords({ parameters: {} })).toBe("")
+  })
+})
+
+describe("choiceWords", () => {
+  it("names a run for its checkbox by its version, dates, slippage, and parameters", () => {
+    // The design review of step 5.10: a stress's runs differ by their slippage alone.
+    const run = {
+      strategy: VERSION,
+      settings: { instrument: "ES", slippage_ticks: { market: 1, stop: 1 } },
+      start: "2026-03-05",
+      end: "2026-03-09",
+      parameters: { lookback: 12 },
+    }
+
+    expect(choiceWords(run)).toBe(
+      "demo version 2, ES in 5m bars, 2026-03-05 to 2026-03-09, 1 tick of slippage, lookback 12"
+    )
+    expect(
+      choiceWords({
+        ...run,
+        settings: { instrument: "ES", slippage_ticks: { market: 2, stop: 3 } },
+      })
+    ).toBe(
+      "demo version 2, ES in 5m bars, 2026-03-05 to 2026-03-09, 2 market and 3 stop ticks of slippage, lookback 12"
+    )
   })
 })

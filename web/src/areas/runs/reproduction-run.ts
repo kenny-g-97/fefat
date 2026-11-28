@@ -14,12 +14,17 @@ import {
 } from "@/api/reproductions"
 
 /** Where a saved run's reproduction stands: none asked for among the recent jobs, being queued,
- * its job under way with its progress, its verdict, or why it could not be had, in words. */
+ * its job under way with its progress, its verdict with when its job ended, or why it could not
+ * be had, in words. */
 export type ReproductionState =
   | Readonly<{ kind: "idle" }>
   | Readonly<{ kind: "starting" }>
   | Readonly<{ kind: "running"; job: Job }>
-  | Readonly<{ kind: "answered"; reproduction: Reproduction }>
+  | Readonly<{
+      kind: "answered"
+      reproduction: Reproduction
+      at: string | null
+    }>
   | Readonly<{ kind: "failed"; message: string }>
 
 /** The reproduction a saved run's page shows (step 5.10), its state following the job as the jobs
@@ -77,7 +82,7 @@ export function reproductionState(
   }
   const read = reproduction.safeParse(job.result)
   return read.success
-    ? { kind: "answered", reproduction: read.data }
+    ? { kind: "answered", reproduction: read.data, at: job.finished_at }
     : {
         kind: "failed",
         message: `The reproduction's answer could not be read: ${read.error.message} Reproduce the run again.`,

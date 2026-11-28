@@ -1,4 +1,5 @@
 import type { Locator } from "@playwright/test"
+import { lightThemeDrawn } from "./support/chart.ts"
 import { consoleErrors } from "./support/console.ts"
 import { expect, test } from "./support/fixtures.ts"
 import { screenshot } from "./support/screenshots.ts"
@@ -36,17 +37,30 @@ test("the latest version stands beside the one before it, the stop's change in t
   const marked = await later.first().evaluate((text) => {
     const line = text.closest(".cm-changedLine")
     return {
-      underline: getComputedStyle(text).backgroundImage,
+      outline: getComputedStyle(text).outlineColor,
       line: line === null ? "" : getComputedStyle(line).backgroundColor,
     }
   })
-  expect(marked.underline).toContain(BRAND)
+  expect(marked.outline).toBe(BRAND)
   expect(marked.line).toBe(HOVER_STEP)
+  // Each side's gutter bars its changed line in the accent, the earlier's too, never the merge
+  // view's red or green.
+  for (const side of ["a", "b"]) {
+    const bars = await changes
+      .locator(`.cm-merge-${side} .cm-changedLineGutter`)
+      .evaluateAll((marks) =>
+        marks.map((mark) => getComputedStyle(mark).backgroundColor)
+      )
+    expect(bars.length).toBeGreaterThan(0)
+    expect(new Set(bars)).toEqual(new Set([BRAND]))
+  }
   // CodeMirror measures an editor's lines once it is in view, its gutter estimated before.
   await changes.scrollIntoViewIfNeeded()
   await expect.poll(() => gutterAligned(changes)).toBe(true)
   await page.mouse.move(700, 36)
   await screenshot(page, "version-diff")
+  await lightThemeDrawn(page, [])
+  await screenshot(page, "version-diff-light")
   expect(errors).toEqual([])
 })
 

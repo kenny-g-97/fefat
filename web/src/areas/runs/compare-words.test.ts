@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { ComparedRun } from "@/api/comparisons"
 import {
-  comparedDetail,
+  comparedDetails,
   comparedLabel,
   countChange,
   figureChange,
@@ -9,7 +9,26 @@ import {
   shareChange,
 } from "./compare-words"
 
-function aComparedRun(changes: Partial<ComparedRun>): ComparedRun {
+type Config = ComparedRun["config"]
+
+const CONFIG: Config = {
+  capital: "50000",
+  contract: null,
+  fee_table: "retail-default",
+  fidelity: "1m",
+  instrument: "ES",
+  latency_ms: 100,
+  limit_fill: "through",
+  provider: "synthetic",
+  replay: "skipping",
+  roll_handling: "transfer",
+  slippage_ticks: { market: 1, stop: 1 },
+}
+
+function aComparedRun(
+  changes: Partial<ComparedRun>,
+  config: Partial<Config> = {}
+): ComparedRun {
   const figures = {
     pnl: "-2721.560000",
     pnl_share: -0.0544312,
@@ -32,7 +51,7 @@ function aComparedRun(changes: Partial<ComparedRun>): ComparedRun {
     instrument: "ES",
     timeframe: "5m",
     currency: "USD",
-    capital: "50000",
+    config: { ...CONFIG, ...config },
     window: { start: "2026-03-05", end: "2026-03-09" },
     figures,
     deltas: null,
@@ -44,19 +63,47 @@ function aComparedRun(changes: Partial<ComparedRun>): ComparedRun {
 }
 
 describe("a compared run's words", () => {
-  it("names a run by its strategy and version, and tells it apart by what it trades, its dates, and its parameters", () => {
-    const run = aComparedRun({})
-
-    expect(comparedLabel(run)).toBe("demo v2")
-    expect(comparedDetail(run)).toBe(
-      "ES in 5m bars, 2026-03-05 to 2026-03-09, lookback 12, stop_atr 2"
-    )
+  it("names a run by its strategy and version, or says it has none", () => {
+    expect(comparedLabel(aComparedRun({}))).toBe("demo v2")
     expect(comparedLabel(aComparedRun({ strategy: null }))).toBe(
       "No saved version"
     )
-    expect(comparedDetail(aComparedRun({ strategy: null }))).toBe(
-      "ES in 5m bars, 2026-03-05 to 2026-03-09"
+  })
+
+  it("leads each run's line with what it differs by, and leaves out a setting all share", () => {
+    // The design review of step 5.10: an ellipsis never cuts what tells two runs apart.
+    const first = aComparedRun({
+      strategy: {
+        name: "demo",
+        version: 1,
+        hash: "c".repeat(64),
+        parameters: { lookback: 12, stop_atr: 1.5 },
+      },
+    })
+
+    expect(comparedDetails([first, aComparedRun({})])).toEqual([
+      "stop_atr 1.5, ES in 5m bars, 2026-03-05 to 2026-03-09, lookback 12",
+      "stop_atr 2, ES in 5m bars, 2026-03-05 to 2026-03-09, lookback 12",
+    ])
+  })
+
+  it("says a stress's slippage, the one thing its runs differ by", () => {
+    const base = aComparedRun({})
+    const stressed = aComparedRun(
+      {},
+      { slippage_ticks: { market: 2, stop: 2 } }
     )
+    const split = aComparedRun({}, { slippage_ticks: { market: 2, stop: 3 } })
+
+    expect(
+      comparedDetails([base, stressed, split]).map(
+        (line) => line.split(", ")[0]
+      )
+    ).toEqual([
+      "1 tick of slippage",
+      "2 ticks of slippage",
+      "2 market and 3 stop ticks of slippage",
+    ])
   })
 
   it("signs each change, a zero bare, as the figure would write it", () => {

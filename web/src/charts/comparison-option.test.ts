@@ -42,7 +42,10 @@ const LATER = {
 
 const lineSeries = z.array(
   z.object({
-    lineStyle: z.object({ color: z.string() }),
+    lineStyle: z.object({
+      color: z.string().optional(),
+      opacity: z.number().optional(),
+    }),
     data: z.array(z.number().nullable()),
     markLine: z
       .object({ data: z.array(z.object({ yAxis: z.number() })) })
@@ -78,15 +81,18 @@ describe("the comparison chart's options", () => {
   it("draws a line a run, the reference first in the accent, over the capital's dashed line", () => {
     const tokens = tokensOf("dark")
 
-    const series = lineSeries.parse(
+    const [everyDay, ...runs] = lineSeries.parse(
       comparisonOption([REFERENCE, LATER], tokens).series
     )
 
-    expect(series.map((each) => each.lineStyle.color)).toEqual(
+    expect(runs.map((each) => each.lineStyle.color)).toEqual(
       seriesColours(tokens).slice(0, 2)
     )
-    expect(series[0].markLine?.data).toEqual([{ yAxis: 1 }])
-    expect(series[1].markLine).toBeUndefined()
+    expect(runs[0].markLine?.data).toEqual([{ yAxis: 1 }])
+    expect(runs[1].markLine).toBeUndefined()
+    // The keys' crosshair shows on the first series, which has a point on every trade date.
+    expect(everyDay.data.every((value) => value !== null)).toBe(true)
+    expect(everyDay.data).toHaveLength(4)
   })
 
   it("sets each run's shares on every trade date any run was valued on, none where it was not", () => {

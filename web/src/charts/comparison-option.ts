@@ -69,7 +69,18 @@ export function comparisonOption(
 ): ResultsChartOption {
   const days = comparedDays(curves)
   const colours = seriesColours(tokens)
-  const series: LineSeriesOption[] = curves.map((curve, at) => ({
+  const bounds = shareBounds(curves)
+  // An unseen line on every trade date first, since the keys show the tip on the first series and
+  // ECharts hides its crosshair at a point without a value, as the reference's before its first day.
+  const everyDay: LineSeriesOption = {
+    type: "line",
+    name: "Every trade date",
+    silent: true,
+    symbol: "none",
+    data: days.map(() => bounds.min),
+    lineStyle: { opacity: 0 },
+  }
+  const runs: LineSeriesOption[] = curves.map((curve, at) => ({
     type: "line",
     name: `Run ${at + 1}`,
     symbol: "circle",
@@ -96,12 +107,12 @@ export function comparisonOption(
     },
     yAxis: {
       type: "value",
-      ...shareBounds(curves),
+      ...bounds,
       axisLine: NO_LINE,
       axisTick: NO_LINE,
       axisLabel: { ...axisLabels(tokens), formatter: shareEdge },
       splitLine: { show: true, lineStyle: { color: tokens.border, width: 1 } },
     },
-    series,
+    series: [everyDay, ...runs],
   }
 }

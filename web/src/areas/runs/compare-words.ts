@@ -1,14 +1,15 @@
 import type { ComparedRun, RunFigures } from "@/api/comparisons"
 import type { Currency } from "@/api/runs"
 import {
+  fidelityLabel,
   formatCount,
   formatFigure,
   formatMoney,
   formatShare,
   moneySign,
 } from "@/ui/figures"
-import { parameterWords } from "./run-words"
-import type { Written } from "./side-figures"
+import { parameterText, slippageSaid } from "./run-words"
+import { figure, made, orNone, type Written } from "./side-figures"
 
 const NONE = "None"
 
@@ -29,17 +30,80 @@ export function comparedLabel(run: ComparedRun): string {
     : `${run.strategy.name} v${run.strategy.version}`
 }
 
-/** What tells a compared run apart from another run of its version: what it trades, its dates,
- * and its parameters, `ES in 5m bars, 2026-03-05 to 2026-03-09, lookback 12, stop_atr 1.5`. */
-export function comparedDetail(run: ComparedRun): string {
+/** A part of what a compared run is, named by `key` so that the same part of another run is
+ * found; a setting is said only where the runs differ by it. */
+type DetailPart = Readonly<{ key: string; words: string; setting: boolean }>
+
+function detailParts(run: ComparedRun): readonly DetailPart[] {
+  const { config } = run
   const parameters =
-    run.strategy === null
-      ? ""
-      : parameterWords({ parameters: run.strategy.parameters })
-  const traded = `${run.instrument} in ${run.timeframe} bars`
-  return [traded, `${run.window.start} to ${run.window.end}`, parameters]
-    .filter((words) => words !== "")
-    .join(", ")
+    run.strategy === null ? [] : Object.entries(run.strategy.parameters)
+  const contract =
+    config.contract === null || config.contract === undefined
+      ? "spliced"
+      : config.contract
+  return [
+    {
+      key: "traded",
+      words: `${run.instrument} in ${run.timeframe} bars`,
+      setting: false,
+    },
+    {
+      key: "dates",
+      words: `${run.window.start} to ${run.window.end}`,
+      setting: false,
+    },
+    ...parameters.map(([name, value]) => ({
+      key: `parameter ${name}`,
+      words: `${name} ${parameterText(value)}`,
+      setting: false,
+    })),
+    {
+      key: "slippage",
+      words: slippageSaid(config.slippage_ticks),
+      setting: true,
+    },
+    {
+      key: "fidelity",
+      words: `filled on ${fidelityLabel(config.fidelity).toLowerCase()}`,
+      setting: true,
+    },
+    { key: "fees", words: `${config.fee_table} fees`, setting: true },
+    {
+      key: "capital",
+      words: `${formatMoney(config.capital, run.currency)} of capital`,
+      setting: true,
+    },
+    { key: "contract", words: contract, setting: true },
+    {
+      key: "latency",
+      words: `${config.latency_ms} ms of latency`,
+      setting: true,
+    },
+  ]
+}
+
+/** What tells each of `runs` apart, as the comparison's legend says it (web/DESIGN.md, Patterns,
+ * Comparison chart): first the parts in which the runs differ, settings such as a stress's
+ * slippage among them, in their order, then what each trades, its dates, and its parameters, a
+ * setting all of them share left out, so that an ellipsis never cuts what differs. */
+export function comparedDetails(
+  runs: readonly ComparedRun[]
+): readonly string[] {
+  const parts = runs.map(detailParts)
+  const differs = (part: DetailPart) =>
+    parts.some(
+      (other) =>
+        other.find((each) => each.key === part.key)?.words !== part.words
+    )
+  return parts.map((own) =>
+    [
+      ...own.filter(differs),
+      ...own.filter((part) => !differs(part) && !part.setting),
+    ]
+      .map((part) => part.words)
+      .join(", ")
+  )
 }
 
 /** A change with its sign, as the comparison writes each delta: a plus before a change above
@@ -87,31 +151,6 @@ export type ComparedRow = Readonly<{
   change: (deltas: RunFigures, currency: Currency) => string
 }>
 
-function heading(text: string): Written {
-  return { text, look: "figure" }
-}
-
-function ratio(value: number | null): Written {
-  return value === null
-    ? { text: NONE, look: "none" }
-    : heading(formatFigure(value))
-}
-
-function share(value: number | null): Written {
-  return value === null
-    ? { text: NONE, look: "none" }
-    : heading(formatShare(value))
-}
-
-/** Net P&L in its sign's colour, a zero in heading text, as every P&L of the app. */
-function made(text: string, currency: Currency): Written {
-  const sign = moneySign(text)
-  return {
-    text: formatMoney(text, currency),
-    look: sign === "zero" ? "figure" : sign,
-  }
-}
-
 /** The figures a comparison sets side by side, those of the run page's KPI cards but its fidelity
  * split, each with its change. */
 export const COMPARED_ROWS: readonly ComparedRow[] = [
@@ -124,25 +163,25 @@ export const COMPARED_ROWS: readonly ComparedRow[] = [
   {
     id: "pnl-share",
     label: "Net P&L of the capital",
-    figure: (figures) => share(figures.pnl_share),
+    figure: (figures) => figure(formatShare(figures.pnl_share)),
     change: (deltas) => shareChange(deltas.pnl_share),
   },
   {
     id: "profit-factor",
     label: "Profit factor",
-    figure: (figures) => ratio(figures.profit_factor),
+    figure: (figures) => orNone(figures.profit_factor, formatFigure),
     change: (deltas) => figureChange(deltas.profit_factor),
   },
   {
     id: "expectancy-r",
     label: "Expectancy in R",
-    figure: (figures) => ratio(figures.expectancy_r),
+    figure: (figures) => orNone(figures.expectancy_r, formatFigure),
     change: (deltas) => figureChange(deltas.expectancy_r),
   },
   {
     id: "win-rate",
     label: "Win rate",
-    figure: (figures) => share(figures.win_rate),
+    figure: (figures) => orNone(figures.win_rate, formatShare),
     change: (deltas) =>
       deltas.win_rate === null ? NONE : shareChange(deltas.win_rate),
   },
@@ -150,25 +189,25 @@ export const COMPARED_ROWS: readonly ComparedRow[] = [
     id: "max-drawdown",
     label: "Max drawdown",
     figure: (figures, currency) =>
-      heading(formatMoney(figures.max_drawdown, currency)),
+      figure(formatMoney(figures.max_drawdown, currency)),
     change: (deltas, currency) => moneyChange(deltas.max_drawdown, currency),
   },
   {
     id: "max-drawdown-share",
     label: "Max drawdown of the capital",
-    figure: (figures) => share(figures.max_drawdown_share),
+    figure: (figures) => figure(formatShare(figures.max_drawdown_share)),
     change: (deltas) => shareChange(deltas.max_drawdown_share),
   },
   {
     id: "sharpe",
     label: "Sharpe",
-    figure: (figures) => ratio(figures.sharpe),
+    figure: (figures) => orNone(figures.sharpe, formatFigure),
     change: (deltas) => figureChange(deltas.sharpe),
   },
   {
     id: "trades",
     label: "Trades",
-    figure: (figures) => heading(formatCount(figures.trades)),
+    figure: (figures) => figure(formatCount(figures.trades)),
     change: (deltas) => countChange(deltas.trades),
   },
 ]

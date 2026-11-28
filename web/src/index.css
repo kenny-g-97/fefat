@@ -79,13 +79,16 @@
 /* More contrast, where the trader's system asks for it (step 5.8, from the Phase 4 exit's
    backlog): the hairlines take the next steps toward the text, a field's border and the body and
    subtle text the next toward the heading's, in either theme, so that a dense table reads at a
-   glance; the fills, the accent, and the sign colours stay as they are. */
+   glance, and a comparison's fourth run's line, in the field border's grey, takes the field
+   border's steps, so that it stands apart from the grid (step 5.10); the fills, the accent, and
+   the sign colours stay as they are. */
 @media (prefers-contrast: more) {
   :root {
     --border: #9a9a9a;
     --input: #5c5c5c;
     --foreground-secondary: #3d3d3d;
     --muted-foreground: #4d4d4d;
+    --chart-4: #5c5c5c;
   }
 
   .dark {
@@ -93,6 +96,7 @@
     --input: #8a8a8a;
     --foreground-secondary: #b8b8b8;
     --muted-foreground: #a3a3a3;
+    --chart-4: #8a8a8a;
   }
 }
 
@@ -353,6 +357,22 @@ main[tabindex="-1"]:focus-visible {
 
 [data-slot="checkbox"] {
   --primary: var(--brand);
+  position: relative;
+}
+
+/* Its target reaches 8 px around the box, 32 px as a row's controls are (Layout, Targets), over
+   the row's padding, so that a near miss ticks rather than opens the run; an unticked box under
+   the pointer takes heading text on its border, since the row's surface leaves it as the pointer
+   reaches the box, and a ticked one pressed takes heading text, its border being the accent. */
+[data-slot="checkbox"]::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+[data-slot="checkbox"][data-state="unchecked"]:not(:disabled):hover,
+[data-slot="checkbox"][data-state="checked"]:active {
+  border-color: var(--foreground);
 }
 
 /* A job's progress is the skill's 8 px bar: its track one step above the panel it sits on,
@@ -769,9 +789,10 @@ a[data-slot="row-link"]:active {
 
 /* The version diff (step 5.10, web/DESIGN.md, Patterns, Changes card): two read-only editors
    12 px apart, each change in the accent, never the merge view's red and green, which mean money
-   and failure here: its lines on the hover step, its characters underlined 2 px in the brand
-   colour, 6.38 : 1 on the dark step and 4.53 : 1 on the light one, and a bar in the gutter. Each
-   rule outweighs the merge view's own theme by one class. */
+   and failure here: its lines on the hover step, its characters outlined 1 px in the brand
+   colour, 6.38 : 1 on the dark step and 4.53 : 1 on the light one, as a bracket that closes
+   nothing is outlined in the negative, and a bar in the gutter. Each rule outweighs the merge
+   view's own theme by one class. */
 [data-slot="code-diff"] .cm-mergeViewEditors {
   gap: 0.75rem;
 }
@@ -783,8 +804,8 @@ a[data-slot="row-link"]:active {
 
 [data-slot="code-diff"] .cm-editor.cm-merge-a .cm-changedText,
 [data-slot="code-diff"] .cm-editor.cm-merge-b .cm-changedText {
-  background: linear-gradient(var(--brand), var(--brand)) bottom / 100% 2px
-    no-repeat;
+  background: none;
+  outline: 1px solid var(--brand);
 }
 
 [data-slot="code-diff"] .cm-editor.cm-merge-a .cm-changedLineGutter,
@@ -810,8 +831,8 @@ a[data-slot="row-link"]:active {
     outline-offset: 2px;
   }
 
-  /* The version diff's marks, drawn as backgrounds, take the system's highlight: its gutter's
-     bar, and its changed characters an underline. */
+  /* The version diff's marks take the system's highlight: its gutter's bar, drawn as a
+     background, and its changed characters' outline. */
   [data-slot="code-diff"] .cm-editor.cm-merge-a .cm-changedLineGutter,
   [data-slot="code-diff"] .cm-editor.cm-merge-b .cm-changedLineGutter {
     background-color: Highlight;
@@ -819,7 +840,7 @@ a[data-slot="row-link"]:active {
 
   [data-slot="code-diff"] .cm-editor.cm-merge-a .cm-changedText,
   [data-slot="code-diff"] .cm-editor.cm-merge-b .cm-changedText {
-    text-decoration: underline 2px Highlight;
+    outline-color: Highlight;
   }
 
   /* The jobs button's failure dot keeps a mark there, its fill and its ring forced away, and so

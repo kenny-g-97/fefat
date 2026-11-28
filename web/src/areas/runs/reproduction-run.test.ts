@@ -51,14 +51,14 @@ describe("reproductionState", () => {
         false,
         aJob({ status: "succeeded", result: matched })
       )
-    ).toEqual({ kind: "answered", reproduction: matched })
+    ).toEqual({ kind: "answered", reproduction: matched, at: null })
     expect(
       reproductionState(
         null,
         false,
         aJob({ status: "succeeded", result: refused })
       )
-    ).toEqual({ kind: "answered", reproduction: refused })
+    ).toEqual({ kind: "answered", reproduction: refused, at: null })
   })
 
   it("says why a reproduction was not had, in the server's words or its own", () => {

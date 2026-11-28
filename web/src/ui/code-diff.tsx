@@ -13,9 +13,9 @@ const MergeEditors = lazyRouteComponent(() => import("./code-diff-codemirror"))
 
 /** Two versions' Python code side by side (web/DESIGN.md, Patterns, Changes card), read only, the
  * earlier on the left and the later on the right, every line shown, each change marked in the
- * accent: its lines on the hover step, its characters underlined, and a bar in the gutter. While
- * CodeMirror loads, both codes stand as plain text in the editor's boxes, so that nothing moves
- * once it has. */
+ * accent: its lines on the hover step, its characters outlined, and a bar in the gutter. While
+ * CodeMirror loads, both codes stand as plain text in the editor's boxes, their long lines
+ * unwrapped, so that a diff of long lines grows once it has, below the fold where the page opens. */
 export function CodeDiff({ earlier, later }: CodeDiffProps) {
   return (
     <div data-slot="code-diff" data-testid="code-diff">

@@ -55,6 +55,9 @@ async function theSeededRuns(page: Page): Promise<readonly [string, string]> {
   return [oldestOf(1), oldestOf(2)]
 }
 
+/** The words before each change that a screen reader alone reads. */
+const CHANGE_SAYS = "Differs from the reference's by "
+
 /** A change of money as the comparison writes it: a plus before money above zero. */
 function moneyChange(text: string, currency: string): string {
   const written = moneyText(text, currency)
@@ -83,6 +86,9 @@ test("two runs ticked on the Runs page open their comparison, the older the refe
   await expect(compare).toHaveText("Compare 2 runs")
   await page.mouse.move(700, 36)
   await screenshot(page, "runs-compare-chosen")
+  await lightThemeDrawn(page, [])
+  await screenshot(page, "runs-compare-chosen-light")
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
   await compare.click()
 
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Comparison")
@@ -113,15 +119,16 @@ test("two runs ticked on the Runs page open their comparison, the older the refe
     throw new Error("Expected the second run's deltas, got none.")
   }
   await expect(pnl.last()).toHaveText(
-    `${moneyText(other.figures.pnl, other.currency)}${moneyChange(other.deltas.pnl, other.currency)}`
+    `${moneyText(other.figures.pnl, other.currency)}${CHANGE_SAYS}${moneyChange(other.deltas.pnl, other.currency)}`
   )
   await expect(pnl.first().getByTestId("compared-change")).toHaveCount(0)
   const trades = page.getByTestId("compared-trades").getByRole("cell")
   await expect(trades.first()).toHaveText(String(reference.figures.trades))
   await expect(trades.last().getByTestId("compared-change")).toHaveText(
-    other.deltas.trades > 0
-      ? `+${other.deltas.trades}`
-      : String(other.deltas.trades)
+    CHANGE_SAYS +
+      (other.deltas.trades > 0
+        ? `+${other.deltas.trades}`
+        : String(other.deltas.trades))
   )
   for (const reason of compared.exit_reasons) {
     await expect(page.getByTestId(`compared-${reason}-trades`)).toBeVisible()
@@ -169,4 +176,29 @@ test("an address of runs FEAT does not hold says so in the server's words", asyn
   await expect(page.getByRole("alert")).toHaveText(
     "This address names no runs to compare. Tick two to four on the Runs page."
   )
+})
+
+test("a change of the filters sets the ticks aside, and the filters they were made under bring them back", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/runs")
+  const compare = page.getByTestId("runs-compare")
+  const ticked = page.getByRole("checkbox", { checked: true })
+  const boxes = page.getByRole("checkbox", { name: /^Compare demo / })
+  await boxes.first().click()
+  await boxes.nth(1).click()
+  await expect(compare).toHaveText("Compare 2 runs")
+
+  await page.getByLabel("Strategy").click()
+  await page.getByRole("option", { name: "demo" }).click()
+  await expect(page).toHaveURL(/strategy=demo/)
+  await expect(page.getByTestId("run-row").first()).toBeVisible()
+  await expect(ticked).toHaveCount(0)
+  await expect(compare).toBeDisabled()
+
+  await page.getByLabel("Strategy").click()
+  await page.getByRole("option", { name: "All", exact: true }).click()
+  await expect(page).toHaveURL("/runs")
+  await expect(ticked).toHaveCount(2)
+  await expect(compare).toHaveText("Compare 2 runs")
 })

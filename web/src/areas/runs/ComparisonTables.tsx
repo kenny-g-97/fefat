@@ -1,9 +1,10 @@
 import { cn } from "cn"
 import type { ReactNode } from "react"
 import type { ComparedRun, RunComparison } from "@/api/comparisons"
-import { formatCount, formatMoney, moneySign, sentenceCase } from "@/ui/figures"
+import { formatCount, sentenceCase } from "@/ui/figures"
 import { IdentityChip } from "@/ui/identity-chip"
 import { Panel } from "@/ui/panel"
+import { TextLink } from "@/ui/text-link"
 import {
   Table,
   TableBody,
@@ -19,7 +20,7 @@ import {
   moneyChange,
   SERIES_MARKS,
 } from "./compare-words"
-import { LOOKS, type Written } from "./side-figures"
+import { LOOKS, made, type Written } from "./side-figures"
 
 const KEY_DIGITS = 12
 
@@ -111,7 +112,7 @@ export function ExitReasonsCard({
               {runs.map((run, at) => (
                 <ComparedCell
                   key={run.run_key}
-                  written={madeBy(outcomeOf(run, reason).pnl, run)}
+                  written={made(outcomeOf(run, reason).pnl, run.currency)}
                   change={
                     run.exit_reason_deltas === null
                       ? null
@@ -148,14 +149,6 @@ function changeOf(run: ComparedRun, reason: string) {
   return change
 }
 
-function madeBy(pnl: string, run: ComparedRun): Written {
-  const sign = moneySign(pnl)
-  return {
-    text: formatMoney(pnl, run.currency),
-    look: sign === "zero" ? "figure" : sign,
-  }
-}
-
 /** A table in a card of the compared runs' figures: the rows' names under `label`, then a column
  * a run, headed by its mark, its strategy and version, and its key. */
 function ComparedTable({
@@ -189,8 +182,9 @@ function ComparedTable({
   )
 }
 
-/** A run's column head: its mark in its curve's colour, its strategy and version in heading text,
- * and its key's first twelve digits in its identity chip, with Reference beside the first's. */
+/** A run's column head: its mark in its curve's colour, its strategy and version as a text link
+ * to the run's page, which keeps the way back to the list, and its key's first twelve digits in
+ * its identity chip, with Reference beside the first's. */
 function RunHead({
   run,
   at,
@@ -210,7 +204,14 @@ function RunHead({
           data-slot="chart-mark"
           className={cn("size-2.5 shrink-0 rounded-xl", SERIES_MARKS[at])}
         />
-        {comparedLabel(run)}
+        <TextLink
+          to="/runs/run"
+          search={{ key: run.run_key }}
+          state={(kept) => kept}
+          data-testid="compared-run-link"
+        >
+          {comparedLabel(run)}
+        </TextLink>
       </span>
       <span className="mt-1 flex items-center justify-end gap-2 text-xs text-muted-foreground">
         {at === 0 && "Reference"}
@@ -248,6 +249,7 @@ function ComparedCell({
           data-testid="compared-change"
           className="block text-xs text-foreground-secondary"
         >
+          <span className="sr-only">Differs from the reference's by </span>
           {change}
         </span>
       )}
