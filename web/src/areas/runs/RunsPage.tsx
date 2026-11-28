@@ -28,7 +28,8 @@ export function RunsPage() {
     select: (location) => location.state.stressed,
   })
   // The ticks belong to the filters they were made under, so that a run a change of the filters
-  // takes out of sight is never compared; they come back with those filters.
+  // takes out of sight is never compared; those filters bring them back until runs are ticked
+  // under others.
   const asked = JSON.stringify(filters)
   const [ticked, setTicked] = useState<Ticked>({ under: asked, runs: [] })
   const chosen = ticked.under === asked ? ticked.runs : []

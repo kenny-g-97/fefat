@@ -1,7 +1,7 @@
 import type { ComparedRun, RunFigures } from "@/api/comparisons"
 import type { Currency } from "@/api/runs"
 import {
-  fidelityLabel,
+  fidelityInASentence,
   formatCount,
   formatFigure,
   formatMoney,
@@ -65,7 +65,7 @@ function detailParts(run: ComparedRun): readonly DetailPart[] {
     },
     {
       key: "fidelity",
-      words: `filled on ${fidelityLabel(config.fidelity).toLowerCase()}`,
+      words: `filled on ${fidelityInASentence(config.fidelity)}`,
       setting: true,
     },
     { key: "fees", words: `${config.fee_table} fees`, setting: true },

@@ -106,6 +106,15 @@ describe("a compared run's words", () => {
     ])
   })
 
+  it("names a notebook's run by what it trades and its dates, and TBBO as an acronym", () => {
+    const notebook = aComparedRun({ strategy: null }, { fidelity: "tbbo" })
+
+    expect(comparedDetails([notebook, aComparedRun({})])).toEqual([
+      "filled on TBBO, ES in 5m bars, 2026-03-05 to 2026-03-09",
+      "lookback 12, stop_atr 2, filled on 1-minute bars, ES in 5m bars, 2026-03-05 to 2026-03-09",
+    ])
+  })
+
   it("signs each change, a zero bare, as the figure would write it", () => {
     // Step 5.10: a change is the API's delta, written as its figure is, with a plus above zero.
     expect(moneyChange("921.560000", "USD")).toBe("+$921.56")

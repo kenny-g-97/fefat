@@ -3,7 +3,7 @@ import { consoleErrors } from "./support/console.ts"
 import { expect, test } from "./support/fixtures.ts"
 import { cancelActiveJobs } from "./support/jobs.ts"
 import { screenshot } from "./support/screenshots.ts"
-import { theSeededKey } from "./support/seeded-run.ts"
+import { theSeededKey, theSeededRuns } from "./support/seeded-run.ts"
 
 // Reproduce of step 5.10 (D-126) against the seeded server: `demo-run-01` made again as a
 // `reproduce` job from its pinned version and data, its trades' hash matching the saved run's
@@ -79,4 +79,29 @@ test("Reproduce makes the seeded run again and says its trades match", async ({
     /Reproduced [0-9-]+ [0-9:]+: the trades match the saved run's, hash/
   )
   expect(errors).toEqual([])
+})
+
+test("a run's page leaves no room for its reproduction until one is asked for", async ({
+  loggedIn: page,
+}) => {
+  // Version 2's seeded run, which no spec reproduces, so that its line stands empty.
+  const [, second] = await theSeededRuns(page)
+  await page.goto(`/runs/run?key=${second}`)
+  await expect(page.getByTestId("kpi-pnl")).toBeVisible()
+
+  const gap = await page.getByTestId("reproduction").evaluate((region) => {
+    const above = region.previousElementSibling
+    const below = region.nextElementSibling
+    if (above === null || below === null) {
+      throw new Error(
+        "Expected the status line above the reproduction's line and the results under it, got none."
+      )
+    }
+    return (
+      below.getBoundingClientRect().top - above.getBoundingClientRect().bottom
+    )
+  })
+
+  // The column's 24 px alone, the empty line's own gap taken back (web/DESIGN.md, Reproduce).
+  expect(gap).toBeCloseTo(24, 0)
 })

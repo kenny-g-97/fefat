@@ -5,6 +5,7 @@ import {
   currencyApart,
   decimalsOf,
   feeWords,
+  fidelityInASentence,
   fidelityLabel,
   formatAligned,
   formatCount,
@@ -261,5 +262,15 @@ describe("a column of decimals sent as text (step 5.8)", () => {
     expect(() => alignedText("5000.125", 2)).toThrow(
       "Expected a decimal of at most 2 places, got 5000.125."
     )
+  })
+})
+
+describe("fidelityInASentence", () => {
+  it("writes a fidelity in lower case within a sentence, an acronym as it is", () => {
+    expect(["trades", "tbbo", "1m"].map(fidelityInASentence)).toEqual([
+      "trades",
+      "TBBO",
+      "1-minute bars",
+    ])
   })
 })

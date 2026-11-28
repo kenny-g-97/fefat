@@ -224,6 +224,12 @@ export function moneySign(text: string): "positive" | "negative" | "zero" {
   return text.startsWith("-") ? "negative" : "positive"
 }
 
+/** A fidelity as a sentence writes it: lower case, an acronym as it is, `trades`, `TBBO`, or
+ * `1-minute bars`. */
+export function fidelityInASentence(fidelity: string): string {
+  return fidelity === "tbbo" ? "TBBO" : fidelityLabel(fidelity).toLowerCase()
+}
+
 /** What a dataset's fidelity holds, in words: Trades, TBBO, or 1-minute bars. */
 export function fidelityLabel(fidelity: string): string {
   if (fidelity === "trades") {

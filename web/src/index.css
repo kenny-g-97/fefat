@@ -363,14 +363,17 @@ main[tabindex="-1"]:focus-visible {
 /* Its target reaches 8 px around the box, 32 px as a row's controls are (Layout, Targets), over
    the row's padding, so that a near miss ticks rather than opens the run; an unticked box under
    the pointer takes heading text on its border, since the row's surface leaves it as the pointer
-   reaches the box, and a ticked one pressed takes heading text, its border being the accent. */
+   reaches the box, and the accent once pressed, and a ticked one pressed takes heading text, its
+   border being the accent. */
 [data-slot="checkbox"]::before {
   content: "";
   position: absolute;
   inset: -8px;
 }
 
-[data-slot="checkbox"][data-state="unchecked"]:not(:disabled):hover,
+[data-slot="checkbox"][data-state="unchecked"]:not(:disabled):not(
+    :active
+  ):hover,
 [data-slot="checkbox"][data-state="checked"]:active {
   border-color: var(--foreground);
 }

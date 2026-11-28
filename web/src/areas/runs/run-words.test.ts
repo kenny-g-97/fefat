@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   choiceWords,
   foundWords,
+  oldestFirst,
   parameterWords,
   resultsLine,
   runDetail,
@@ -177,5 +178,15 @@ describe("choiceWords", () => {
     ).toBe(
       "demo version 2, ES in 5m bars, 2026-03-05 to 2026-03-09, 2 market and 3 stop ticks of slippage, lookback 12"
     )
+  })
+})
+
+describe("oldestFirst", () => {
+  it("orders runs by the instant each was made, not by its text", () => {
+    // A fraction of a second sorts before the whole second by its text, after it by its instant.
+    const later = { created_at: "2026-11-28T00:38:12.5Z" }
+    const earlier = { created_at: "2026-11-28T00:38:12Z" }
+
+    expect(oldestFirst([later, earlier])).toEqual([earlier, later])
   })
 })

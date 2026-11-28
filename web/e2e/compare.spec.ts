@@ -1,10 +1,10 @@
-import type { Page } from "@playwright/test"
 import { z } from "zod"
 import { lightThemeDrawn } from "./support/chart.ts"
 import { consoleErrors } from "./support/console.ts"
 import { moneyText } from "./support/figures.ts"
 import { expect, test } from "./support/fixtures.ts"
 import { screenshot } from "./support/screenshots.ts"
+import { theSeededRuns } from "./support/seeded-run.ts"
 
 // The comparison of step 5.10 (D-126) against the seeded server: the two saved runs of demo, its
 // version 1 and version 2's wider stop, ticked on the Runs page, open their comparison, the older
@@ -13,15 +13,6 @@ import { screenshot } from "./support/screenshots.ts"
 // python/tests/server/test_http_runs_compare.py).
 
 test.use({ timezoneId: "UTC" })
-
-const listed = z.object({
-  runs: z.array(
-    z.looseObject({
-      run_key: z.string(),
-      strategy: z.looseObject({ version: z.number() }).nullable(),
-    })
-  ),
-})
 
 const figures = z.looseObject({ pnl: z.string(), trades: z.number() })
 const comparison = z.object({
@@ -35,25 +26,6 @@ const comparison = z.object({
     })
   ),
 })
-
-/** The seed's run of each version of demo, the oldest of each, which other specs leave as they
- * are: version 1's is `demo-run-01`. */
-async function theSeededRuns(page: Page): Promise<readonly [string, string]> {
-  const answer = await page.request.get("/v1/runs", {
-    params: { strategy: "demo", status: "succeeded" },
-  })
-  const { runs } = listed.parse(await answer.json())
-  const oldestOf = (version: number) => {
-    const found = runs.filter((run) => run.strategy?.version === version).at(-1)
-    if (found === undefined) {
-      throw new Error(
-        `Expected the seed's run of demo version ${version}, got none.`
-      )
-    }
-    return found.run_key
-  }
-  return [oldestOf(1), oldestOf(2)]
-}
 
 /** The words before each change that a screen reader alone reads. */
 const CHANGE_SAYS = "Differs from the reference's by "
@@ -201,4 +173,35 @@ test("a change of the filters sets the ticks aside, and the filters they were ma
   await expect(page).toHaveURL("/runs")
   await expect(ticked).toHaveCount(2)
   await expect(compare).toHaveText("Compare 2 runs")
+})
+
+/** The heading's grey and the accent in the dark theme, as the browser computes them. */
+const HEADING = "rgb(237, 237, 237)"
+const ACCENT = "rgb(252, 115, 77)"
+
+test("a box ticks from beside it, and its border answers the pointer and the press", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/runs")
+  const box = page.getByRole("checkbox", { name: /^Compare demo / }).first()
+  await expect(box).toBeVisible()
+  const edge = await box.boundingBox()
+  if (edge === null) {
+    throw new Error("Expected the checkbox's box, got none.")
+  }
+  const border = () =>
+    box.evaluate((element) => getComputedStyle(element).borderTopColor)
+
+  // The design review of step 5.10: heading text under the pointer, the accent while pressed.
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2)
+  await expect.poll(border).toBe(HEADING)
+  await page.mouse.down()
+  await expect.poll(border).toBe(ACCENT)
+  await page.mouse.up()
+  await expect(box).toBeChecked()
+
+  // 6 px beside the box, inside its target 8 px around it, a press unticks it and opens nothing.
+  await page.mouse.click(edge.x - 6, edge.y + edge.height / 2)
+  await expect(box).not.toBeChecked()
+  await expect(page).toHaveURL("/runs")
 })
