@@ -42,6 +42,7 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-11-21 — The builder's revisit and strategy export (D-110, from your check of step 5.5's pull request): the Feature Lab comes first, then the rule builder (6.7) revisits the Strategies pages and makes new strategies from the library's features and their combinations. Three new steps after 6.9 export a builder-made strategy to backtest it on another platform: 6.10 NinjaScript, 6.11 Pine Script, and 6.12 MQL5, with MQL4 waiting in `BACKLOG.md`. No step ID changed.
 - 2026-11-25 — Your review of step 5.20's pull request (D-119): the Monte Carlo's memory test bounds its route's most by system, 512 MiB on Windows and 2 GiB elsewhere, where CI's Ubuntu held 1,228 MiB; and a run's equity chart turns green above its capital and red below, filled to its line, both in that pull request. Two new steps follow 5.20: 5.21 draws each of the Monte Carlo's figures against the percent of paths, with the run's own path over the fan in purple, and 5.22 gives a run's results in full for all, long, and short trades on a page of their own. The exports of the trade log and the executions join step 5.8. No step ID changed.
 - 2026-11-26 — Market exposure and portfolio backtests (D-121, your request with step 5.22): a run's page gains its market exposure, the correlation and the beta of its days with its instrument held long and the alpha left over, beside buy and hold, in a new step 5.23 whose row stands after 5.22's, and step 11.6's robustness page shows them again with intervals; a portfolio of D-76 is set up and run from a page and read in full, with each member in or out, its market exposure, where its risk sits, and its correlations by day, by week, and over time, in new steps 7.14 to 7.16, on which step 8.1 now depends. No step ID changed.
+- 2026-11-28 — FEAT as a Claude desktop app (D-127, your request of 2026-11-28): a new Phase 15 of three steps after Phase 5's web MVP, 15.1 the spike of the two shapes and its decision record, 15.2 the app and its `publish-desktop-app` skill, 15.3 notifications and the tray, its rows after 5.13's so that it runs before Phase 6 unless a kickoff moves them; Phase 14's installers stand for other traders. No step ID changed. 153 → 156 steps.
 
 ## Steps
 
@@ -116,9 +117,12 @@ Phase kickoffs and exits are tracked in the second table.
 | 5.23 | Market exposure and buy and hold | P5 | done | #84 | 2026-11-26 | `ff.backtest.market_exposure` and `GET /v1/runs/{run}/market` (D-123): a run's days against one lot of its instrument held long at the run's own marks, each roll's gap taken off at the roll's instant, a lot a contract or a coin; the correlation, the beta in lots, the variance explained, and the alpha, over every day and over the days the market fell and rose; buy and hold at one lot and at the run's volatility, without costs; the Market exposure card after Robustness, and buy and hold on the equity chart in the new `--chart-2`. No engine change, no migration, no new dependency. |
 | 5.8 | Trade table | P5 | done | #85 | 2026-11-27 | A run's trades on a page of their own, Trades, beside All results (D-124): `GET /v1/runs/{run}/trades` reads the trades artifact through DuckDB in memory, a connection per read locked to the run's artifact files, 200 a page after a keyset cursor, sorted by seven figures and filtered by seven; `trades.csv` and `executions.csv`, the app's first downloads (D-119); `POST /v1/runs/{run}/query`, one SELECT over the nine artifacts in the instrument's units, measured in DuckDB and refused past 10,000 rows, 4 MiB, or 10 seconds a run; TanStack Table and Virtual draw the grid, a chosen row being the `selectedTrade` event step 5.9 follows; the higher-contrast mode. New dependencies: duckdb 2.0.1, @tanstack/react-table 9.3.1, @tanstack/react-virtual 3.14.26. No migration, no engine change. |
 | 5.9 | Trade review chart | P5 | done | #86 | 2026-11-27 | The trade review above the Trades tab's table (D-125): `GET /v1/runs/{run}/chart` pages a run's bars at each contract's own prices with the strategy's features, an ATR its exits read in points, and each trade's fills on the candles F-BAR-06 places them on, with its stop and targets; `POST /v1/runs/{run}/explain/{trade_id}` replays a trade through the reference engine as an `explain` job, its timeline beside the chart; the selection in the address (`trade=`), Previous and Next, and Shift with the arrows stepping the crosshair; `run.explain` keeps its log entries and reads the trade date before for its first record; `price_in_units` divides exactly. The design review's findings wait in the backlog. No migration, no engine change, no new dependency. |
-| 5.10 | Run comparison, version diff, reproduce-run check | P5 | todo | | | |
+| 5.10 | Run comparison, version diff, reproduce-run check | P5 | done | #87 | 2026-11-28 | Two to four saved runs side by side (D-126): `POST /v1/runs/compare` serves `ff.backtest.compare_runs`, each figure with its difference from the reference, the oldest ticked on the Runs list, as a difference of the stored metrics, their equity over their own capital on one chart, and their trades by exit reason; a strategy's Changes card sets two versions' code side by side in `@codemirror/merge`, a change outlined in the accent, never red and green; Reproduce queues a `reproduce` job through the executor's `backtest` kind, `ff.backtest.reproduce` refusing before the engine where what the run read changed and comparing the trades tables' hashes, a real run of 18,714 trades matched in 12 s. Amendment: the builder-spec diff waits for step 6.8, and two backlog lines are retargeted; Phase 15's plan (D-127) rides in this pull request. |
 | 5.11 | Notifications on completion | P5 | skipped | | 2026-10-23 | Deferred with the phone item (D-54) |
 | 5.13 | End-to-end suite and demo | P5 | todo | | | |
+| 15.1 | Desktop app spike and decision record | P15 | todo | | | |
+| 15.2 | The FEAT desktop app and its publish skill | P15 | todo | | | |
+| 15.3 | Notifications and the tray | P15 | todo | | | |
 | 6.1 | Feature library pages | P6 | todo | | | |
 | 6.2 | Editor and preview run | P6 | todo | | | |
 | 6.3 | Preview chart and statistics panel | P6 | todo | | | |
@@ -220,6 +224,7 @@ Phase kickoffs and exits are tracked in the second table.
 | P12 | (deferred, D-54) | 2026-10-23 | (deferred, D-54) | 2026-10-23 | |
 | P13 | | | | | |
 | P14 | | | | | |
+| P15 | | | | | |
 
 ## Milestones
 
@@ -232,6 +237,7 @@ Phase kickoffs and exits are tracked in the second table.
 | Feature system complete in notebooks | 3.8 | 2026-11-05 |
 | App on the phone over Tailscale | 4.6 | deferred (D-54) |
 | Web MVP | 5.13 | |
+| FEAT installed as a Claude desktop app, with notifications | 15.3 | |
 | Feature lab and builder | 6.9 | |
 | Prop simulator on saved backtests, imported trade logs, and portfolios of them | 7.16 | |
 | In-app agent | 8.11 | |

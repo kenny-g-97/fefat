@@ -3,7 +3,9 @@ strategy is built from the version's code with its parameters (`StrategyVersion.
 never in the server; the lookup answers what `fefat.backtest.requests.looked_up` finds, the code's
 refusal coming back as its answer, with its line where it has one, as the library's executions
 answer (`fefat_app.executor.versions`); and the backtest runs `ff.backtest.run`, reporting each of
-its stages, and answers its run key, what it raises failing the execution."""
+its stages, and answers its run key, what it raises failing the execution. A backtest that
+reproduces a saved run (step 5.10) runs `ff.backtest.reproduce` into FEFAT's cache folder instead
+and answers its verdict, what the SDK refuses coming back as the reproduction's answer."""
 
 import os
 from collections.abc import Callable
@@ -13,6 +15,7 @@ from pydantic import JsonValue, ValidationError
 import fefat as ff
 from fefat.backtest import RunStage
 from fefat.backtest.requests import looked_up
+from fefat.backtest.saved_runs import saved_run
 from fefat.config import resolve_paths
 from fefat.strategy import SignalStrategy, StrategyCodeError, StrategyVersion
 from fefat_app.execution import (
@@ -24,6 +27,13 @@ from fefat_app.execution import (
     RunLookupSpec,
 )
 from fefat_app.executor.protocol import problems, refused_code
+from fefat_app.reproductions import (
+    REPRODUCTIONS_FOLDER,
+    Reproduction,
+    ReproductionDiffered,
+    ReproductionMatched,
+    ReproductionRefused,
+)
 from fefat_app.runs import RequestedRun, RunToMake, SavedRunFound
 
 STAGES = {
@@ -52,7 +62,11 @@ def run_lookup_output(spec: RunLookupSpec) -> RunLookupOutput:
 
 def backtest_output(spec: BacktestSpec, report: ProgressReport) -> BacktestOutput:
     """The run of `spec`'s backtest, each stage reported as it comes; a run found saved reports
-    that it was opened."""
+    that it was opened; or the reproduction of the saved run `spec` reproduces."""
+    if spec.reproduces is not None:
+        return BacktestOutput(
+            run_key=spec.reproduces, reproduction=_reproduction(spec, spec.reproduces, report)
+        )
     told: list[RunStage] = []
     run = ff.backtest.run(
         _strategy(spec.run),
@@ -64,6 +78,37 @@ def backtest_output(spec: BacktestSpec, report: ProgressReport) -> BacktestOutpu
     if RunStage.ARTIFACTS_WRITTEN not in told:
         report(OPENED)
     return BacktestOutput(run_key=run.hash)
+
+
+def _reproduction(spec: BacktestSpec, run_key: str, report: ProgressReport) -> Reproduction:
+    """The saved run `run_key` made again from the version `spec` names in the cache's folder of
+    reproductions (`ff.backtest.reproduce`), each stage reported as it comes: whether its trades
+    are the run's, or why it was refused, a run whose folder is gone in words of its own and
+    anything else in the SDK's, a folder of its words left to the job to name, such as a version
+    whose file is gone; any other error fails the execution, as a full disk does, which is no
+    refusal."""
+    paths = resolve_paths(os.environ)
+    into = paths.cache_dir / REPRODUCTIONS_FOLDER / run_key
+    try:
+        saved = saved_run(paths.runs_dir, run_key)
+    except FileNotFoundError:
+        return ReproductionRefused(
+            reason=f"Expected run {run_key[:12]}'s folder in FEAT's runs folder, got none: it was "
+            "deleted since the reproduction was asked for."
+        )
+    except ValueError as refused:
+        return ReproductionRefused(reason=str(refused))
+    try:
+        made = ff.backtest.reproduce(
+            saved, _strategy(spec.run), into, progress=_reporting(report, [])
+        )
+    except (ValueError, FileNotFoundError) as refused:
+        return ReproductionRefused(reason=str(refused))
+    if isinstance(made, ff.backtest.ReproductionMatched):
+        return ReproductionMatched(trades_hash=made.trades_hash)
+    return ReproductionDiffered(
+        saved_trades_hash=made.saved_trades_hash, reproduced_trades_hash=made.reproduced_trades_hash
+    )
 
 
 def _looked_up(run: RequestedRun) -> SavedRunFound | RunToMake:

@@ -503,6 +503,8 @@ Not in this step: studies (Phase 11).
 
 2026-11-15 (step 5.14, D-99): a run whose data changed since it was saved cannot be reproduced. The `reproduce` job reads the saved run through `fefat.backtest.pinned_data.pinned_snapshots`, the check `Run.explain` and the fidelity check use, so after an import merged a file into a partition the run read (ADR-0021) it ends refused, naming the files written since the run, and never as a mismatch, which stays the sign of something unpinned; the real run of Done means 2 is one whose data is as the run read it. `BACKLOG.md` holds for this step a run's record that keeps its files' hashes, so that the refusal names the file that differs, and `Run.explain` on bars, which reads the live roll calendar after that check.
 
+2026-11-28 (step 5.10, D-126): as the step built it. The two `BACKLOG.md` lines this step held wait, at your answer at the plan: the run's record that keeps its files' hashes, retargeted to the Phase 5 exit, and `Run.explain` on bars, kept for the explanation, whose check of the rolls the reproduction's is the model of. No version carries a builder spec before step 6.8, so the Changes card shows the code's diff alone, the structured diff waiting there (`BACKLOG.md`). The projects of Done means 1 are the desktop project at 1280 by 800, the phone's leaving with the phone (D-54), and the real run of Done means 2 is reproduced through the `reproduce` job as the app runs it.
+
 ### 5.11 Notifications on completion
 
 Depends on: 5.6, 4.6 · Plan mode: optional · Reviews: step-reviewer · Security: yes · Model hint: default

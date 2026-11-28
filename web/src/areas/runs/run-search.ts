@@ -35,6 +35,21 @@ export const runSearch = z.object({
   job: z.string().min(1).max(64).optional().catch(undefined),
 })
 
+/** The fewest and the most runs a comparison sets side by side (step 5.10), as the API takes
+ * them. */
+export const FEWEST_COMPARED = 2
+export const MOST_COMPARED = 4
+
+/** A comparison's page (step 5.10): two to four saved runs by their keys, joined by commas, the
+ * first the reference; an address the page cannot read names none. */
+export const compareSearch = z.object({
+  runs: z
+    .string()
+    .regex(/^[0-9a-f]{64}(,[0-9a-f]{64}){1,3}$/)
+    .optional()
+    .catch(undefined),
+})
+
 /** A saved run's results in full (step 5.22): the run by its key alone, since only a saved run
  * has results. */
 export const allResultsSearch = runSearch.pick({ key: true })

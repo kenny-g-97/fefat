@@ -36,6 +36,8 @@ const TOKENS: ThemeTokens = {
   positive: "#10b981",
   negative: "#ff4d6d",
   chartSecond: "#06b6d4",
+  chartThird: "#ededed",
+  chartFourth: "#666666",
 }
 
 const FAN = {

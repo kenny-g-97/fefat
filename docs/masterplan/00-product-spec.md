@@ -1,6 +1,6 @@
 # 00 — Product specification
 
-FEAT ("feature engineering for algorithmic trading"; FEFAT in the code and in this plan, D-89) is a local-first research platform for discretionary and algorithmic futures and crypto traders. It runs on the trader's own PC, is used from the browser, and is later packaged as a desktop app. Its four pillars come straight from `raw_app_idea.txt`.
+FEAT ("feature engineering for algorithmic trading"; FEFAT in the code and in this plan, D-89) is a local-first research platform for discretionary and algorithmic futures and crypto traders. It runs on the trader's own PC, is used from the browser, opens as a Claude desktop app for the trader's own use (Phase 15, D-127), and is later packaged as a desktop app for other traders (Phase 14). Its four pillars come straight from `raw_app_idea.txt`.
 
 ## 1. Who it is for
 
@@ -62,7 +62,7 @@ FEAT ("feature engineering for algorithmic trading"; FEFAT in the code and in th
 
 | In | Later (phase) | Not planned |
 | --- | --- | --- |
-| CME futures (ES, NQ, CL, GC and micros) and crypto (spot and perpetuals) as catalog products, filled from the sources you connect | Event strategies (P9), alternative data (P10), research tools (P11), phone polish (P12, deferred by D-54), hardening (P13), desktop packaging (P14) | Live or paper trading, broker connections |
+| CME futures (ES, NQ, CL, GC and micros) and crypto (spot and perpetuals) as catalog products, filled from the sources you connect | Event strategies (P9), alternative data (P10), research tools (P11), phone polish (P12, deferred by D-54), hardening (P13), desktop packaging (P14), FEAT as a Claude desktop app for yourself (P15, D-127) | Live or paper trading, broker connections |
 | Signal strategies, backtests, feature lab, strategy builder, export of a builder-made strategy to NinjaTrader 8, TradingView, and MetaTrader 5 for backtesting there (D-110), prop simulator on saved backtests and imported trade logs, in-app agent | Cloud sync for phone access while the PC is off (backlog) | Hosting compute or market data for other users |
 | One user, one PC, used from the browser on it | Machine-learning models on features (backlog) | Order-book (L2) strategies, tick-reactive scalping |
 | Connectors for Databento and the crypto archives, import presets for common exports, and a guide to well-known sources | More catalog products, connectors, presets, and prop firms | Social features, strategy marketplace |

@@ -9,7 +9,7 @@ import { screenshot } from "./support/screenshots.ts"
 
 // The Delete card of step 5.18 (D-107, ADR-0023) against the seeded server: the end of a
 // dataset's page says what a delete of the instrument's data from the provider removes and how
-// many saved runs read it, ES from synthetic being what the seed's demo run read; Delete asks
+// many saved runs read it, ES from synthetic being what the seed's two demo runs read; Delete asks
 // once in place, and Keep and a double click keep; a job under way refuses the delete, and a
 // refusal says why under the buttons; Delete now takes MES from synthetic off the Data page for
 // good. It runs in a project of its own after every other, since it removes seeded data the
@@ -63,7 +63,7 @@ test("the card says what a delete removes, and Keep and a double click keep", as
   const trigger = card.getByRole("button", { name: "Delete", exact: true })
 
   await expect(card.getByTestId("delete-data")).toContainText(
-    "1 saved run read this data: it keeps its results, but FEAT can no longer explain its trades or check it again."
+    "2 saved runs read this data: they keep their results, but FEAT can no longer explain their trades or check them again."
   )
   await expect(card).toContainText(
     /Delete removes 1-minute bars, 1-second bars, and trades from \d{4}-\d\d-\d\d to \d{4}-\d\d-\d\d/

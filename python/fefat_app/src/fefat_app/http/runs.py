@@ -6,7 +6,9 @@ run would read, before anything runs, and `POST /v1/runs/stress`, a run and the 
 of slippage (step 5.6); `GET /v1/runs`, a page of the runs; `GET /v1/runs/{run}`, a run by its id
 or its run key; `GET /v1/runs/{run}/stats`, `/equity`, and `/distribution`, a saved run's results,
 read from its folder (step 5.7), and `/monte-carlo`, its trades drawn again (steps 5.20, 5.21); and
-`POST /v1/runs/{run}/cancel`. A run's status is
+`POST /v1/runs/{run}/cancel`; and, from step 5.10, `POST /v1/runs/{run}/reproduce`, a saved run
+made again as a `reproduce` job (`POST /v1/runs/compare` is `fefat_app.http.run_comparisons`).
+A run's status is
 `succeeded` once its folder is saved, its job's before; a job whose run proved saved under another
 run's row names that row in its result, which a client then follows."""
 
@@ -34,7 +36,7 @@ from fefat.strategy.spec import InstrumentRoot
 from fefat_app.http.api_prefix import API_PREFIX
 from fefat_app.http.dependencies import ContainerDependency, the_identity
 from fefat_app.http.problems import CodeRefused, code_refusal_responses, problem_responses
-from fefat_app.job_models import JobStatus
+from fefat_app.job_models import Job, JobStatus
 from fefat_app.library import LibraryRefusedError
 from fefat_app.runs import (
     EquityCurve,
@@ -50,6 +52,7 @@ from fefat_app.runs import (
     StressedRuns,
 )
 from fefat_app.services.code_runs import CodeRefusedError
+from fefat_app.services.reproductions import reproduction_of
 from fefat_app.services.runs import RUNS_PER_PAGE, RunAsked, RunsAsked
 from fefat_app.services.strategies import NoSuchStrategyError
 
@@ -364,6 +367,20 @@ def run_market_exposure(
     it."""
     with _refusals():
         return container.runs.market_exposure(run, max_points)
+
+
+@router.post(
+    "/runs/{run}/reproduce", status_code=202, responses=problem_responses(401, 403, 404, 409, 422)
+)
+def reproduce_run(run: RunAddress, container: ContainerDependency) -> Job:
+    """A saved run made again (step 5.10): 202 with its `reproduce` job, the one queued or
+    running for the run where there is one, which builds the run's version again in the executor
+    and runs it on the data and settings the run pins into FEFAT's cache folder; the job's result
+    says whether the trades' hash matched the saved run's, or why it was refused, such as data
+    imported since the run. 404 where no run has the id, 409 for a run not saved, a folder that
+    is gone, or a run of a strategy built in a notebook."""
+    with _refusals():
+        return reproduction_of(container.runs, container.jobs, run)
 
 
 @router.post("/runs/{run}/cancel", responses=problem_responses(401, 403, 404, 422))

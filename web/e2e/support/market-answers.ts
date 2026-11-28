@@ -2,7 +2,7 @@ import type { Page, Route } from "@playwright/test"
 import { z } from "zod"
 
 // A run's market exposure as `GET /v1/runs/{run}/market` answers it (step 5.23), and the answer
-// the specs give the seeded run, whose two trade dates count none: a second seeded run would read
+// the specs give the seeded run, whose two trade dates count none: a seeded run of MES would read
 // the data the delete spec counts as read by none. The schemas are strict, so that an answer of
 // another shape than the server's fails here before a spec compares a page with it.
 

@@ -1,5 +1,10 @@
 import type { Currency, Fee, RunEstimated } from "@/api/runs"
-import { feeWords, fidelityLabel, sentenceCase } from "@/ui/figures"
+import {
+  feeWords,
+  fidelityInASentence,
+  fidelityLabel,
+  sentenceCase,
+} from "@/ui/figures"
 import { KeptField } from "@/ui/kept-field"
 import { Choice, Picker } from "@/ui/picker"
 import {
@@ -65,7 +70,7 @@ export function RunCostFields({
             {!held
               ? "The data does not hold the level chosen"
               : draft.fidelity === null
-                ? `Each date fills on the finest data it holds, down to ${levelInASentence(estimate.settings.fidelity)}`
+                ? `Each date fills on the finest data it holds, down to ${fidelityInASentence(estimate.settings.fidelity)}`
                 : "Each date fills on this level, or the next coarser it holds"}
           </p>
         </div>
@@ -127,11 +132,6 @@ function feeNote(fee: Fee, currency: Currency): string {
   return fee.kind === "futures"
     ? `${charge}: commission plus exchange, clearing, and NFA fees`
     : `${charge} of each trade's value: maker for a limit order that rested on the book`
-}
-
-/** A level as a sentence writes it: lower case, an acronym as it is. */
-function levelInASentence(level: string): string {
-  return level === "tbbo" ? "TBBO" : fidelityLabel(level).toLowerCase()
 }
 
 function RunSlippage({ draft, estimate, onChange }: RunCostFieldsProps) {

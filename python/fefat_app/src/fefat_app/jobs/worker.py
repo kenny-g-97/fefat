@@ -37,6 +37,7 @@ from fefat_app.jobs.demo import run_demo
 from fefat_app.jobs.executions import ExecutionFailedError, ExecutionTimedOutError, run_execution
 from fefat_app.jobs.imports import ImportJobs
 from fefat_app.jobs.progress import JobCancelledError, JobProgress, tried_while_busy
+from fefat_app.jobs.reproductions import run_reproduction
 from fefat_app.jobs.trade_explanations import run_explanation
 from fefat_app.ports import Executor, JobRecords, RunRecords
 from fefat_app.uploads import UploadFolders
@@ -62,8 +63,9 @@ def works_of(
 ) -> Mapping[JobKind, JobWork]:
     """The work of each kind a worker runs, the trader's code run by `executor`, the catalog
     sync over `store`, its reports and session tables in the folders of `paths`, a backtest
-    whose run `runs` indexes, an import (step 5.12), and a trade's explanation of a run saved in
-    the runs folder of `paths` (step 5.9); the steps of later phases add theirs."""
+    whose run `runs` indexes, an import (step 5.12), a trade's explanation of a run saved in the
+    runs folder of `paths` (step 5.9), and a saved run's reproduction (step 5.10); the steps of
+    later phases add theirs."""
     return {
         JobKind.DEMO: run_demo,
         JobKind.FEATURE_PREVIEW: partial(run_execution, executor, FeaturePreviewSpec),
@@ -72,6 +74,7 @@ def works_of(
         JobKind.BACKTEST: partial(run_backtest, executor, runs),
         JobKind.IMPORT: imports.run,
         JobKind.EXPLAIN: partial(run_explanation, paths),
+        JobKind.REPRODUCE: partial(run_reproduction, executor, paths),
     }
 
 

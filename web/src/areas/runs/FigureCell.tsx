@@ -1,14 +1,6 @@
 import { cn } from "cn"
 import { TableCell } from "@/ui/table"
-import type { Written } from "./side-figures"
-
-/** The colour of each look of a figure (side-figures.ts). */
-const LOOKS: Readonly<Record<Written["look"], string>> = {
-  positive: "text-positive",
-  negative: "text-negative",
-  figure: "text-foreground",
-  none: "text-foreground-secondary",
-}
+import { LOOKS, type Written } from "./side-figures"
 
 /** A figure of a table of a run's figures, By side's and buy and hold's: right-aligned in its
  * look's colour, the last column's padded to the card's edge. */

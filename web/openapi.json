@@ -1589,6 +1589,102 @@
         "title": "ColumnMapping",
         "type": "object"
       },
+      "ComparedRun": {
+        "additionalProperties": false,
+        "description": "A run in a comparison: what it is, the settings it ran under, every default applied, which\ntell apart runs of one version, as a stress's runs differ by their slippage alone; its figures,\nits trades by exit reason over every reason of the comparison, none where it closed no trade by\none, and its equity's curve; and, but for the reference, what its figures and its trades by\nexit reason differ by.",
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/AppliedRunConfig"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "curve": {
+            "$ref": "#/components/schemas/ShareCurve"
+          },
+          "deltas": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunFigures"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exit_reason_deltas": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/OutcomeDelta"
+                },
+                "propertyNames": {
+                  "$ref": "#/components/schemas/OrderRole"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Reason Deltas"
+          },
+          "exit_reasons": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Outcome"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/OrderRole"
+            },
+            "title": "Exit Reasons",
+            "type": "object"
+          },
+          "figures": {
+            "$ref": "#/components/schemas/RunFigures"
+          },
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "run_key": {
+            "title": "Run Key",
+            "type": "string"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrategyPin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          },
+          "window": {
+            "$ref": "#/components/schemas/fefat__backtest__record__Window"
+          }
+        },
+        "required": [
+          "run_key",
+          "strategy",
+          "instrument",
+          "timeframe",
+          "currency",
+          "config",
+          "window",
+          "figures",
+          "deltas",
+          "exit_reasons",
+          "exit_reason_deltas",
+          "curve"
+        ],
+        "title": "ComparedRun",
+        "type": "object"
+      },
       "Constant": {
         "additionalProperties": false,
         "description": "A number or a flag, the same on every bar; a price in the bars' 1e-9 units.",
@@ -5049,6 +5145,31 @@
         "title": "Outcome",
         "type": "object"
       },
+      "OutcomeDelta": {
+        "additionalProperties": false,
+        "description": "What a run's trades of one exit reason differ by from the reference's.",
+        "properties": {
+          "pnl": {
+            "title": "Pnl",
+            "type": "string"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          },
+          "wins": {
+            "title": "Wins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trades",
+          "wins",
+          "pnl"
+        ],
+        "title": "OutcomeDelta",
+        "type": "object"
+      },
       "OutputKind": {
         "description": "What an output's values are (D-71), which its column must admit and its version keeps; the\nleak detector compares values by their column's type. A `price` (a level, such as a moving\naverage) and a `price_distance` (such as an ATR) are in the bars' 1e-9 units, the units in\nwhich the execution template reads them (F-RND-01, D-60), never in points.",
         "enum": [
@@ -5912,6 +6033,55 @@
         "title": "RollHandling",
         "type": "string"
       },
+      "RunComparison": {
+        "additionalProperties": false,
+        "description": "Two to four runs, the first the reference, and the exit reasons any of them closed a trade\nby, in the order of `OrderRole`.",
+        "properties": {
+          "exit_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/OrderRole"
+            },
+            "title": "Exit Reasons",
+            "type": "array"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/ComparedRun"
+            },
+            "maxItems": 4,
+            "minItems": 2,
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "exit_reasons",
+          "runs"
+        ],
+        "title": "RunComparison",
+        "type": "object"
+      },
+      "RunComparisonRequest": {
+        "additionalProperties": false,
+        "description": "Two to four saved runs to set side by side, each by its id or its run key, the first the\nreference whose figures each delta is taken from.",
+        "properties": {
+          "runs": {
+            "description": "The runs, each by its id or its run key, the first the reference.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 2,
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs"
+        ],
+        "title": "RunComparisonRequest",
+        "type": "object"
+      },
       "RunConfig": {
         "additionalProperties": false,
         "description": "A backtest's settings: `fidelity`, the finest data it fills on, each trade date on its\nfinest level at or coarser than it (D-58), the finest the store holds when left out;\n`latency_ms` from a decision to its orders' activation (F-ACT-01); `slippage_ticks` of market\nand stop orders, by default none on TBBO and one on every other fidelity, the run's fidelity\nsetting deciding, whatever level a date falls back to (F-SLP-01); `limit_fill`\n(F-LMT-01, F-LMT-02); `roll_handling` (F-ROL-02, F-ROL-04); `fee_table`, a table of\n`fefat.market.fees`, by default `retail-default` for futures and `binance-default` for crypto;\n`capital`, in the instrument's currency; `replay`, skipping what no order can act on or in\nfull, which give the same fills (`02` \u00a74); `provider`, as `load` takes it; `contract`, one\ncontract of the root it trades read unspliced, as `load` reads a contract, so that the run\ncrosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll calendar's\nfronts; and `instrument`, the root it trades, as if the strategy's code named it, while a\nfeature keeps reading the instrument it declares (D-114), by default the one the code names.",
@@ -6171,6 +6341,89 @@
           "instruments"
         ],
         "title": "RunEstimated",
+        "type": "object"
+      },
+      "RunFigures": {
+        "additionalProperties": false,
+        "description": "A run's figures as its KPI cards show them (step 5.7), money in its currency and the shares\nfractions of its capital, 0.025 being 2.5 %; or what a run's figures differ by from the\nreference's, each none where either run's is none.",
+        "properties": {
+          "expectancy_r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy R"
+          },
+          "max_drawdown": {
+            "title": "Max Drawdown",
+            "type": "string"
+          },
+          "max_drawdown_share": {
+            "title": "Max Drawdown Share",
+            "type": "number"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "string"
+          },
+          "pnl_share": {
+            "title": "Pnl Share",
+            "type": "number"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          }
+        },
+        "required": [
+          "pnl",
+          "pnl_share",
+          "profit_factor",
+          "expectancy_r",
+          "win_rate",
+          "max_drawdown",
+          "max_drawdown_share",
+          "sharpe",
+          "trades"
+        ],
+        "title": "RunFigures",
         "type": "object"
       },
       "RunOrigin": {
@@ -7111,6 +7364,33 @@
         "title": "Severity",
         "type": "string"
       },
+      "ShareCurve": {
+        "additionalProperties": false,
+        "description": "A run's equity at the end of each trade date it was valued on, over its capital.",
+        "properties": {
+          "shares": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Shares",
+            "type": "array"
+          },
+          "trade_dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Trade Dates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trade_dates",
+          "shares"
+        ],
+        "title": "ShareCurve",
+        "type": "object"
+      },
       "Side": {
         "description": "An order's side. The specification writes each rule for a buy, and a sell mirrors it\n(`docs/spec/fill-semantics.md` \u00a71).",
         "enum": [
@@ -7738,6 +8018,41 @@
           "explanation"
         ],
         "title": "StrategyLintFinding",
+        "type": "object"
+      },
+      "StrategyPin": {
+        "additionalProperties": false,
+        "description": "The saved strategy version a strategy was built from (step 5.3): its name, number, and\ncontent hash, and the parameters it was built with, every default applied, which a run's\nrecord names (`StrategyVersion.strategy`).",
+        "properties": {
+          "hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Hash",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Parameters",
+            "type": "object"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "hash",
+          "parameters"
+        ],
+        "title": "StrategyPin",
         "type": "object"
       },
       "StrategyTemplate": {
@@ -11896,6 +12211,99 @@
         ]
       }
     },
+    "/v1/runs/compare": {
+      "post": {
+        "description": "Two to four saved runs side by side (step 5.10): each run's figures as its KPI cards show\nthem and the settings it ran under, and but for the first, the reference, what each figure\ndiffers by from the reference's, each a difference of the runs' stored metrics; each run's\ntrades by exit reason over every reason any of them closed a trade by, with their deltas; and\neach run's equity at each trade date's end over its own capital. Money as decimal text; 404\nwhere no run has an id, 409 for a run not saved, a folder gone or damaged, one run twice, or\nruns in two currencies.",
+        "operationId": "compare_runs_v1_runs_compare_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunComparisonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunComparison"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Compare Runs",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/v1/runs/estimate": {
       "post": {
         "description": "What a run of the version would read, before anything runs and without its code: what it\ncan choose among, the settings it would apply, the trade dates held, and the sessions, bars,\nand ticks of the window; refused with 400 in the SDK's words, 404 where no version has the\nid, and 409 where the library holds files the index cannot follow.",
@@ -13163,6 +13571,102 @@
           }
         ],
         "summary": "Query Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run}/reproduce": {
+      "post": {
+        "description": "A saved run made again (step 5.10): 202 with its `reproduce` job, the one queued or\nrunning for the run where there is one, which builds the run's version again in the executor\nand runs it on the data and settings the run pins into FEFAT's cache folder; the job's result\nsays whether the trades' hash matched the saved run's, or why it was refused, such as data\nimported since the run. 404 where no run has the id, 409 for a run not saved, a folder that\nis gone, or a run of a strategy built in a notebook.",
+        "operationId": "reproduce_run_v1_runs__run__reproduce_post",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7, or its run key, 64 hex digits.",
+              "title": "Run",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Reproduce Run",
         "tags": [
           "runs"
         ]

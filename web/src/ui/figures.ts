@@ -38,6 +38,11 @@ const EDGE = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
   signDisplay: "negative",
 })
+const PERCENT_EDGE = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  maximumFractionDigits: 2,
+  signDisplay: "negative",
+})
 const FEATURE = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 4,
   signDisplay: "negative",
@@ -192,6 +197,12 @@ export function formatShare(share: number): string {
   return PERCENT.format(share)
 }
 
+/** An axis's tick of a share, in percent with the decimals it holds: 1.02 is `102%`, 0.995
+ * `99.5%` (step 5.10). */
+export function shareEdge(share: number): string {
+  return PERCENT_EDGE.format(share)
+}
+
 /** A histogram's edge, with the decimals it holds and its thousands apart: `-1.5`, `12,500`. */
 export function formatEdge(edge: number): string {
   return EDGE.format(edge)
@@ -211,6 +222,12 @@ export function moneySign(text: string): "positive" | "negative" | "zero" {
     return "zero"
   }
   return text.startsWith("-") ? "negative" : "positive"
+}
+
+/** A fidelity as a sentence writes it: lower case, an acronym as it is, `trades`, `TBBO`, or
+ * `1-minute bars`. */
+export function fidelityInASentence(fidelity: string): string {
+  return fidelity === "tbbo" ? "TBBO" : fidelityLabel(fidelity).toLowerCase()
 }
 
 /** What a dataset's fidelity holds, in words: Trades, TBBO, or 1-minute bars. */

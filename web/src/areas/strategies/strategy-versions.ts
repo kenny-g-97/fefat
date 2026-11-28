@@ -28,3 +28,22 @@ export function versionNumbered(
 ): IndexedStrategyVersion | undefined {
   return strategy.versions.find((version) => version.version === number)
 }
+
+/** The version the Changes card sets beside version `shown` among `numbers` (step 5.10): `asked`
+ * where it is another of them, else the one before `shown`, else the one after it; none where
+ * `shown` is the only one. */
+export function comparedVersion(
+  numbers: readonly number[],
+  shown: number,
+  asked: number | undefined
+): number | undefined {
+  if (asked !== undefined && asked !== shown && numbers.includes(asked)) {
+    return asked
+  }
+  const before = numbers.filter((number) => number < shown)
+  if (before.length > 0) {
+    return Math.max(...before)
+  }
+  const after = numbers.filter((number) => number > shown)
+  return after.length > 0 ? Math.min(...after) : undefined
+}

@@ -206,11 +206,19 @@ def year_of_mes() -> None:
     write_minutes(tuple(replace(each, contract=f"M{each.contract}") for each in YEAR), root="MES")
 
 
+TEMPLATE_STOP = "stop_atr: float = 1.5"
+"""The breakout template's stop in ATRs, as its code writes its default."""
+WIDER_STOP = "stop_atr: float = 2.0"
+"""The stop of the demo's version 2, which the version diff highlights (step 5.10)."""
+
+
 def demo_run() -> None:
     """The engine guide's breakout template saved as the strategy `demo`, on ES, which the
     fixtures hold, its run on the fixtures over `DEMO_WINDOW`, made through the SDK as a notebook
     makes it, and both indexed as `fefat db import-workspace` indexes them, so that the server
-    starts with a run and no job (step 5.3)."""
+    starts with a run and no job (step 5.3); and, for the comparison and the version diff of step
+    5.10, its version 2 with a wider stop, `WIDER_STOP`, and its run, saved after the first, so
+    that `demo-run-01` stays the oldest run of `demo`."""
     import fefat as ff
     from fefat_app.cli import main as fefat
 
@@ -222,9 +230,17 @@ def demo_run() -> None:
             "instrument: seed the demo run on the template's own."
         )
     version = ff.strategy.save("demo", code, hypothesis=breakout.hypothesis)
+    wider = code.replace(TEMPLATE_STOP, WIDER_STOP)
+    if wider == code:
+        raise SystemExit(
+            f"Expected the breakout template's stop to read {TEMPLATE_STOP!r}, got another: seed "
+            "the second version on the template's own."
+        )
+    second = ff.strategy.save("demo", wider, hypothesis=breakout.hypothesis, changelog="Wider stop")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # the fixtures' fee table and the like; the run keeps them
         ff.backtest.run(version.strategy(), *DEMO_WINDOW)
+        ff.backtest.run(second.strategy(), *DEMO_WINDOW)
     if fefat(["db", "import-workspace"]) != 0:
         raise SystemExit(
             "Expected `fefat db import-workspace` to index the demo strategy and its run, got "

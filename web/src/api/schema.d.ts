@@ -604,6 +604,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/runs/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare Runs
+         * @description Two to four saved runs side by side (step 5.10): each run's figures as its KPI cards show
+         *     them and the settings it ran under, and but for the first, the reference, what each figure
+         *     differs by from the reference's, each a difference of the runs' stored metrics; each run's
+         *     trades by exit reason over every reason any of them closed a trade by, with their deltas; and
+         *     each run's equity at each trade date's end over its own capital. Money as decimal text; 404
+         *     where no run has an id, 409 for a run not saved, a folder gone or damaged, one run twice, or
+         *     runs in two currencies.
+         */
+        post: operations["compare_runs_v1_runs_compare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/runs/estimate": {
         parameters: {
             query?: never;
@@ -869,6 +895,31 @@ export interface paths {
          *     any other statement or a larger answer.
          */
         post: operations["query_run_v1_runs__run__query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/runs/{run}/reproduce": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reproduce Run
+         * @description A saved run made again (step 5.10): 202 with its `reproduce` job, the one queued or
+         *     running for the run where there is one, which builds the run's version again in the executor
+         *     and runs it on the data and settings the run pins into FEFAT's cache folder; the job's result
+         *     says whether the trades' hash matched the saved run's, or why it was refused, such as data
+         *     imported since the run. 404 where no run has the id, 409 for a run not saved, a folder that
+         *     is gone, or a run of a strategy built in a notebook.
+         */
+        post: operations["reproduce_run_v1_runs__run__reproduce_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1942,6 +1993,37 @@ export interface components {
             time?: string | number | null;
             /** Timestamp */
             timestamp?: string | number | null;
+        };
+        /**
+         * ComparedRun
+         * @description A run in a comparison: what it is, the settings it ran under, every default applied, which
+         *     tell apart runs of one version, as a stress's runs differ by their slippage alone; its figures,
+         *     its trades by exit reason over every reason of the comparison, none where it closed no trade by
+         *     one, and its equity's curve; and, but for the reference, what its figures and its trades by
+         *     exit reason differ by.
+         */
+        ComparedRun: {
+            config: components["schemas"]["AppliedRunConfig"];
+            currency: components["schemas"]["Currency"];
+            curve: components["schemas"]["ShareCurve"];
+            deltas: components["schemas"]["RunFigures"] | null;
+            /** Exit Reason Deltas */
+            exit_reason_deltas: {
+                [key: string]: components["schemas"]["OutcomeDelta"];
+            } | null;
+            /** Exit Reasons */
+            exit_reasons: {
+                [key: string]: components["schemas"]["Outcome"];
+            };
+            figures: components["schemas"]["RunFigures"];
+            /** Instrument */
+            instrument: string;
+            /** Run Key */
+            run_key: string;
+            strategy: components["schemas"]["StrategyPin"] | null;
+            /** Timeframe */
+            timeframe: string;
+            window: components["schemas"]["fefat__backtest__record__Window"];
         };
         /**
          * Constant
@@ -3362,6 +3444,18 @@ export interface components {
             wins: number;
         };
         /**
+         * OutcomeDelta
+         * @description What a run's trades of one exit reason differ by from the reference's.
+         */
+        OutcomeDelta: {
+            /** Pnl */
+            pnl: string;
+            /** Trades */
+            trades: number;
+            /** Wins */
+            wins: number;
+        };
+        /**
          * OutputKind
          * @description What an output's values are (D-71), which its column must admit and its version keeps; the
          *     leak detector compares values by their column's type. A `price` (a level, such as a moving
@@ -3796,6 +3890,29 @@ export interface components {
          */
         RollHandling: "transfer" | "flatten";
         /**
+         * RunComparison
+         * @description Two to four runs, the first the reference, and the exit reasons any of them closed a trade
+         *     by, in the order of `OrderRole`.
+         */
+        RunComparison: {
+            /** Exit Reasons */
+            exit_reasons: components["schemas"]["OrderRole"][];
+            /** Runs */
+            runs: components["schemas"]["ComparedRun"][];
+        };
+        /**
+         * RunComparisonRequest
+         * @description Two to four saved runs to set side by side, each by its id or its run key, the first the
+         *     reference whose figures each delta is taken from.
+         */
+        RunComparisonRequest: {
+            /**
+             * Runs
+             * @description The runs, each by its id or its run key, the first the reference.
+             */
+            runs: string[];
+        };
+        /**
          * RunConfig
          * @description A backtest's settings: `fidelity`, the finest data it fills on, each trade date on its
          *     finest level at or coarser than it (D-58), the finest the store holds when left out;
@@ -3889,6 +4006,32 @@ export interface components {
             /** Timeframe */
             timeframe: string;
             window: components["schemas"]["fefat__backtest__record__Window"] | null;
+        };
+        /**
+         * RunFigures
+         * @description A run's figures as its KPI cards show them (step 5.7), money in its currency and the shares
+         *     fractions of its capital, 0.025 being 2.5 %; or what a run's figures differ by from the
+         *     reference's, each none where either run's is none.
+         */
+        RunFigures: {
+            /** Expectancy R */
+            expectancy_r: number | null;
+            /** Max Drawdown */
+            max_drawdown: string;
+            /** Max Drawdown Share */
+            max_drawdown_share: number;
+            /** Pnl */
+            pnl: string;
+            /** Pnl Share */
+            pnl_share: number;
+            /** Profit Factor */
+            profit_factor: number | null;
+            /** Sharpe */
+            sharpe: number | null;
+            /** Trades */
+            trades: number;
+            /** Win Rate */
+            win_rate: number | null;
         };
         /**
          * RunOrigin
@@ -4327,6 +4470,16 @@ export interface components {
          */
         Severity: "high" | "medium";
         /**
+         * ShareCurve
+         * @description A run's equity at the end of each trade date it was valued on, over its capital.
+         */
+        ShareCurve: {
+            /** Shares */
+            shares: number[];
+            /** Trade Dates */
+            trade_dates: string[];
+        };
+        /**
          * Side
          * @description An order's side. The specification writes each rule for a buy, and a sell mirrors it
          *     (`docs/spec/fill-semantics.md` §1).
@@ -4566,6 +4719,24 @@ export interface components {
             rule: components["schemas"]["LintRule"];
             /** Source */
             source: string;
+        };
+        /**
+         * StrategyPin
+         * @description The saved strategy version a strategy was built from (step 5.3): its name, number, and
+         *     content hash, and the parameters it was built with, every default applied, which a run's
+         *     record names (`StrategyVersion.strategy`).
+         */
+        StrategyPin: {
+            /** Hash */
+            hash: string;
+            /** Name */
+            name: string;
+            /** Parameters */
+            parameters: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Version */
+            version: number;
         };
         /**
          * StrategyTemplate
@@ -6821,6 +6992,75 @@ export interface operations {
             };
         };
     };
+    compare_runs_v1_runs_compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunComparisonRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunComparison"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     estimate_run_v1_runs_estimate_post: {
         parameters: {
             query?: never;
@@ -7569,6 +7809,74 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    reproduce_run_v1_runs__run__reproduce_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7, or its run key, 64 hex digits. */
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
                 };
             };
             /** @description Unauthorized */

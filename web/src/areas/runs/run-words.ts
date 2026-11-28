@@ -9,6 +9,17 @@ export function slippageWords(run: ListedRun): string {
     : `${market} market, ${stop} stop`
 }
 
+/** Slippage in ticks as a sentence says it: `1 tick of slippage`, or `1 market and 2 stop ticks
+ * of slippage` where the two differ. */
+export function slippageSaid({
+  market,
+  stop,
+}: ListedRun["settings"]["slippage_ticks"]): string {
+  return market === stop
+    ? `${counted(market, "tick")} of slippage`
+    : `${market} market and ${stop} stop ticks of slippage`
+}
+
 /** The parameters a run ran with, as a row of the list names them: `lookback 12, stop_atr 1.5`,
  * which tell apart two runs of one version; empty for a run that names none. */
 export function parameterWords(run: Pick<ListedRun, "parameters">): string {
@@ -69,6 +80,23 @@ export function resultsLine(run: DatedRun): string {
   return lineOf(version, run)
 }
 
+/** A saved run as its checkbox names it for a comparison (step 5.10): its strategy and version,
+ * what it trades, its dates, its slippage, and the parameters that tell it apart from another run
+ * of them, so that a stress's runs, which differ by their slippage alone, are named apart. */
+export function choiceWords(
+  run: DatedRun &
+    Pick<ListedRun, "parameters"> &
+    Readonly<{ settings: Pick<ListedRun["settings"], "slippage_ticks"> }>
+): string {
+  return [
+    resultsLine(run),
+    slippageSaid(run.settings.slippage_ticks),
+    parameterWords(run),
+  ]
+    .filter((words) => words !== "")
+    .join(", ")
+}
+
 /** `version`, what `run` trades, and its dates, each left out where it is empty. */
 function lineOf(version: string, run: DatedRun): string {
   return [version, tradedWords(run), `${run.start} to ${run.end}`]
@@ -95,4 +123,15 @@ export function foundWords(
   return cached
     ? `FEAT found this run saved ${under}, whose code gives the same signals, and opened it.`
     : `FEAT followed this run ${under}, whose code gives the same signals, rather than run it twice.`
+}
+
+/** `runs` from the first made to the last, by the instants their rows were made, which the API
+ * writes with as many decimals of a second as they hold, so that their text does not sort them
+ * (step 5.10): the first is a comparison's reference. */
+export function oldestFirst<Made extends Pick<ListedRun, "created_at">>(
+  runs: readonly Made[]
+): Made[] {
+  return runs.toSorted(
+    (one, other) => Date.parse(one.created_at) - Date.parse(other.created_at)
+  )
 }
