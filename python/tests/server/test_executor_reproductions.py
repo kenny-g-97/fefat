@@ -2,9 +2,11 @@
 reproduces a saved run builds its version in a runner of its own and runs it again into FEFAT's
 cache folder, reporting its stages, and answers its trades matched by their table's hash, leaving
 no folder; trades that differ answer both hashes and keep the reproduction; and a version whose
-file changed since it was indexed is refused as the reproduction's answer, not as a failure."""
+file changed since it was indexed, or is gone, is refused as the reproduction's answer, not as a
+failure, in the loader's words, and a run whose folder is gone in words of its own."""
 
 import os
+import shutil
 
 import fefat_engine
 import polars as pl
@@ -111,3 +113,24 @@ def test_a_version_whose_file_changed_since_it_was_indexed_is_refused_as_the_ans
     refused = result.output.reproduction
     assert isinstance(refused, ReproductionRefused)
     assert "its file was replaced after it was indexed" in refused.reason
+
+
+def test_a_version_whose_file_is_gone_is_refused_in_the_loaders_words(saved: Run) -> None:
+    next(resolve_paths(os.environ).strategies_dir.rglob("v1.json")).unlink()
+
+    refused = backtest_output(reproducing(saved), lambda reported: None).reproduction
+
+    assert isinstance(refused, ReproductionRefused)
+    assert "Expected version 1 of strategy breakout at" in refused.reason
+    assert refused.reason.endswith("got no such file.")
+
+
+def test_a_run_whose_folder_is_gone_is_refused_in_words_of_its_own(saved: Run) -> None:
+    shutil.rmtree(saved.folder)
+
+    refused = backtest_output(reproducing(saved), lambda reported: None).reproduction
+
+    assert refused == ReproductionRefused(
+        reason=f"Expected run {saved.hash[:12]}'s folder in FEAT's runs folder, got none: it was "
+        "deleted since the reproduction was asked for."
+    )

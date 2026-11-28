@@ -83,21 +83,26 @@ def backtest_output(spec: BacktestSpec, report: ProgressReport) -> BacktestOutpu
 def _reproduction(spec: BacktestSpec, run_key: str, report: ProgressReport) -> Reproduction:
     """The saved run `run_key` made again from the version `spec` names in the cache's folder of
     reproductions (`ff.backtest.reproduce`), each stage reported as it comes: whether its trades
-    are the run's, or why the SDK refused it, a folder of its words left to the job to name; any
-    other error fails the execution, as a full disk does, which is no refusal."""
+    are the run's, or why it was refused, a run whose folder is gone in words of its own and
+    anything else in the SDK's, a folder of its words left to the job to name, such as a version
+    whose file is gone; any other error fails the execution, as a full disk does, which is no
+    refusal."""
     paths = resolve_paths(os.environ)
     into = paths.cache_dir / REPRODUCTIONS_FOLDER / run_key
     try:
         saved = saved_run(paths.runs_dir, run_key)
-        made = ff.backtest.reproduce(
-            saved, _strategy(spec.run), into, progress=_reporting(report, [])
-        )
     except FileNotFoundError:
         return ReproductionRefused(
             reason=f"Expected run {run_key[:12]}'s folder in FEAT's runs folder, got none: it was "
             "deleted since the reproduction was asked for."
         )
     except ValueError as refused:
+        return ReproductionRefused(reason=str(refused))
+    try:
+        made = ff.backtest.reproduce(
+            saved, _strategy(spec.run), into, progress=_reporting(report, [])
+        )
+    except (ValueError, FileNotFoundError) as refused:
         return ReproductionRefused(reason=str(refused))
     if isinstance(made, ff.backtest.ReproductionMatched):
         return ReproductionMatched(trades_hash=made.trades_hash)

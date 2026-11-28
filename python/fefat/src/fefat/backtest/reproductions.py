@@ -14,7 +14,8 @@ words that say which changed, the run's record and results standing, as is data 
 while the engine ran. Trades that differ then are the sign of something the run did not pin, and
 their folder is kept for a notebook to open; trades that match leave nothing behind. The folder
 takes the run's artifacts and record alone: one that holds anything else is refused and left as
-it is, and an earlier reproduction of the run is removed first, its record last.
+it is, and an earlier reproduction of the run is removed once every check has passed, its record
+last, so that a refusal keeps a reproduction whose trades differed.
 
     reproduction = ff.backtest.reproduce(run, strategy, Path("reproduced"))
     reproduction.verdict  # matched, or differed with both hashes and the folder kept
@@ -83,12 +84,11 @@ def reproduce(
     """`run` made again from `strategy`, which the caller builds as the run's record names it, in
     `into` (module docstring), each stage told to `progress`; refused before the engine runs where
     something the run read changed, and where `into` holds anything but an earlier reproduction of
-    the run, which it replaces."""
+    the run, which it replaces once every check has passed, so that a refusal keeps it."""
     record = run.record
     _require_this_engine(record.versions)
     _require_a_folder_of_its_own(run, into)
     _require_the_runs_version_and_features(record.strategy, strategy)
-    _remove_earlier(into)
     paths = resolve_paths(os.environ)
     store = Store(paths.data_dir)
     pinned_snapshots(store, run)
@@ -98,6 +98,7 @@ def reproduce(
     written = strategy_record(inputs, strategy)
     _require_the_runs_strategy(record.strategy, written)
     _require_the_runs_inputs(record, inputs, frame_hash)
+    _remove_earlier(into)
     progress(RunStage.ENGINE_RUNNING)
     artifacts, again = engine_run(inputs, inputs.cache_paths(paths), written, run.hash, frame_hash)
     pinned_snapshots(store, run)
@@ -131,16 +132,19 @@ def _require_this_engine(versions: EngineVersions) -> None:
 
 
 def _require_a_folder_of_its_own(run: Run, into: Path) -> None:
-    """Refuse `into` where it is the run's own folder, or holds anything but an earlier
-    reproduction of the run, its record and artifacts alone, which the reproduction replaces."""
+    """Refuse `into` where it is the run's own folder, a file, or a folder that holds anything
+    but an earlier reproduction of the run, its record and artifacts alone, which the
+    reproduction replaces; an empty folder, as a removal stopped at the folder itself leaves it,
+    takes the reproduction."""
     if into.resolve() == run.folder.resolve():
         raise ValueError(
             f"Expected a folder for the reproduction apart from the run's own, got {into}."
         )
     if not into.exists():
         return
-    others = [entry.name for entry in into.iterdir() if entry.name not in _OWN_FILES]
-    if others or not _reproduces(into / RECORD_FILE, run.hash):
+    held = [entry.name for entry in into.iterdir()] if into.is_dir() else [into.name]
+    others = [name for name in held if name not in _OWN_FILES]
+    if others or (held and not _reproduces(into / RECORD_FILE, run.hash)):
         raise ValueError(
             f"Expected a folder for the reproduction that does not exist yet, or that holds an "
             f"earlier reproduction of run {run.hash[:12]}, got {into}, which holds something else."

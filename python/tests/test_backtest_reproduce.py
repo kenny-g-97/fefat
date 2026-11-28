@@ -4,15 +4,20 @@ is refused before the engine runs, naming the file written since (D-99), and dat
 ran after it; a strategy of another saved version, features of other code, another specification,
 another engine, moved rolls, another signal frame, a part of the engine's config, and another run
 key are refused in words that say which; trades that differ keep their folder with both hashes,
-which a later reproduction replaces, as one a file held open stopped halfway; a match stays a match
-where its folder cannot be removed; and a folder holding anything else, the trader's own file
-beside a kept reproduction or a damaged record, is refused and left as it is."""
+which a later reproduction replaces, as one a file held open stopped halfway, and which a refusal
+leaves as it is; a match stays a match where its folder cannot be removed; an empty folder takes
+the reproduction; and a folder holding anything else, the trader's own file beside a kept
+reproduction or a damaged record, a file in the folder's place, or a folder beside it named as a
+writer's partial one, is refused or left as it is."""
 
 import os
 import re
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
+from typing import NoReturn
 
 import fefat_engine
 import polars as pl
@@ -21,6 +26,7 @@ import pytest
 import fefat as ff
 import fefat.backtest.reproductions as reproductions
 from fefat.backtest import ReproductionDiffered, ReproductionMatched, Run
+from fefat.backtest.artifacts import PARTIAL_KEPT
 from fefat.backtest.record import EngineVersions, FeaturePin, RunRecord, StrategyRecord
 from fefat.backtest.run_inputs import RunInputs
 from fefat.backtest.runs import engine_run
@@ -159,23 +165,24 @@ def test_a_folder_holding_anything_else_is_refused_and_left_as_it_is(
 
 
 def test_a_strategy_of_another_saved_version_is_refused_before_anything_loads(
-    saved: Run, tmp_path: Path
+    saved: Run, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pin = StrategyPin(name="demo", version=1, hash="0" * 64, parameters={"lookback": 12})
     strategy = saved.record.strategy.model_copy(update={"saved_version": pin})
 
     built = "Expected the strategy the run was built from, demo version 1 with {'lookback': 12}"
-    with pytest.raises(ValueError, match=re.escape(built)):
+    with nothing_loaded(monkeypatch), pytest.raises(ValueError, match=re.escape(built)):
         ff.backtest.reproduce(held_as(saved, strategy=strategy), breakout(), tmp_path / "again")
 
 
 def test_features_of_other_code_are_refused_before_anything_loads(
-    saved: Run, tmp_path: Path
+    saved: Run, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pin = FeaturePin(slot="trend", name="trend", version=3, hash="0" * 64, parameters={})
     strategy = saved.record.strategy.model_copy(update={"feature_versions": (pin,)})
 
-    with pytest.raises(ValueError, match="the run's slots read, trend version 3, got features of"):
+    features = "the run's slots read, trend version 3, got features of"
+    with nothing_loaded(monkeypatch), pytest.raises(ValueError, match=features):
         ff.backtest.reproduce(held_as(saved, strategy=strategy), breakout(), tmp_path / "again")
 
 
@@ -256,6 +263,74 @@ def test_a_damaged_earlier_record_reads_as_a_folder_holding_something_else(
     assert (into / "run.json").read_text(encoding="utf-8") == "["
 
 
+def test_a_refusal_leaves_a_kept_reproduction_as_it_is(
+    saved: Run, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    into = tmp_path / "reproduced"
+    with monkeypatch.context() as planted:
+        planted.setattr(reproductions, "engine_run", without_its_last_trade)
+        ff.backtest.reproduce(saved, breakout(), into)
+    change_the_data()
+
+    with pytest.raises(ValueError, match="the data changed since the run"):
+        ff.backtest.reproduce(saved, breakout(), into)
+    assert pl.read_parquet(into / "trades.parquet").height == saved.trades.height - 1
+
+
+def test_a_file_in_the_folders_place_is_refused_and_left_as_it_is(
+    saved: Run, tmp_path: Path
+) -> None:
+    into = tmp_path / "reproduced"
+    into.write_text("mine", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="holds something else"):
+        ff.backtest.reproduce(saved, breakout(), into)
+    assert into.read_text(encoding="utf-8") == "mine"
+
+
+def test_an_empty_folder_takes_the_reproduction(saved: Run, tmp_path: Path) -> None:
+    # As a removal Windows stopped at the folder itself leaves it, held as a terminal's own.
+    into = tmp_path / "reproduced"
+    into.mkdir()
+
+    assert isinstance(ff.backtest.reproduce(saved, breakout(), into), ReproductionMatched)
+    assert not into.exists()
+
+
+def test_a_folder_beside_named_as_a_partial_one_is_left_as_it_is(
+    saved: Run, tmp_path: Path
+) -> None:
+    beside = tmp_path / "notes.partial"
+    beside.mkdir()
+    long_ago = time.time() - 2 * PARTIAL_KEPT.total_seconds()
+    os.utime(beside, (long_ago, long_ago))
+
+    ff.backtest.reproduce(saved, breakout(), tmp_path / "reproduced")
+
+    assert beside.is_dir()
+
+
+@contextmanager
+def nothing_loaded(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The run's inputs and its strategy's record refused, so that a refusal under it comes
+    before anything loads or the feature library takes a version."""
+    with monkeypatch.context() as planted:
+        planted.setattr(reproductions, "run_inputs", never_called)
+        planted.setattr(reproductions, "strategy_record", never_called)
+        yield
+
+
+def never_called(*_: object, **__: object) -> NoReturn:
+    raise AssertionError("Expected a refusal before anything loads, got a call that loads.")
+
+
+def change_the_data() -> None:
+    """An import merging into a partition the run read."""
+    bars = resolve_paths(os.environ).data_dir / "synthetic" / "ohlcv-1m" / "root=ES"
+    part = bars / "contract=ESH2026" / "month=2026-03" / "part.parquet"
+    part.write_bytes(part.read_bytes() + b"changed")
+
+
 def changing_the_data(
     inputs: RunInputs,
     cache_paths: tuple[Path, ...],
@@ -265,9 +340,7 @@ def changing_the_data(
 ) -> tuple[dict[str, pl.DataFrame], RunRecord]:
     """The engine's run, an import merging into a partition the run read while it ran."""
     ran = engine_run(inputs, cache_paths, strategy, key, frame_hash)
-    bars = resolve_paths(os.environ).data_dir / "synthetic" / "ohlcv-1m" / "root=ES"
-    part = bars / "contract=ESH2026" / "month=2026-03" / "part.parquet"
-    part.write_bytes(part.read_bytes() + b"changed")
+    change_the_data()
     return ran
 
 
