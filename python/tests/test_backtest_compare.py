@@ -101,7 +101,7 @@ def test_each_runs_curve_is_its_daily_equity_over_its_own_capital() -> None:
         assert compared.curve.shares == tuple(
             float(Fraction(equity, capital)) for equity in daily.get_column("equity").to_list()
         )
-    assert comparison.runs[1].capital == Decimal(100_000)
+    assert comparison.runs[1].config.capital == Decimal(100_000)
 
 
 def test_a_comparison_needs_two_to_four_different_runs_in_one_currency() -> None:

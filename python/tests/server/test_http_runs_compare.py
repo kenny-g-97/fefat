@@ -2,8 +2,8 @@
 and at a wider one, side by side. Done means 3: the endpoint's deltas equal the differences of the
 runs' stored metrics, as each run's `run.json` holds them. The reference's figures carry no delta,
 each curve is its run's daily equity over its capital, and a run is named by its id or its key;
-one run, five runs, a run twice, an unknown run, a run not saved yet, and a request without the
-session's CSRF header are refused."""
+one run, five runs, a run twice, by its key or by its id and its key, an unknown run, a run not
+saved yet, and a request without the session's CSRF header are refused."""
 
 import json
 import os
@@ -191,6 +191,11 @@ def test_a_run_named_twice_an_unknown_run_and_one_not_saved_are_refused(
     twice = client.post(
         "/v1/runs/compare", json={"runs": [reference.hash] * 2}, headers=csrf(client)
     )
+    listed = client.get("/v1/runs").json()["runs"]
+    (row,) = [each for each in listed if each.get("run_key") == reference.hash]
+    by_id_and_key = client.post(
+        "/v1/runs/compare", json={"runs": [row["id"], reference.hash]}, headers=csrf(client)
+    )
     unknown = client.post(
         "/v1/runs/compare", json={"runs": [reference.hash, "e" * 64]}, headers=csrf(client)
     )
@@ -199,8 +204,9 @@ def test_a_run_named_twice_an_unknown_run_and_one_not_saved_are_refused(
     )
     unsigned = client.post("/v1/runs/compare", json={"runs": [reference.hash, submitted.id]})
 
-    assert (twice.status_code, unknown.status_code) == (422, 404)
-    assert f"got {reference.hash} twice" in twice.text
+    assert (twice.status_code, by_id_and_key.status_code, unknown.status_code) == (409, 409, 404)
+    for refused in (twice, by_id_and_key):
+        assert f"got run {reference.hash[:12]} twice" in refused.json()["detail"]
     assert unsaved.status_code == 409
     assert "Expected a saved run" in unsaved.json()["detail"]
     assert unsigned.status_code == 403

@@ -95,9 +95,13 @@ def _fill(fill: FillView) -> ExplainedFill:
 
 def without_folders(reason: str, paths: FefatPaths, run_key: str) -> str:
     """`reason` naming the run's folder as the run, and the data folder and FEFAT's home in
-    words, so that no folder of this PC reaches the page (D-80)."""
-    return (
-        reason.replace(str(paths.runs_dir / run_key), f"run {run_key[:12]}")
-        .replace(str(paths.data_dir), "your data folder")
-        .replace(str(paths.home), "FEFAT's home folder")
+    words, as written and as an OS error writes a file's name, its backslashes doubled, so that no
+    folder of this PC reaches the page (D-80)."""
+    named = (
+        (str(paths.runs_dir / run_key), f"run {run_key[:12]}"),
+        (str(paths.data_dir), "your data folder"),
+        (str(paths.home), "FEFAT's home folder"),
     )
+    for folder, words in named:
+        reason = reason.replace(folder, words).replace(folder.replace("\\", "\\\\"), words)
+    return reason

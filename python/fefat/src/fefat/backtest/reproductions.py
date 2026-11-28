@@ -5,12 +5,16 @@ lookup and the saved run that `ff.backtest.run` would return, then its trades ta
 pinned (D-11).
 
 What the run read is checked before the engine runs, so that only a run of the same inputs is
-compared: the engine's versions; the data's snapshots (`pinned_snapshots`), whose refusal names the
-files written since the run when an import merged into them (ADR-0021); the strategy; the rolls
-the run crossed; the signal frame; and the engine's config, the fee table, the calendar, the
-funding, and the instrument among it; each refused in words that say which changed, the run's
-record and results standing. Trades that differ then are the sign of something the run did not
-pin, and their folder is kept for a notebook to open; trades that match leave nothing behind.
+compared: the engine's versions; the strategy's saved version and its features' code, before
+anything loads or the feature library takes a version; the data's snapshots (`pinned_snapshots`),
+whose refusal names the files written since the run when an import merged into them (ADR-0021);
+the strategy's specification; the rolls the run crossed; the signal frame; and the engine's
+config, the fee table, the calendar, the funding, and the instrument among it; each refused in
+words that say which changed, the run's record and results standing, as is data that changed
+while the engine ran. Trades that differ then are the sign of something the run did not pin, and
+their folder is kept for a notebook to open; trades that match leave nothing behind. The folder
+takes the run's artifacts and record alone: one that holds anything else is refused and left as
+it is, and an earlier reproduction of the run is removed first, its record last.
 
     reproduction = ff.backtest.reproduce(run, strategy, Path("reproduced"))
     reproduction.verdict  # matched, or differed with both hashes and the folder kept
@@ -18,7 +22,7 @@ pin, and their folder is kept for a notebook to open; trades that match leave no
 
 import json
 import os
-import shutil
+from contextlib import suppress
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -32,7 +36,9 @@ from fefat.backtest.run_config import RunConfig
 from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.backtest.run_signals import RunProgress, RunStage, tell_no_one
 from fefat.backtest.runs import Run, engine_run, run_key, strategy_record
+from fefat.backtest.schemas import ARTIFACT_SCHEMAS
 from fefat.config import resolve_paths
+from fefat.features.evaluation import FeatureSpec
 from fefat.market.schema import FrozenModel
 from fefat.market.store import Store
 from fefat.strategy.signal_strategy import SignalStrategy, StrategyPin
@@ -44,6 +50,8 @@ _CONFIG_PARTS = {
     "instrument": "instrument's specification",
 }
 """The parts of the engine's config a store or a FEFAT update can change, in words."""
+_OWN_FILES = frozenset({RECORD_FILE, *(f"{name}.parquet" for name in ARTIFACT_SCHEMAS)})
+"""The files a reproduction's folder holds: a run's record and artifacts."""
 
 
 class ReproductionVerdict(StrEnum):
@@ -79,6 +87,8 @@ def reproduce(
     record = run.record
     _require_this_engine(record.versions)
     _require_a_folder_of_its_own(run, into)
+    _require_the_runs_version_and_features(record.strategy, strategy)
+    _remove_earlier(into)
     paths = resolve_paths(os.environ)
     store = Store(paths.data_dir)
     pinned_snapshots(store, run)
@@ -91,7 +101,6 @@ def reproduce(
     progress(RunStage.ENGINE_RUNNING)
     artifacts, again = engine_run(inputs, inputs.cache_paths(paths), written, run.hash, frame_hash)
     pinned_snapshots(store, run)
-    shutil.rmtree(into, ignore_errors=True)
     write_run(into, artifacts, again)
     progress(RunStage.ARTIFACTS_WRITTEN)
     return _verdict(run, into)
@@ -99,11 +108,13 @@ def reproduce(
 
 def _verdict(run: Run, into: Path) -> ReproductionMatched | ReproductionDiffered:
     """The reproduction in `into` beside `run` by their trades tables' hashes, each read back
-    from its file; a match leaves no folder."""
+    from its file; a match leaves no folder, as far as no file of it is held open, which leaves
+    the folder for the next reproduction to remove and the verdict as it is."""
     saved = fefat_engine.table_hash(run.trades)
     reproduced = fefat_engine.table_hash(read_artifact(into, "trades"))
     if reproduced == saved:
-        shutil.rmtree(into)
+        with suppress(ValueError):
+            _remove_earlier(into)
         return ReproductionMatched(trades_hash=saved)
     return ReproductionDiffered(
         saved_trades_hash=saved, reproduced_trades_hash=reproduced, folder=into
@@ -121,35 +132,75 @@ def _require_this_engine(versions: EngineVersions) -> None:
 
 def _require_a_folder_of_its_own(run: Run, into: Path) -> None:
     """Refuse `into` where it is the run's own folder, or holds anything but an earlier
-    reproduction of the run, which the reproduction replaces."""
+    reproduction of the run, its record and artifacts alone, which the reproduction replaces."""
     if into.resolve() == run.folder.resolve():
         raise ValueError(
             f"Expected a folder for the reproduction apart from the run's own, got {into}."
         )
     if not into.exists():
         return
-    earlier = into / RECORD_FILE
-    if not earlier.is_file() or json.loads(earlier.read_bytes()).get("run_key") != run.hash:
+    others = [entry.name for entry in into.iterdir() if entry.name not in _OWN_FILES]
+    if others or not _reproduces(into / RECORD_FILE, run.hash):
         raise ValueError(
             f"Expected a folder for the reproduction that does not exist yet, or that holds an "
             f"earlier reproduction of run {run.hash[:12]}, got {into}, which holds something else."
         )
 
 
-def _require_the_runs_strategy(held: StrategyRecord, built: StrategyRecord) -> None:
-    """Refuse a strategy other than the one the run's record names: another saved version or
-    parameters, another version of a feature its slots read, or another specification."""
-    if built.saved_version != held.saved_version:
+def _reproduces(record: Path, run_key: str) -> bool:
+    """Whether `record` is the record of a reproduction of the run `run_key`; one that cannot be
+    read counts as none."""
+    try:
+        held = json.loads(record.read_bytes())
+    except (OSError, ValueError):
+        return False
+    return isinstance(held, dict) and held.get("run_key") == run_key
+
+
+def _remove_earlier(into: Path) -> None:
+    """Remove the reproduction in `into`, if any, its record last, so that a removal stopped by a
+    file another program holds open keeps the record, which the next reproduction knows and
+    removes again; refused in words where a file cannot be removed."""
+    if not into.exists():
+        return
+    try:
+        for entry in into.iterdir():
+            if entry.name != RECORD_FILE:
+                entry.unlink()
+        (into / RECORD_FILE).unlink(missing_ok=True)
+        into.rmdir()
+    except OSError as held:
+        raise ValueError(
+            f"Expected to remove the earlier reproduction in {into}, got a file of it that could "
+            f"not be removed ({held.strerror}): close what holds it open, then reproduce again."
+        ) from held
+
+
+def _require_the_runs_version_and_features(held: StrategyRecord, strategy: SignalStrategy) -> None:
+    """Refuse, before anything loads or the library takes a version, a strategy of another saved
+    version or parameters than the run's, or whose slots read features of other code."""
+    if strategy.saved_version != held.saved_version:
         raise ValueError(
             f"Expected the strategy the run was built from, {_pinned(held.saved_version)}, got "
-            f"{_pinned(built.saved_version)}: build it as the run's record names it."
+            f"{_pinned(strategy.saved_version)}: build it as the run's record names it."
         )
-    if built.feature_versions != held.feature_versions:
+    built = {
+        slot: (feature.definition.name, feature.definition.hash)
+        for slot, feature in strategy.features.items()
+        if isinstance(feature, FeatureSpec)
+    }
+    pinned = {pin.slot: (pin.name, pin.hash) for pin in held.feature_versions}
+    if built != pinned:
         named = ", ".join(f"{pin.name} version {pin.version}" for pin in held.feature_versions)
         raise ValueError(
-            f"Expected the features the run's slots read, {named}, got other versions: a feature "
-            "was saved again since the run, so run the strategy again for a run of it."
+            f"Expected the features the run's slots read, {named or 'none'}, got features of other "
+            "code: a feature's code changed since the run, so run the strategy again for a run of it."
         )
+
+
+def _require_the_runs_strategy(held: StrategyRecord, built: StrategyRecord) -> None:
+    """Refuse a strategy whose specification, features' columns, or features' versions and
+    parameters are not those the run's record names."""
     if built.model_dump(mode="json") != held.model_dump(mode="json"):
         raise ValueError(
             "Expected the strategy's specification as the run's record holds it, got another: "

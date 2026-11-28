@@ -148,7 +148,9 @@ def _remove_partials_left(runs_dir: Path) -> None:
     only a writer killed before its rename leaves, since a writer removes its own on any error;
     one another program holds open stays for the next save."""
     left_before = time.time() - PARTIAL_KEPT.total_seconds()
-    for partial in runs_dir.glob(f"*{_PARTIAL}"):
+    # A writer's folder is named by its run key, so that a reproduction's folder of the caller's
+    # choosing (step 5.10) removes nothing of the caller's beside it.
+    for partial in runs_dir.glob(f"{'?' * 64}.*{_PARTIAL}"):
         try:
             left = partial.stat().st_mtime < left_before
         except OSError:  # renamed into place, or removed, since it was listed

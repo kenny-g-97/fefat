@@ -1,9 +1,10 @@
 """`POST /v1/runs/{run}/reproduce` of step 5.10 (D-93, D-126): a saved run made again as a
 `reproduce` job, which a worker of the pool runs through the executor. Done means 2, the synthetic
 run: the breakout's run on the fixtures' minute bars reproduces with its trades' hash matched,
-leaving no folder and indexing nothing. Data changed since the run is refused as the job's answer,
-in words that name no folder of this PC (D-99, D-80); a run of a strategy built in a notebook, an
-unknown run, and a request without the session's CSRF header are refused, and queue no job."""
+leaving no folder and indexing nothing. Data changed since the run, or deleted since, is refused as
+the job's answer, in words that name no folder of this PC (D-99, D-80), as is an OS error's file
+name, its backslashes doubled; a run of a strategy built in a notebook, an unknown run, and a
+request without the session's CSRF header are refused, and queue no job."""
 
 import os
 import shutil
@@ -17,6 +18,7 @@ import fefat as ff
 from fefat.backtest import Run
 from fefat.config import resolve_paths
 from fefat_app.container import Container
+from fefat_app.jobs.trade_explanations import without_folders
 from fefat_app.reproductions import REPRODUCTIONS_FOLDER
 from local_server import logged_in
 from notebook_runs import breakout, store_with
@@ -77,6 +79,35 @@ def test_data_changed_since_the_run_is_refused_in_words_that_name_no_folder(
     assert "synthetic/ohlcv-1m/root=ES/contract=ESH2026/month=2026-03/part.parquet" in reason
     assert str(paths.home) not in reason
     assert str(paths.data_dir) not in reason
+
+
+def test_data_deleted_since_the_run_is_refused_naming_the_data_folder_in_words(
+    client: TestClient, run: Run
+) -> None:
+    # The scrub of the job's answer (D-80): the store's refusal names its folder, which the job
+    # names in words.
+    paths = resolve_paths(os.environ)
+    shutil.rmtree(paths.data_dir / "synthetic" / "ohlcv-1m")
+
+    started = client.post(f"/v1/runs/{run.hash}/reproduce", headers=csrf(client))
+    ended = finished(client, started.json()["id"])
+
+    assert (ended["status"], ended["result"]["verdict"]) == ("succeeded", "refused")
+    assert "its data was deleted since the run" in ended["result"]["reason"]
+    assert ended["result"]["reason"].endswith("The store read: your data folder.")
+
+
+def test_an_os_errors_file_name_is_named_in_words_as_its_backslashes_double() -> None:
+    # An OSError writes its file name with repr, so that on Windows each backslash is doubled.
+    paths = resolve_paths(os.environ)
+    key = "e" * 64
+    missing = FileNotFoundError(
+        2, "No such file or directory", str(paths.runs_dir / key / "run.json")
+    )
+    data = FileNotFoundError(2, "No such file or directory", str(paths.data_dir / "x.parquet"))
+
+    assert f"run {key[:12]}" in without_folders(str(missing), paths, key)
+    assert "your data folder" in without_folders(str(data), paths, key)
 
 
 def test_a_notebook_run_an_unknown_run_and_an_unsigned_request_are_refused(

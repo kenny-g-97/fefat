@@ -616,11 +616,12 @@ export interface paths {
         /**
          * Compare Runs
          * @description Two to four saved runs side by side (step 5.10): each run's figures as its KPI cards show
-         *     them, and but for the first, the reference, what each differs by from the reference's, each a
-         *     difference of the runs' stored metrics; each run's trades by exit reason over every reason any
-         *     of them closed a trade by, with their deltas; and each run's equity at each trade date's end
-         *     over its own capital. Money as decimal text; 404 where no run has an id, 409 for a run not
-         *     saved, a folder gone or damaged, or runs in two currencies.
+         *     them and the settings it ran under, and but for the first, the reference, what each figure
+         *     differs by from the reference's, each a difference of the runs' stored metrics; each run's
+         *     trades by exit reason over every reason any of them closed a trade by, with their deltas; and
+         *     each run's equity at each trade date's end over its own capital. Money as decimal text; 404
+         *     where no run has an id, 409 for a run not saved, a folder gone or damaged, one run twice, or
+         *     runs in two currencies.
          */
         post: operations["compare_runs_v1_runs_compare_post"];
         delete?: never;
@@ -1995,13 +1996,14 @@ export interface components {
         };
         /**
          * ComparedRun
-         * @description A run in a comparison: what it is, its figures, its trades by exit reason over every
-         *     reason of the comparison, none where it closed no trade by one, and its equity's curve; and,
-         *     but for the reference, what its figures and its trades by exit reason differ by.
+         * @description A run in a comparison: what it is, the settings it ran under, every default applied, which
+         *     tell apart runs of one version, as a stress's runs differ by their slippage alone; its figures,
+         *     its trades by exit reason over every reason of the comparison, none where it closed no trade by
+         *     one, and its equity's curve; and, but for the reference, what its figures and its trades by
+         *     exit reason differ by.
          */
         ComparedRun: {
-            /** Capital */
-            capital: string;
+            config: components["schemas"]["AppliedRunConfig"];
             currency: components["schemas"]["Currency"];
             curve: components["schemas"]["ShareCurve"];
             deltas: components["schemas"]["RunFigures"] | null;
@@ -3901,7 +3903,7 @@ export interface components {
         /**
          * RunComparisonRequest
          * @description Two to four saved runs to set side by side, each by its id or its run key, the first the
-         *     reference whose figures each delta is taken from (step 5.10).
+         *     reference whose figures each delta is taken from.
          */
         RunComparisonRequest: {
             /**

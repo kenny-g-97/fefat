@@ -6,8 +6,8 @@ run would read, before anything runs, and `POST /v1/runs/stress`, a run and the 
 of slippage (step 5.6); `GET /v1/runs`, a page of the runs; `GET /v1/runs/{run}`, a run by its id
 or its run key; `GET /v1/runs/{run}/stats`, `/equity`, and `/distribution`, a saved run's results,
 read from its folder (step 5.7), and `/monte-carlo`, its trades drawn again (steps 5.20, 5.21); and
-`POST /v1/runs/{run}/cancel`; and, from step 5.10, `POST /v1/runs/compare`, two to four saved runs
-side by side, and `POST /v1/runs/{run}/reproduce`, a saved run made again as a `reproduce` job.
+`POST /v1/runs/{run}/cancel`; and, from step 5.10, `POST /v1/runs/{run}/reproduce`, a saved run
+made again as a `reproduce` job (`POST /v1/runs/compare` is `fefat_app.http.run_comparisons`).
 A run's status is
 `succeeded` once its folder is saved, its job's before; a job whose run proved saved under another
 run's row names that row in its result, which a client then follows."""
@@ -27,14 +27,7 @@ from pydantic import (
     model_validator,
 )
 
-from fefat.backtest import (
-    MarketExposure,
-    ResultsBySide,
-    RunComparison,
-    RunConfig,
-    TradeDistributions,
-)
-from fefat.backtest.compare import FEWEST_RUNS, MOST_RUNS
+from fefat.backtest import MarketExposure, ResultsBySide, RunConfig, TradeDistributions
 from fefat.backtest.equity_curves import EQUITY_POINTS, FEWEST_POINTS
 from fefat.backtest.resampling import MONTE_CARLO_PATHS, MONTE_CARLO_SEED, MonteCarloAnswer
 from fefat.market.contracts import parse_contract_name
@@ -59,6 +52,7 @@ from fefat_app.runs import (
     StressedRuns,
 )
 from fefat_app.services.code_runs import CodeRefusedError
+from fefat_app.services.reproductions import reproduction_of
 from fefat_app.services.runs import RUNS_PER_PAGE, RunAsked, RunsAsked
 from fefat_app.services.strategies import NoSuchStrategyError
 
@@ -84,27 +78,6 @@ FOUND_SAVED = {
         "description": "The run its request found saved, indexed where it was not: no job runs.",
     }
 }
-
-
-class RunComparisonRequest(BaseModel):
-    """Two to four saved runs to set side by side, each by its id or its run key, the first the
-    reference whose figures each delta is taken from (step 5.10)."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    runs: tuple[str, ...] = Field(
-        min_length=FEWEST_RUNS,
-        max_length=MOST_RUNS,
-        description="The runs, each by its id or its run key, the first the reference.",
-    )
-
-    @field_validator("runs")
-    @classmethod
-    def _each_once(cls, runs: tuple[str, ...]) -> tuple[str, ...]:
-        for run in runs:
-            if runs.count(run) > 1:
-                raise ValueError(f"Expected different runs to compare, got {run} twice.")
-        return runs
 
 
 class RunSubmission(BaseModel):
@@ -396,18 +369,6 @@ def run_market_exposure(
         return container.runs.market_exposure(run, max_points)
 
 
-@router.post("/runs/compare", responses=problem_responses(401, 403, 404, 409, 422))
-def compare_runs(request: RunComparisonRequest, container: ContainerDependency) -> RunComparison:
-    """Two to four saved runs side by side (step 5.10): each run's figures as its KPI cards show
-    them, and but for the first, the reference, what each differs by from the reference's, each a
-    difference of the runs' stored metrics; each run's trades by exit reason over every reason any
-    of them closed a trade by, with their deltas; and each run's equity at each trade date's end
-    over its own capital. Money as decimal text; 404 where no run has an id, 409 for a run not
-    saved, a folder gone or damaged, or runs in two currencies."""
-    with _refusals():
-        return container.runs.compare(request.runs)
-
-
 @router.post(
     "/runs/{run}/reproduce", status_code=202, responses=problem_responses(401, 403, 404, 409, 422)
 )
@@ -419,7 +380,7 @@ def reproduce_run(run: RunAddress, container: ContainerDependency) -> Job:
     imported since the run. 404 where no run has the id, 409 for a run not saved, a folder that
     is gone, or a run of a strategy built in a notebook."""
     with _refusals():
-        return container.runs.reproduce(run)
+        return reproduction_of(container.runs, container.jobs, run)
 
 
 @router.post("/runs/{run}/cancel", responses=problem_responses(401, 403, 404, 422))

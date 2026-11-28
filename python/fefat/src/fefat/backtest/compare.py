@@ -18,6 +18,7 @@ from pydantic import AfterValidator, Field
 
 from fefat.backtest.metrics import Outcome
 from fefat.backtest.record import Window
+from fefat.backtest.run_config import AppliedRunConfig
 from fefat.backtest.runs import DAILY, Run
 from fefat.market.engine_units import micro_units
 from fefat.market.instruments import Currency
@@ -61,16 +62,18 @@ class ShareCurve(FrozenModel):
 
 
 class ComparedRun(FrozenModel):
-    """A run in a comparison: what it is, its figures, its trades by exit reason over every
-    reason of the comparison, none where it closed no trade by one, and its equity's curve; and,
-    but for the reference, what its figures and its trades by exit reason differ by."""
+    """A run in a comparison: what it is, the settings it ran under, every default applied, which
+    tell apart runs of one version, as a stress's runs differ by their slippage alone; its figures,
+    its trades by exit reason over every reason of the comparison, none where it closed no trade by
+    one, and its equity's curve; and, but for the reference, what its figures and its trades by
+    exit reason differ by."""
 
     run_key: str
     strategy: StrategyPin | None
     instrument: str
     timeframe: str
     currency: Currency
-    capital: Decimal
+    config: AppliedRunConfig
     window: Window
     figures: RunFigures
     deltas: RunFigures | None
@@ -142,7 +145,7 @@ def _compared(
         instrument=record.instrument.root,
         timeframe=str(record.strategy.spec["timeframe"]),
         currency=record.instrument.currency,
-        capital=record.config.capital,
+        config=record.config,
         window=record.window,
         figures=figures,
         deltas=None if reference is None else _less(figures, reference.figures),
