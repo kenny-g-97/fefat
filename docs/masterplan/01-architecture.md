@@ -61,6 +61,7 @@ Three principles hold everything together:
 | Task runner | `just` | Recipes call `uv`, `cargo`, `pnpm`; identical on Windows, CI, and macOS |
 | CI | GitHub Actions: `windows-latest` and `ubuntu-latest` (macOS added in P14) | Wheels built on both |
 | Desktop shell (P14) | Tauri 2, backend as a sidecar | Signed installers, auto-update |
+| Desktop app for your own use (P15) | The web app published as a Claude artifact and installed from Claude Desktop (D-127) | Own window and icon, notifications, a tray icon; no installer; opens online and signed in to Claude |
 
 ## 3. Repository layout
 
@@ -239,6 +240,7 @@ As step 5.9 adds (D-125): `GET /runs/{run}/chart?from&to` answers a page of the 
 - File access is confined to `FEFAT_HOME` and `FEFAT_DATA_DIR`; the API never takes raw filesystem paths from clients except for imports of large files, which are validated against the import roots allowed in `config.toml`.
 - As step 5.12 built it (D-101): an upload's body is read only once the login and the CSRF token have passed, within the route's own limit, every other route keeping its 1 MiB; its name, which names its copy under `raw/user/` too, has no control or format character, none of `< > : " / \ | ? *`, no dot or space at its end, no stem Windows keeps for a device, at most 120 bytes, and an allowed suffix; an upload's id is read as a UUID before it names a folder; a typed path must be absolute, on a drive rather than a network share or a device, without `..` or a stream's `:`, under an import root as written and again once resolved, outside FEAT's home and the data folder, and of an allowed suffix, every refusal one sentence that names the roots; a profile a request names is a preset's or a saved one's, never read as a path; archives are unpacked in the executor alone; and what a preview quotes of a file goes to the client that asked, while the log keeps a request's path, never its query.
 - Catalog updates from FEFAT's static host (Phase 14) are verified against a signed manifest and file hashes before they are installed; that host never serves market data.
+- The Claude desktop app of Phase 15 (D-127) is the one page from elsewhere the server admits, as a frame ancestor or an origin that `config.toml` names, off by default and refused when unset; step 15.1 decides which with evidence, and nothing above weakens for the browser.
 - Secrets (Anthropic API key, data vendor keys such as Databento's) live in the OS credential store via `keyring`, never in `config.toml`.
 
 ## 9. Environments

@@ -6,7 +6,7 @@ Written 2026-10-06 from your idea (`../../raw_app_idea.txt`), four rounds of dec
 
 ## What FEFAT becomes
 
-A local-first research platform for futures and crypto traders that runs on your own PC, is used from the browser, and is packaged as a desktop app at the end. Four pillars: a feature lab and strategy workspace with a Claude agent; a backtester with its own Rust engine and strict strategy versioning; a prop-firm simulator that tests any saved backtest (or a trade log from another platform) against prop rules and your prop strategy without re-running it; and, once the rest works, full use from the phone (deferred, D-54). FEFAT ships no market data: traders connect their own data sources, and FEFAT provides the product catalog, a guide to well-known sources, the connectors and import presets, and the sync that keeps a product current; imports cover anything else (D-37). Details in `00-product-spec.md`.
+A local-first research platform for futures and crypto traders that runs on your own PC, is used from the browser, opens as a Claude desktop app for your own use once the web MVP works (Phase 15, D-127), and is packaged as a desktop app for other traders at the end (Phase 14). Four pillars: a feature lab and strategy workspace with a Claude agent; a backtester with its own Rust engine and strict strategy versioning; a prop-firm simulator that tests any saved backtest (or a trade log from another platform) against prop rules and your prop strategy without re-running it; and, once the rest works, full use from the phone (deferred, D-54). FEFAT ships no market data: traders connect their own data sources, and FEFAT provides the product catalog, a guide to well-known sources, the connectors and import presets, and the sync that keeps a product current; imports cover anything else (D-37). Details in `00-product-spec.md`.
 
 ## How to use this plan
 
@@ -32,7 +32,7 @@ The session protocol, reviews, verification approach, and test-data policy are i
 | `06-claude-code-setup.md` | CLAUDE.md, rules, skills, subagents, hooks, permissions, integrations; verified Claude Code facts |
 | `07-tools-and-costs.md` | What to install, accounts and keys, market-data purchases, running and product costs |
 | `08-code-design.md` | How the design skills shape the code: the architecture decision and dependency rule, layout and names, design rules per language, backtest methodology, the frontend design process |
-| `phases/P00` … `phases/P14` | The 134 steps, one file per phase, with kickoff and exit prompts |
+| `phases/P00` … `phases/P15` | The 156 steps, one file per phase, with kickoff and exit prompts |
 | `PROGRESS.md` | Step status, kickoffs and exits, milestones |
 | `BACKLOG.md` | Future improvements (cloud sync, ML, live trading, store apps, licensing) |
 | `DECISIONS.md` | The decision log; ADR-marked entries become `docs/adr/` records in step 0.7 |
@@ -59,8 +59,9 @@ The session protocol, reviews, verification approach, and test-data policy are i
 | P12 Phone polish | Deferred (D-54): install, notifications, touch, speed, offline | 5 | |
 | P13 Hardening | Security review, robustness, diagnostics, backups, runbook | 7 | step 125 |
 | P14 Desktop packaging | Tauri shell, installers, auto-update, data sources in the packaged app, signed catalog updates, first run (product phase) | 9 | step 134 |
+| P15 Claude desktop app | FEAT installed from Claude Desktop as a Claude artifact: a spike and its decision record, the app and its publish skill, notifications and the tray (D-127) | 3 | FEAT in the Start menu at 15.3 |
 
-The written order is the default. Phases P7 to P12 can be reordered at a kickoff by amending the `Depends on` line of the moved phase's first step (and any step that uses a later phase's capability, which the phase headers name); the checker then verifies the new order. P14 is optional for personal use.
+The written order is the default. Phases P7 to P12 can be reordered at a kickoff by amending the `Depends on` line of the moved phase's first step (and any step that uses a later phase's capability, which the phase headers name); the checker then verifies the new order. P14 is optional for personal use. P15 depends on Phase 5 alone and runs before Phase 6 by default; its rows in `PROGRESS.md` set when (D-127).
 
 ## Effort and cost (estimates)
 
